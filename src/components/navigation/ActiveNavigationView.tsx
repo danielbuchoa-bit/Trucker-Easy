@@ -41,7 +41,7 @@ interface OrientationDebug {
   routeBearing: number | null;
   gpsHeading: number | null;
   appliedCameraBearing: number;
-  headingSource: 'calculated' | 'route' | 'gps' | 'none';
+  headingSource: 'calculated' | 'route' | 'gps' | 'simulation' | 'none';
   lastUpdate: number;
 }
 
@@ -465,25 +465,44 @@ const ActiveNavigationView = () => {
           : 0;
 
     let rawHeading: number | null = null;
-    let headingSource: 'calculated' | 'route' | 'gps' | 'none' = 'none';
+    let headingSource: 'calculated' | 'route' | 'gps' | 'simulation' | 'none' = 'none';
 
-    // 1) Prefer calculated bearing (course over ground) when we have meaningful movement
-    if (
+    // SIMULATION MODE: Use heading from simulation hook (already calculated from route segment)
+    if (isSimulating && userPosition.heading !== null && userPosition.heading !== undefined) {
+      rawHeading = userPosition.heading;
+      headingSource = 'simulation';
+    }
+    // 1) Prefer calculated bearing (course over ground) when we have meaningful real movement
+    else if (
       calculatedBearing !== null &&
+      !isSimulating &&
       (speedForHeading > MIN_SPEED_FOR_HEADING || (movementDistanceM ?? 0) >= 10)
     ) {
       rawHeading = calculatedBearing;
       headingSource = 'calculated';
     }
-    // 2) Fallback to GPS heading when moving (only when speed is available)
-    else if (userPosition.heading !== null && displaySpeed > MIN_SPEED_FOR_HEADING) {
+    // 2) Fallback to GPS heading when moving (only when speed is available, not simulating)
+    else if (userPosition.heading !== null && displaySpeed > MIN_SPEED_FOR_HEADING && !isSimulating) {
       rawHeading = userPosition.heading;
       headingSource = 'gps';
     }
-    // 3) Fallback to route bearing (CRITICAL for simulation / missing speed)
+    // 3) Fallback to route bearing
     else if (routeBearing !== null) {
       rawHeading = routeBearing;
       headingSource = 'route';
+    }
+    
+    // Log heading diagnostics (throttled)
+    if (now - lastUpdateTimeRef.current > 500 || headingSource === 'simulation') {
+      console.log('[NAV_HEADING]', {
+        isSimulating,
+        speedForHeading: speedForHeading.toFixed(2),
+        simHeading: userPosition.heading?.toFixed(1),
+        calculatedBearing: calculatedBearing?.toFixed(1),
+        routeBearing: routeBearing?.toFixed(1),
+        rawHeading: rawHeading?.toFixed(1),
+        headingSource,
+      });
     }
     
     // Apply heading smoothing with outlier rejection
@@ -544,11 +563,16 @@ const ActiveNavigationView = () => {
       lastUpdate: now,
     });
 
-    // Apply camera bearing (course-up: map rotates) - use smoothed position
+    // Apply camera bearing (course-up: map rotates so that heading is "up")
+    // Mapbox bearing: degrees clockwise from north that the camera points to.
+    // For course-up, we want the camera to point in the direction of travel,
+    // which means setting bearing = heading (0-360, north=0, clockwise).
+    // The map will rotate so that heading direction is UP on the screen.
     if (followUser) {
       if (headingToUse !== null) {
         const bearingChange = bearingDifference(lastAppliedBearingRef.current, headingToUse);
         
+        // Only update if bearing changed meaningfully
         if (bearingChange >= MIN_BEARING_CHANGE || bearingAnimationRef.current === null) {
           targetBearingRef.current = headingToUse;
           lastAppliedBearingRef.current = headingToUse;
@@ -558,31 +582,33 @@ const ActiveNavigationView = () => {
           }
           
           const animateBearing = () => {
+            if (!map.current) return;
+            
             const current = currentBearingRef.current;
             const target = targetBearingRef.current;
             
-            const newBearing = smoothAngle(current, target, 0.12);
+            const newBearing = smoothAngle(current, target, 0.15);
             currentBearingRef.current = newBearing;
             
             const diff = bearingDifference(current, target);
             
-            if (diff > 1) {
-              map.current?.easeTo({
+            if (diff > 0.5) {
+              map.current.easeTo({
                 center: [displayLng, displayLat],
                 bearing: newBearing,
                 pitch: 60,
                 zoom: 17,
-                duration: 80,
+                duration: 60,
                 easing: (t) => t,
               });
               bearingAnimationRef.current = requestAnimationFrame(animateBearing);
             } else {
-              map.current?.easeTo({
+              map.current.easeTo({
                 center: [displayLng, displayLat],
                 bearing: target,
                 pitch: 60,
                 zoom: 17,
-                duration: 200,
+                duration: 150,
               });
               bearingAnimationRef.current = null;
             }
@@ -590,15 +616,17 @@ const ActiveNavigationView = () => {
           
           animateBearing();
         } else {
+          // Small change, just update center
           map.current.easeTo({
             center: [displayLng, displayLat],
-            duration: 300,
+            duration: 200,
           });
         }
       } else {
+        // No heading, just follow position
         map.current.easeTo({
           center: [displayLng, displayLat],
-          duration: 500,
+          duration: 400,
         });
       }
     }
