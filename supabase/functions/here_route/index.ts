@@ -55,7 +55,7 @@ serve(async (req) => {
       origin: `${originLat},${originLng}`,
       destination: `${destLat},${destLng}`,
       transportMode: transportMode,
-      return: 'polyline,summary,instructions',
+      return: 'polyline,summary,actions,instructions',
     });
 
     if (avoidFeatures.length > 0) {
