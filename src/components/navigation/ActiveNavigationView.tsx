@@ -38,9 +38,10 @@ interface OrientationDebug {
   speed: number;
   gpsAccuracy: number | null;
   calculatedBearing: number | null;
+  routeBearing: number | null;
   gpsHeading: number | null;
   appliedCameraBearing: number;
-  headingSource: 'calculated' | 'gps' | 'none';
+  headingSource: 'calculated' | 'route' | 'gps' | 'none';
   lastUpdate: number;
 }
 
@@ -147,6 +148,7 @@ const ActiveNavigationView = () => {
     speed: 0,
     gpsAccuracy: null,
     calculatedBearing: null,
+    routeBearing: null,
     gpsHeading: null,
     appliedCameraBearing: 0,
     headingSource: 'none',
@@ -390,18 +392,51 @@ const ActiveNavigationView = () => {
       }
     }
     
-    // Determine raw heading to use
-    let rawHeading: number | null = null;
-    let headingSource: 'calculated' | 'gps' | 'none' = 'none';
+    // Calculate bearing from route segment as fallback
+    let routeBearing: number | null = null;
+    if (routeCoords.length >= 2 && progress) {
+      // Find closest point on route
+      let minDist = Infinity;
+      let closestIdx = 0;
+      
+      for (let i = 0; i < routeCoords.length; i++) {
+        const [lng, lat] = routeCoords[i];
+        const dist = Math.sqrt(
+          Math.pow((userPosition.lat - lat) * 111000, 2) +
+          Math.pow((userPosition.lng - lng) * 111000 * Math.cos(userPosition.lat * Math.PI / 180), 2)
+        );
+        if (dist < minDist) {
+          minDist = dist;
+          closestIdx = i;
+        }
+      }
+      
+      // Use bearing of next segment on route
+      if (closestIdx < routeCoords.length - 1) {
+        const [lng1, lat1] = routeCoords[closestIdx];
+        const [lng2, lat2] = routeCoords[closestIdx + 1];
+        routeBearing = calculateBearingBetweenPoints(lat1, lng1, lat2, lng2);
+      }
+    }
     
-    // Prefer calculated bearing (course over ground) when moving
+    // Determine raw heading to use (priority: calculated > GPS > route)
+    let rawHeading: number | null = null;
+    let headingSource: 'calculated' | 'route' | 'gps' | 'none' = 'none';
+    
+    // 1) Prefer calculated bearing (course over ground) when moving fast enough
     if (calculatedBearing !== null && displaySpeed > MIN_SPEED_FOR_HEADING) {
       rawHeading = calculatedBearing;
       headingSource = 'calculated';
-    } else if (userPosition.heading !== null && displaySpeed > MIN_SPEED_FOR_HEADING) {
-      // Fallback to GPS heading
+    } 
+    // 2) Fallback to GPS heading when moving
+    else if (userPosition.heading !== null && displaySpeed > MIN_SPEED_FOR_HEADING) {
       rawHeading = userPosition.heading;
       headingSource = 'gps';
+    }
+    // 3) Fallback to route bearing when stationary or slow (CRITICAL for simulation)
+    else if (routeBearing !== null) {
+      rawHeading = routeBearing;
+      headingSource = 'route';
     }
     
     // Apply heading smoothing with outlier rejection
@@ -455,6 +490,7 @@ const ActiveNavigationView = () => {
       speed: speedKmh,
       gpsAccuracy: userPosition.accuracy,
       calculatedBearing,
+      routeBearing,
       gpsHeading: userPosition.heading,
       appliedCameraBearing: headingToUse ?? lastAppliedBearingRef.current,
       headingSource,
@@ -525,7 +561,7 @@ const ActiveNavigationView = () => {
         cancelAnimationFrame(bearingAnimationRef.current);
       }
     };
-  }, [userPosition, smoothedPosition, mapReady, followUser]);
+  }, [userPosition, smoothedPosition, mapReady, followUser, routeCoords, progress]);
 
   // Destination marker
   useEffect(() => {
