@@ -185,25 +185,48 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
         let calculatedHeading = gpsHeading;
         const now = Date.now();
         
-        if (lastPositionRef.current && (gpsHeading === null || gpsHeading === undefined)) {
-          const timeDelta = (now - lastPositionRef.current.time) / 1000; // seconds
+        if (lastRawFixRef.current && (gpsHeading === null || gpsHeading === undefined)) {
+          const timeDelta = (now - lastRawFixRef.current.time) / 1000; // seconds
           if (timeDelta > 0 && timeDelta < 5) { // Only calculate if reasonable time gap
-            const deltaLat = latitude - lastPositionRef.current.lat;
-            const deltaLng = longitude - lastPositionRef.current.lng;
+            const distance = haversineDistance(
+              lastRawFixRef.current.lat,
+              lastRawFixRef.current.lng,
+              latitude,
+              longitude
+            );
             
             // Only calculate if there's meaningful movement
-            const distance = Math.sqrt(deltaLat * deltaLat + deltaLng * deltaLng) * 111000; // rough meters
-            if (distance > 2) { // Moved at least 2 meters
-              // Calculate bearing from movement
-              const y = Math.sin((deltaLng * Math.PI) / 180) * Math.cos((latitude * Math.PI) / 180);
-              const x = Math.cos((lastPositionRef.current.lat * Math.PI) / 180) * Math.sin((latitude * Math.PI) / 180) -
-                Math.sin((lastPositionRef.current.lat * Math.PI) / 180) * Math.cos((latitude * Math.PI) / 180) * Math.cos((deltaLng * Math.PI) / 180);
-              calculatedHeading = ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
+            if (distance > MIN_COG_DISTANCE_M) {
+              // Calculate bearing from movement using helper
+              calculatedHeading = calculateBearingBetweenPoints(
+                lastRawFixRef.current.lat,
+                lastRawFixRef.current.lng,
+                latitude,
+                longitude
+              );
+              lastValidHeadingRef.current = calculatedHeading;
+            } else if (lastValidHeadingRef.current !== null) {
+              // Keep last valid heading if not moving enough
+              calculatedHeading = lastValidHeadingRef.current;
             }
           }
+        } else if (lastValidHeadingRef.current !== null && (gpsHeading === null || gpsHeading === undefined)) {
+          calculatedHeading = lastValidHeadingRef.current;
         }
         
-        lastPositionRef.current = { lat: latitude, lng: longitude, time: now };
+        // Smooth heading
+        if (typeof calculatedHeading === 'number' && smoothedHeadingRef.current !== null) {
+          calculatedHeading = smoothAngle(smoothedHeadingRef.current, calculatedHeading, HEADING_SMOOTH_FACTOR);
+        }
+        if (typeof calculatedHeading === 'number') {
+          smoothedHeadingRef.current = calculatedHeading;
+        }
+        
+        // Smooth speed
+        const rawSpeed = gpsSpeed ?? 0;
+        smoothedSpeedRef.current = smoothedSpeedRef.current * (1 - SPEED_SMOOTH_FACTOR) + rawSpeed * SPEED_SMOOTH_FACTOR;
+        
+        lastRawFixRef.current = { lat: latitude, lng: longitude, time: now };
         
         setUserPosition({
           lat: latitude,
