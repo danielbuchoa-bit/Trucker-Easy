@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useLanguage } from '@/i18n/LanguageContext';
 import { ArrowLeft, ArrowRight, Check, Truck, Heart } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useNavigate } from 'react-router-dom';
 
 interface OnboardingScreenProps {
   onComplete: () => void;
@@ -10,6 +11,7 @@ interface OnboardingScreenProps {
 
 const OnboardingScreen = ({ onComplete, onBack }: OnboardingScreenProps) => {
   const { t } = useLanguage();
+  const navigate = useNavigate();
   const [step, setStep] = useState(0);
   const [truckType, setTruckType] = useState('');
   const [trailerType, setTrailerType] = useState('');
@@ -89,6 +91,7 @@ const OnboardingScreen = ({ onComplete, onBack }: OnboardingScreenProps) => {
       setStep(step + 1);
     } else {
       onComplete();
+      navigate('/home');
     }
   };
 
@@ -97,7 +100,13 @@ const OnboardingScreen = ({ onComplete, onBack }: OnboardingScreenProps) => {
       setStep(step - 1);
     } else {
       onBack();
+      navigate('/auth');
     }
+  };
+
+  const handleSkip = () => {
+    onComplete();
+    navigate('/home');
   };
 
   const renderStep = () => {
@@ -271,7 +280,7 @@ const OnboardingScreen = ({ onComplete, onBack }: OnboardingScreenProps) => {
         </div>
 
         <button
-          onClick={onComplete}
+          onClick={handleSkip}
           className="text-muted-foreground hover:text-foreground px-4"
         >
           {t.common.skip}
