@@ -6,6 +6,8 @@ const corsHeaders = {
 };
 
 serve(async (req) => {
+  console.log('get_mapbox_token called, method:', req.method);
+  
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }

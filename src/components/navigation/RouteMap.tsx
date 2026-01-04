@@ -86,17 +86,27 @@ const RouteMap = ({ routePolyline, originLat, originLng, destLat, destLng, class
   const originMarker = useRef<mapboxgl.Marker | null>(null);
   const destMarker = useRef<mapboxgl.Marker | null>(null);
   const [mapReady, setMapReady] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const initializeMap = useCallback(async () => {
     if (!mapContainer.current || map.current) return;
 
     try {
+      console.log('Fetching Mapbox token...');
       const { data, error: tokenError } = await supabase.functions.invoke('get_mapbox_token');
       
-      if (tokenError || !data?.token) {
+      console.log('Mapbox token response:', { data, error: tokenError });
+      
+      if (tokenError) {
         setError('Failed to load map');
         console.error('Mapbox token error:', tokenError);
+        return;
+      }
+      
+      if (!data?.token) {
+        setError('Mapbox token not configured');
+        console.error('No token in response:', data);
         return;
       }
 
@@ -107,8 +117,8 @@ const RouteMap = ({ routePolyline, originLat, originLng, destLat, destLng, class
       
       map.current = new mapboxgl.Map({
         container: mapContainer.current,
-        style: 'mapbox://styles/mapbox/dark-v11',
-        zoom: 10,
+        style: 'mapbox://styles/mapbox/navigation-night-v1',
+        zoom: 4,
         center: [centerLng, centerLat],
       });
 
@@ -118,12 +128,21 @@ const RouteMap = ({ routePolyline, originLat, originLng, destLat, destLng, class
       );
 
       map.current.on('load', () => {
+        console.log('Map loaded successfully');
         setMapReady(true);
+        setLoading(false);
+      });
+      
+      map.current.on('error', (e) => {
+        console.error('Map error:', e);
+        setError('Map loading error');
+        setLoading(false);
       });
 
     } catch (err) {
       console.error('Map initialization error:', err);
       setError('Failed to initialize map');
+      setLoading(false);
     }
   }, [originLat, originLng]);
 
@@ -228,7 +247,12 @@ const RouteMap = ({ routePolyline, originLat, originLng, destLat, destLng, class
 
   return (
     <div className={`relative ${className}`}>
-      <div ref={mapContainer} className="absolute inset-0 rounded-xl overflow-hidden" />
+      <div ref={mapContainer} className="absolute inset-0" />
+      {loading && (
+        <div className="absolute inset-0 flex items-center justify-center bg-muted/50">
+          <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+        </div>
+      )}
     </div>
   );
 };
