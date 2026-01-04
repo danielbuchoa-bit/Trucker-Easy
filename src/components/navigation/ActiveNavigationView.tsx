@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { supabase } from '@/integrations/supabase/client';
-import { useActiveNavigation } from '@/contexts/ActiveNavigationContext';
+import { useActiveNavigation, type UserPosition } from '@/contexts/ActiveNavigationContext';
 import { useVoiceGuidance } from '@/hooks/useVoiceGuidance';
 import { useRouteSimulation } from '@/hooks/useRouteSimulation';
 import NavigationHUD from './NavigationHUD';
@@ -11,6 +11,23 @@ import SimulationControls from './SimulationControls';
 import { MapPin, Navigation as NavIcon, RotateCcw, Layers } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useLanguage } from '@/i18n/LanguageContext';
+
+// Minimum speed (m/s) to apply heading rotation - ~5 km/h = 1.39 m/s
+const MIN_SPEED_FOR_HEADING = 1.39;
+
+// Interpolate between two angles (for smooth rotation)
+function interpolateBearing(current: number, target: number, factor: number): number {
+  // Normalize angles to 0-360
+  current = ((current % 360) + 360) % 360;
+  target = ((target % 360) + 360) % 360;
+  
+  // Find shortest path
+  let diff = target - current;
+  if (diff > 180) diff -= 360;
+  if (diff < -180) diff += 360;
+  
+  return ((current + diff * factor) + 360) % 360;
+}
 
 const ActiveNavigationView = () => {
   const { t } = useLanguage();
@@ -47,6 +64,11 @@ const ActiveNavigationView = () => {
   const [mapStyle, setMapStyle] = useState<'satellite' | 'streets' | 'navigation'>('satellite');
   const mapInitialized = useRef(false);
   const lastVoiceInstructionIndex = useRef<number>(-1);
+  
+  // Heading interpolation refs
+  const currentBearingRef = useRef<number>(0);
+  const targetBearingRef = useRef<number>(0);
+  const bearingAnimationRef = useRef<number | null>(null);
 
   // Simulation hook
   const simulation = useRouteSimulation(routeCoords, (pos) => {
@@ -212,27 +234,95 @@ const ActiveNavigationView = () => {
     }
   }, [routeCoords, mapReady]);
 
-  // Update user marker & camera
+  // Update user marker & camera with course-up orientation
   useEffect(() => {
     if (!map.current || !mapReady || !userPosition) return;
 
+    // Create or update user marker with direction indicator
     if (userMarker.current) {
       userMarker.current.setLngLat([userPosition.lng, userPosition.lat]);
     } else {
+      // Create a direction arrow marker (pointing up)
       const el = document.createElement('div');
-      el.className = 'w-6 h-6 bg-blue-500 rounded-full border-4 border-white shadow-lg flex items-center justify-center';
-      el.innerHTML = '<div class="w-2 h-2 bg-white rounded-full"></div>';
-      userMarker.current = new mapboxgl.Marker({ element: el, rotationAlignment: 'map' })
+      el.className = 'relative';
+      el.innerHTML = `
+        <div class="w-8 h-8 flex items-center justify-center">
+          <svg viewBox="0 0 24 24" class="w-8 h-8 text-blue-500 drop-shadow-lg" fill="currentColor">
+            <path d="M12 2L4.5 20.29l.71.71L12 18l6.79 3 .71-.71z"/>
+          </svg>
+        </div>
+        <div class="absolute inset-0 flex items-center justify-center">
+          <div class="w-3 h-3 bg-white rounded-full border-2 border-blue-500 shadow-sm"></div>
+        </div>
+      `;
+      userMarker.current = new mapboxgl.Marker({ 
+        element: el, 
+        rotationAlignment: 'map',
+        pitchAlignment: 'map'
+      })
         .setLngLat([userPosition.lng, userPosition.lat])
         .addTo(map.current);
     }
 
+    // Check if we should apply heading rotation (only when moving above threshold)
+    const speed = userPosition.speed ?? 0;
+    const heading = userPosition.heading;
+    const shouldRotate = speed > MIN_SPEED_FOR_HEADING && heading !== null;
+
     if (followUser) {
-      map.current.easeTo({
-        center: [userPosition.lng, userPosition.lat],
-        duration: 500,
-      });
+      if (shouldRotate && heading !== null) {
+        // Set target bearing for smooth animation
+        targetBearingRef.current = heading;
+        
+        // Cancel any existing animation
+        if (bearingAnimationRef.current) {
+          cancelAnimationFrame(bearingAnimationRef.current);
+        }
+        
+        // Animate bearing smoothly
+        const animateBearing = () => {
+          const current = currentBearingRef.current;
+          const target = targetBearingRef.current;
+          
+          // Interpolate towards target
+          const newBearing = interpolateBearing(current, target, 0.15);
+          currentBearingRef.current = newBearing;
+          
+          // Only update map if difference is noticeable
+          const diff = Math.abs(target - newBearing);
+          if (diff > 0.5 || diff < 0.5) {
+            map.current?.easeTo({
+              center: [userPosition.lng, userPosition.lat],
+              bearing: newBearing,
+              pitch: 60, // Higher pitch for better forward view
+              zoom: 17, // Closer zoom for navigation
+              duration: 100,
+              easing: (t) => t, // Linear for smooth continuous updates
+            });
+          }
+          
+          // Continue animation if not close enough
+          if (diff > 1) {
+            bearingAnimationRef.current = requestAnimationFrame(animateBearing);
+          }
+        };
+        
+        animateBearing();
+      } else {
+        // When stationary or no heading, just center without rotation
+        map.current.easeTo({
+          center: [userPosition.lng, userPosition.lat],
+          duration: 500,
+        });
+      }
     }
+    
+    // Cleanup animation on unmount or when followUser changes
+    return () => {
+      if (bearingAnimationRef.current) {
+        cancelAnimationFrame(bearingAnimationRef.current);
+      }
+    };
   }, [userPosition, mapReady, followUser]);
 
   // Destination marker
@@ -352,12 +442,19 @@ const ActiveNavigationView = () => {
         </Button>
       </div>
 
-      {/* Re-center button */}
+      {/* Re-center button - restores course-up following */}
       {!followUser && (
         <Button
-          className="absolute bottom-32 right-4 z-30 rounded-full shadow-lg"
+          className="absolute bottom-32 right-4 z-30 rounded-full shadow-lg bg-primary"
           size="icon"
-          onClick={() => setFollowUser(true)}
+          onClick={() => {
+            setFollowUser(true);
+            // Reset bearing to current heading when re-centering
+            if (userPosition?.heading !== null && userPosition?.heading !== undefined) {
+              currentBearingRef.current = userPosition.heading;
+              targetBearingRef.current = userPosition.heading;
+            }
+          }}
         >
           <NavIcon className="w-5 h-5" />
         </Button>
