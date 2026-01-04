@@ -3,6 +3,8 @@ import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { supabase } from '@/integrations/supabase/client';
 import { decodeHereFlexiblePolyline } from '@/lib/hereFlexiblePolyline';
+import { useDiagnosticsSafe } from '@/contexts/DiagnosticsContext';
+import { useDiagnosticsTap } from '@/hooks/useDiagnosticsTap';
 
 interface RouteMapProps {
   routePolyline?: string;
@@ -24,6 +26,10 @@ const RouteMap = ({ routePolyline, originLat, originLng, destLat, destLng, class
   const [gettingLocation, setGettingLocation] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const mapInitialized = useRef(false);
+
+  // Diagnostics integration
+  const diagnostics = useDiagnosticsSafe();
+  const handleDiagnosticsTap = useDiagnosticsTap();
 
   // Get user's current location
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
@@ -77,14 +83,22 @@ const RouteMap = ({ routePolyline, originLat, originLng, destLat, destLng, class
       const token = data?.token;
 
       if (tokenError || !token) {
+        const errorStatus = (tokenError as any)?.status || 'error';
         console.error('[RouteMap] ❌ MAPBOX TOKEN ERROR:', {
-          status: tokenError?.status || 'N/A',
+          status: errorStatus,
           message: tokenError?.message || 'Token not returned',
           endpoint: 'get_mapbox_token',
           service: 'Mapbox (Tiles/Rendering)',
         });
         
-        if (tokenError?.status === 401 || tokenError?.status === 403) {
+        // Log to diagnostics
+        diagnostics?.logMapboxCall({
+          endpoint: 'get_mapbox_token',
+          status: errorStatus,
+          message: tokenError?.message || 'Token not returned',
+        });
+        
+        if (errorStatus === 401 || errorStatus === 403) {
           console.error('[RouteMap] 🔐 AUTH ISSUE: Mapbox token retrieval failed - check MAPBOX_PUBLIC_TOKEN secret');
         }
         
@@ -92,6 +106,12 @@ const RouteMap = ({ routePolyline, originLat, originLng, destLat, destLng, class
         setLoading(false);
         return;
       }
+
+      // Log success to diagnostics
+      diagnostics?.logMapboxCall({
+        endpoint: 'get_mapbox_token',
+        status: 'ok',
+      });
 
       console.log('[RouteMap] ✅ Mapbox token obtained');
       mapboxgl.accessToken = token;
@@ -149,7 +169,7 @@ const RouteMap = ({ routePolyline, originLat, originLng, destLat, destLng, class
       setError('Failed to initialize map');
       setLoading(false);
     }
-  }, [getInitialCenter, userLocation]);
+  }, [getInitialCenter, userLocation, diagnostics]);
 
   // Initialize map after we have location (or timeout)
   useEffect(() => {
@@ -313,7 +333,10 @@ const RouteMap = ({ routePolyline, originLat, originLng, destLat, destLng, class
   }
 
   return (
-    <div className={`relative ${className}`}>
+    <div 
+      className={`relative ${className}`}
+      onClick={handleDiagnosticsTap}
+    >
       <div ref={mapContainer} className="absolute inset-0" />
       {(loading || gettingLocation) && (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-muted/50 gap-2">
