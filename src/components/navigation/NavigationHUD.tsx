@@ -1,10 +1,11 @@
-import React from 'react';
-import { Clock, MapPin, X, Volume2 } from 'lucide-react';
+import React, { useMemo } from 'react';
+import { Clock, MapPin, X, Volume2, Flag } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import ManeuverIcon from './ManeuverIcon';
 import { getManeuverIcon } from '@/lib/navigationUtils';
 import { HereService, type RouteInstruction } from '@/services/HereService';
 import { useLanguage } from '@/i18n/LanguageContext';
+import { addSeconds, format } from 'date-fns';
 
 interface NavigationHUDProps {
   currentInstruction: RouteInstruction | null;
@@ -31,6 +32,14 @@ const NavigationHUD = ({
   // Get road name for display
   const roadName = currentInstruction?.roadName || '';
   const displayInstruction = currentInstruction?.instruction || t.navigation?.continueOn || 'Continue';
+
+  // Calculate ETA
+  const eta = useMemo(() => {
+    if (typeof remainingDuration !== 'number' || remainingDuration <= 0) return null;
+    return addSeconds(new Date(), remainingDuration);
+  }, [remainingDuration]);
+
+  const etaFormatted = eta ? format(eta, 'HH:mm') : '--:--';
 
   return (
     <div className="absolute inset-x-0 top-0 z-30 safe-top">
@@ -71,6 +80,10 @@ const NavigationHUD = ({
         <div className="flex items-center gap-2 text-sm">
           <Clock className="w-4 h-4 text-muted-foreground" />
           <span className="font-medium">{HereService.formatDuration(remainingDuration)}</span>
+        </div>
+        <div className="flex items-center gap-2 text-sm">
+          <Flag className="w-4 h-4 text-muted-foreground" />
+          <span className="font-semibold">{etaFormatted}</span>
         </div>
         <div className="flex items-center gap-2 text-sm">
           <MapPin className="w-4 h-4 text-muted-foreground" />
