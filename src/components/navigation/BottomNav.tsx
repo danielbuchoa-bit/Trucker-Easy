@@ -1,3 +1,4 @@
+import { forwardRef } from 'react';
 import { Truck, MapPin, AlertTriangle, Users, User } from 'lucide-react';
 import { useLanguage } from '@/i18n/LanguageContext';
 import { cn } from '@/lib/utils';
@@ -7,7 +8,7 @@ interface BottomNavProps {
   onTabChange: (tab: string) => void;
 }
 
-const BottomNav = ({ activeTab, onTabChange }: BottomNavProps) => {
+const BottomNav = forwardRef<HTMLElement, BottomNavProps>(({ activeTab, onTabChange }, ref) => {
   const { t } = useLanguage();
 
   const tabs = [
@@ -63,6 +64,8 @@ const BottomNav = ({ activeTab, onTabChange }: BottomNavProps) => {
       </div>
     </nav>
   );
-};
+});
+
+BottomNav.displayName = 'BottomNav';
 
 export default BottomNav;

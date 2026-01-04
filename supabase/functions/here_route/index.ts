@@ -112,8 +112,9 @@ serve(async (req) => {
       params.append('truck[length]', lengthCm.toString()); // centimeters
       params.append('truck[width]', widthCm.toString()); // centimeters
       params.append('truck[axleCount]', profile.axles.toString());
-      params.append('truck[type]', 'tractorTruck');
-      params.append('truck[trailerCount]', '1');
+
+      // Note: do NOT send truck[type] - HERE rejects some values depending on region/plan.
+      // Note: trailerCount is optional; keeping request minimal improves compatibility.
 
       console.log('Truck profile applied:', {
         grossWeight: `${Math.round(grossWeightTons * 1000)} kg`,
