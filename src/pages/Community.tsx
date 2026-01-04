@@ -1,12 +1,17 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { useLanguage } from '@/i18n/LanguageContext';
-import { Users, Plus, MessageCircle, Globe, MapPin, Truck, ChevronRight } from 'lucide-react';
+import { Users, Plus, MessageCircle, Globe, MapPin, Truck, ChevronRight, AlertTriangle, Building2 } from 'lucide-react';
 import BottomNav from '@/components/navigation/BottomNav';
 import { useNavigate } from 'react-router-dom';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import RoadReportsList from '@/components/road/RoadReportsList';
+import RoadReportButton from '@/components/road/RoadReportButton';
+import FacilitiesList from '@/components/facility/FacilitiesList';
 
 const CommunityScreen = () => {
   const { t } = useLanguage();
   const navigate = useNavigate();
+  const [activeTab, setActiveTab] = useState('reports');
   const [activeFilter, setActiveFilter] = useState('all');
 
   const filters = [
@@ -57,26 +62,6 @@ const CommunityScreen = () => {
       lastMessage: 'Boa noite pessoal!',
       lastMessageTime: '15m ago',
     },
-    {
-      id: '5',
-      name: 'Texas Truckers',
-      members: 8765,
-      messages: 312,
-      type: 'region',
-      icon: '⭐',
-      lastMessage: 'Traffic on I-35 is crazy today',
-      lastMessageTime: '1m ago',
-    },
-    {
-      id: '6',
-      name: 'Reefer Gang',
-      members: 4532,
-      messages: 178,
-      type: 'trailer',
-      icon: '❄️',
-      lastMessage: 'Best temp settings for produce?',
-      lastMessageTime: '8m ago',
-    },
   ];
 
   const filteredCommunities = activeFilter === 'all'
@@ -102,68 +87,95 @@ const CommunityScreen = () => {
         <div className="p-4">
           <div className="flex items-center justify-between mb-4">
             <h1 className="text-2xl font-bold text-foreground">{t.nav.community}</h1>
-            <button className="w-10 h-10 bg-primary rounded-full flex items-center justify-center text-primary-foreground">
-              <Plus className="w-5 h-5" />
-            </button>
           </div>
           
-          {/* Filter Pills */}
-          <div className="flex gap-2 overflow-x-auto hide-scrollbar pb-1">
-            {filters.map((filter) => (
-              <button
-                key={filter.id}
-                onClick={() => setActiveFilter(filter.id)}
-                className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all ${
-                  activeFilter === filter.id
-                    ? 'bg-primary text-primary-foreground'
-                    : 'bg-card border border-border text-foreground hover:border-primary/50'
-                }`}
-              >
-                {filter.label}
-              </button>
-            ))}
-          </div>
+          {/* Tabs */}
+          <Tabs value={activeTab} onValueChange={setActiveTab}>
+            <TabsList className="grid grid-cols-3">
+              <TabsTrigger value="reports" className="flex items-center gap-1">
+                <AlertTriangle className="w-4 h-4" />
+                Reports
+              </TabsTrigger>
+              <TabsTrigger value="facilities" className="flex items-center gap-1">
+                <Building2 className="w-4 h-4" />
+                Facilities
+              </TabsTrigger>
+              <TabsTrigger value="chat" className="flex items-center gap-1">
+                <MessageCircle className="w-4 h-4" />
+                Chat
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
         </div>
       </div>
 
-      {/* Communities List */}
-      <div className="p-4 space-y-3">
-        {filteredCommunities.map((community) => (
-          <button
-            key={community.id}
-            onClick={() => navigate(`/chat/${community.id}`)}
-            className="w-full flex items-start gap-4 p-4 bg-card rounded-xl border border-border hover:border-primary/50 transition-all text-left"
-          >
-            <div className="w-12 h-12 rounded-full bg-secondary flex items-center justify-center flex-shrink-0 text-2xl">
-              {community.icon}
+      {/* Content */}
+      <div className="p-4">
+        {activeTab === 'reports' && <RoadReportsList />}
+        
+        {activeTab === 'facilities' && <FacilitiesList />}
+        
+        {activeTab === 'chat' && (
+          <div className="space-y-3">
+            {/* Filter Pills */}
+            <div className="flex gap-2 overflow-x-auto hide-scrollbar pb-1">
+              {filters.map((filter) => (
+                <button
+                  key={filter.id}
+                  onClick={() => setActiveFilter(filter.id)}
+                  className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all ${
+                    activeFilter === filter.id
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-card border border-border text-foreground hover:border-primary/50'
+                  }`}
+                >
+                  {filter.label}
+                </button>
+              ))}
             </div>
 
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2">
-                <h3 className="font-semibold text-foreground truncate">{community.name}</h3>
-              </div>
-              
-              <p className="text-sm text-muted-foreground truncate mt-0.5">
-                {community.lastMessage}
-              </p>
-              
-              <div className="flex items-center gap-3 mt-2">
-                <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                  <Users className="w-3.5 h-3.5" />
-                  <span>{community.members.toLocaleString()}</span>
+            {/* Communities List */}
+            {filteredCommunities.map((community) => (
+              <button
+                key={community.id}
+                onClick={() => navigate(`/chat/${community.id}`)}
+                className="w-full flex items-start gap-4 p-4 bg-card rounded-xl border border-border hover:border-primary/50 transition-all text-left"
+              >
+                <div className="w-12 h-12 rounded-full bg-secondary flex items-center justify-center flex-shrink-0 text-2xl">
+                  {community.icon}
                 </div>
-                <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                  <MessageCircle className="w-3.5 h-3.5" />
-                  <span>{community.messages}</span>
-                </div>
-                <span className="text-xs text-muted-foreground">{community.lastMessageTime}</span>
-              </div>
-            </div>
 
-            <ChevronRight className="w-5 h-5 text-muted-foreground flex-shrink-0 mt-2" />
-          </button>
-        ))}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-semibold text-foreground truncate">{community.name}</h3>
+                  </div>
+                  
+                  <p className="text-sm text-muted-foreground truncate mt-0.5">
+                    {community.lastMessage}
+                  </p>
+                  
+                  <div className="flex items-center gap-3 mt-2">
+                    <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                      <Users className="w-3.5 h-3.5" />
+                      <span>{community.members.toLocaleString()}</span>
+                    </div>
+                    <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                      <MessageCircle className="w-3.5 h-3.5" />
+                      <span>{community.messages}</span>
+                    </div>
+                    <span className="text-xs text-muted-foreground">{community.lastMessageTime}</span>
+                  </div>
+                </div>
+
+                <ChevronRight className="w-5 h-5 text-muted-foreground flex-shrink-0 mt-2" />
+              </button>
+            ))}
+          </div>
+        )}
       </div>
+
+      {/* Floating Report Button */}
+      <RoadReportButton />
 
       <BottomNav activeTab="community" onTabChange={(tab) => navigate(`/${tab === 'map' ? 'home' : tab}`)} />
     </div>
