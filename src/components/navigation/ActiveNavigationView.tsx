@@ -8,7 +8,7 @@ import { useRouteSimulation } from '@/hooks/useRouteSimulation';
 import NavigationHUD from './NavigationHUD';
 import VoiceControls from './VoiceControls';
 import SimulationControls from './SimulationControls';
-import { MapPin, Navigation as NavIcon, RotateCcw } from 'lucide-react';
+import { MapPin, Navigation as NavIcon, RotateCcw, Layers } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useLanguage } from '@/i18n/LanguageContext';
 
@@ -39,6 +39,7 @@ const ActiveNavigationView = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [followUser, setFollowUser] = useState(true);
+  const [mapStyle, setMapStyle] = useState<'satellite' | 'streets' | 'navigation'>('satellite');
   const mapInitialized = useRef(false);
   const lastVoiceInstructionIndex = useRef<number>(-1);
 
@@ -123,7 +124,7 @@ const ActiveNavigationView = () => {
 
       map.current = new mapboxgl.Map({
         container: mapContainer.current,
-        style: 'mapbox://styles/mapbox/navigation-night-v1',
+        style: 'mapbox://styles/mapbox/satellite-streets-v12',
         zoom: 16,
         center,
         pitch: 45,
@@ -296,6 +297,51 @@ const ActiveNavigationView = () => {
         onResume={simulation.resumeSimulation}
         onSpeedChange={simulation.setSpeed}
       />
+
+      {/* Map style toggle */}
+      <div className="absolute top-36 right-4 z-30 flex flex-col gap-2">
+        <Button
+          variant="secondary"
+          size="icon"
+          className="rounded-full shadow-lg"
+          onClick={() => {
+            const styles = {
+              satellite: 'mapbox://styles/mapbox/satellite-streets-v12',
+              streets: 'mapbox://styles/mapbox/streets-v12',
+              navigation: 'mapbox://styles/mapbox/navigation-night-v1',
+            };
+            const order: Array<'satellite' | 'streets' | 'navigation'> = ['satellite', 'streets', 'navigation'];
+            const nextIndex = (order.indexOf(mapStyle) + 1) % order.length;
+            const nextStyle = order[nextIndex];
+            setMapStyle(nextStyle);
+            if (map.current) {
+              map.current.setStyle(styles[nextStyle]);
+              // Re-add route layer after style change
+              map.current.once('style.load', () => {
+                if (map.current && routeCoords.length > 0) {
+                  const geojson: GeoJSON.Feature = {
+                    type: 'Feature',
+                    properties: {},
+                    geometry: { type: 'LineString', coordinates: routeCoords },
+                  };
+                  if (!map.current.getSource('nav-route')) {
+                    map.current.addSource('nav-route', { type: 'geojson', data: geojson });
+                    map.current.addLayer({
+                      id: 'nav-route',
+                      type: 'line',
+                      source: 'nav-route',
+                      layout: { 'line-join': 'round', 'line-cap': 'round' },
+                      paint: { 'line-color': '#3b82f6', 'line-width': 6, 'line-opacity': 0.9 },
+                    });
+                  }
+                }
+              });
+            }
+          }}
+        >
+          <Layers className="w-5 h-5" />
+        </Button>
+      </div>
 
       {/* Re-center button */}
       {!followUser && (
