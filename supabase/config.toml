@@ -14,3 +14,9 @@ verify_jwt = false
 
 [functions.food_recommendation]
 verify_jwt = false
+
+[functions.here_reverse_geocode]
+verify_jwt = false
+
+[functions.here_browse_pois]
+verify_jwt = false
