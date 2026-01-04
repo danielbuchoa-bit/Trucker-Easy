@@ -76,7 +76,31 @@ export const DEFAULT_TRUCK_PROFILE: TruckProfile = {
   axles: 5,
 };
 
+// Diagnostics callback type
+type DiagnosticsCallback = (data: {
+  service: string;
+  endpoint: string;
+  status: number | 'ok' | 'error';
+  message?: string;
+  resultCount?: number;
+}) => void;
+
+// Global diagnostics subscribers
+let diagnosticsCallbacks: DiagnosticsCallback[] = [];
+
+export const subscribeToDiagnostics = (callback: DiagnosticsCallback) => {
+  diagnosticsCallbacks.push(callback);
+  return () => {
+    diagnosticsCallbacks = diagnosticsCallbacks.filter(cb => cb !== callback);
+  };
+};
+
 class HereServiceClass {
+  // Emit diagnostic event to all subscribers
+  private emitDiagnostic(data: Parameters<DiagnosticsCallback>[0]) {
+    diagnosticsCallbacks.forEach(cb => cb(data));
+  }
+
   // Diagnostic: log API call results
   private logApiResult(service: string, endpoint: string, status: 'success' | 'error', details?: any) {
     const prefix = status === 'success' ? '✅' : '❌';
@@ -84,6 +108,15 @@ class HereServiceClass {
       endpoint,
       status,
       ...(details && { details }),
+    });
+    
+    // Emit to diagnostics panel
+    this.emitDiagnostic({
+      service,
+      endpoint,
+      status: details?.status || (status === 'success' ? 'ok' : 'error'),
+      message: details?.message,
+      resultCount: details?.results || details?.alertCount,
     });
     
     // Check for auth issues
