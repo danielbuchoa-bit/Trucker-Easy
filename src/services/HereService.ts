@@ -77,24 +77,50 @@ export const DEFAULT_TRUCK_PROFILE: TruckProfile = {
 };
 
 class HereServiceClass {
+  // Diagnostic: log API call results
+  private logApiResult(service: string, endpoint: string, status: 'success' | 'error', details?: any) {
+    const prefix = status === 'success' ? '✅' : '❌';
+    console.log(`[HereService] ${prefix} ${service}`, {
+      endpoint,
+      status,
+      ...(details && { details }),
+    });
+    
+    // Check for auth issues
+    if (details?.status === 401 || details?.status === 403) {
+      console.error(`[HereService] 🔐 AUTH ERROR: ${service} service may not be enabled in HERE project`);
+      console.error(`[HereService] Check HERE Developer Portal: https://developer.here.com/`);
+    }
+  }
+
   async geocode(query: string): Promise<GeocodeResult[]> {
+    console.log('[HereService] Calling: Geocode API', { query });
+    
     const { data, error } = await supabase.functions.invoke('here_geocode', {
       body: { query, limit: 5 },
     });
 
     if (error) {
-      console.error('Error calling here_geocode:', error);
+      this.logApiResult('Geocode', 'here_geocode', 'error', { message: error.message, status: error.status });
       throw new Error(error.message || 'Failed to geocode address');
     }
 
     if (data.error) {
+      this.logApiResult('Geocode', 'here_geocode', 'error', { message: data.error, status: data.status });
       throw new Error(data.error);
     }
 
+    this.logApiResult('Geocode', 'here_geocode', 'success', { results: data.results?.length || 0 });
     return data.results as GeocodeResult[];
   }
 
   async calculateRoute(request: RouteRequest): Promise<RouteResponse> {
+    console.log('[HereService] Calling: Routing API', { 
+      origin: `${request.originLat},${request.originLng}`,
+      dest: `${request.destLat},${request.destLng}`,
+      mode: request.transportMode,
+    });
+    
     const { data, error } = await supabase.functions.invoke('here_route', {
       body: {
         ...request,
@@ -105,14 +131,20 @@ class HereServiceClass {
     });
 
     if (error) {
-      console.error('Error calling here_route:', error);
+      this.logApiResult('Routing', 'here_route', 'error', { message: error.message, status: error.status });
       throw new Error(error.message || 'Failed to calculate route');
     }
 
     if (data.error) {
+      this.logApiResult('Routing', 'here_route', 'error', { message: data.error, status: data.status });
       throw new Error(data.error);
     }
 
+    this.logApiResult('Routing', 'here_route', 'success', { 
+      distance: data.distance, 
+      duration: data.duration,
+      instructions: data.instructions?.length || 0,
+    });
     return data as RouteResponse;
   }
 
@@ -120,6 +152,8 @@ class HereServiceClass {
     routePolyline: string,
     language: string = 'en-US'
   ): Promise<WeatherAlertsResponse> {
+    console.log('[HereService] Calling: Weather Alerts API');
+    
     const { data, error } = await supabase.functions.invoke('here_weather_alerts_along_route', {
       body: {
         routePolyline,
@@ -128,10 +162,16 @@ class HereServiceClass {
     });
 
     if (error) {
-      console.error('Error calling here_weather_alerts:', error);
+      this.logApiResult('Weather Alerts', 'here_weather_alerts_along_route', 'error', { 
+        message: error.message, 
+        status: error.status 
+      });
       throw new Error(error.message || 'Failed to get weather alerts');
     }
 
+    this.logApiResult('Weather Alerts', 'here_weather_alerts_along_route', 'success', { 
+      alertCount: data?.alerts?.length || 0 
+    });
     return data as WeatherAlertsResponse;
   }
 

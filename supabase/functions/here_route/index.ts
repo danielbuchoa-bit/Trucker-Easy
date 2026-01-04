@@ -125,13 +125,28 @@ serve(async (req) => {
     }
 
     const hereUrl = `https://router.hereapi.com/v8/routes?${params.toString()}`;
-    console.log('Calling HERE API:', hereUrl.replace(HERE_API_KEY, '***'));
+    console.log('[HERE_ROUTE] Service: Routing API v8');
+    console.log('[HERE_ROUTE] Endpoint:', hereUrl.replace(HERE_API_KEY, '***'));
 
     const response = await fetch(hereUrl);
     const data = await response.json();
 
+    // Diagnostic logging for errors
     if (!response.ok) {
-      console.error('HERE API error:', data);
+      console.error('[HERE_ROUTE] ❌ API Error:', {
+        status: response.status,
+        statusText: response.statusText,
+        endpoint: 'router.hereapi.com/v8/routes',
+        service: 'Routing',
+        error: data?.error || data?.message || 'Unknown error',
+        cause: data?.cause || null,
+      });
+      
+      // Check for auth/permission issues
+      if (response.status === 401 || response.status === 403) {
+        console.error('[HERE_ROUTE] 🔐 AUTH ISSUE: HERE Routing service may not be enabled for this API key');
+        console.error('[HERE_ROUTE] Verify in HERE Developer Portal: https://developer.here.com/');
+      }
       // If truck mode fails, try car mode as fallback
       if (transportMode === 'truck' && data.error) {
         console.log('Truck mode failed, trying car mode...');
