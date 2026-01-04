@@ -8,12 +8,48 @@ import { useRouteSimulation } from '@/hooks/useRouteSimulation';
 import NavigationHUD from './NavigationHUD';
 import VoiceControls from './VoiceControls';
 import SimulationControls from './SimulationControls';
-import { MapPin, Navigation as NavIcon, RotateCcw, Layers } from 'lucide-react';
+import { MapPin, Navigation as NavIcon, RotateCcw, Layers, Bug } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useLanguage } from '@/i18n/LanguageContext';
 
 // Minimum speed (m/s) to apply heading rotation - ~5 km/h = 1.39 m/s
 const MIN_SPEED_FOR_HEADING = 1.39;
+
+// Minimum bearing change to trigger update (degrees)
+const MIN_BEARING_CHANGE = 8;
+
+// Debug state for orientation
+interface OrientationDebug {
+  speed: number;
+  gpsAccuracy: number | null;
+  calculatedBearing: number | null;
+  gpsHeading: number | null;
+  appliedCameraBearing: number;
+  headingSource: 'calculated' | 'gps' | 'none';
+  lastUpdate: number;
+}
+
+// Calculate bearing between two GPS points (returns degrees 0-360, 0 = North)
+function calculateBearingBetweenPoints(
+  lat1: number, 
+  lon1: number, 
+  lat2: number, 
+  lon2: number
+): number {
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+  const toDeg = (rad: number) => (rad * 180) / Math.PI;
+  
+  const dLon = toRad(lon2 - lon1);
+  const lat1Rad = toRad(lat1);
+  const lat2Rad = toRad(lat2);
+  
+  const y = Math.sin(dLon) * Math.cos(lat2Rad);
+  const x = Math.cos(lat1Rad) * Math.sin(lat2Rad) - 
+            Math.sin(lat1Rad) * Math.cos(lat2Rad) * Math.cos(dLon);
+  
+  const bearing = toDeg(Math.atan2(y, x));
+  return ((bearing % 360) + 360) % 360; // Normalize to 0-360
+}
 
 // Interpolate between two angles (for smooth rotation)
 function interpolateBearing(current: number, target: number, factor: number): number {
@@ -27,6 +63,12 @@ function interpolateBearing(current: number, target: number, factor: number): nu
   if (diff < -180) diff += 360;
   
   return ((current + diff * factor) + 360) % 360;
+}
+
+// Calculate bearing difference (shortest path)
+function bearingDifference(a: number, b: number): number {
+  let diff = Math.abs(((a - b + 180) % 360) - 180);
+  return diff;
 }
 
 const ActiveNavigationView = () => {
@@ -69,6 +111,22 @@ const ActiveNavigationView = () => {
   const currentBearingRef = useRef<number>(0);
   const targetBearingRef = useRef<number>(0);
   const bearingAnimationRef = useRef<number | null>(null);
+  
+  // Position history for bearing calculation
+  const positionHistoryRef = useRef<{ lat: number; lng: number; time: number }[]>([]);
+  const lastAppliedBearingRef = useRef<number>(0);
+  
+  // Debug state
+  const [showDebug, setShowDebug] = useState(false);
+  const [debugInfo, setDebugInfo] = useState<OrientationDebug>({
+    speed: 0,
+    gpsAccuracy: null,
+    calculatedBearing: null,
+    gpsHeading: null,
+    appliedCameraBearing: 0,
+    headingSource: 'none',
+    lastUpdate: Date.now(),
+  });
 
   // Simulation hook
   const simulation = useRouteSimulation(routeCoords, (pos) => {
@@ -234,82 +292,158 @@ const ActiveNavigationView = () => {
     }
   }, [routeCoords, mapReady]);
 
-  // Update user marker & camera with course-up orientation
+  // Update user marker & camera with COURSE-UP orientation
+  // Mode: Map rotates by bearing, icon stays fixed pointing UP (no rotation)
   useEffect(() => {
     if (!map.current || !mapReady || !userPosition) return;
 
-    // Create or update user marker with direction indicator
+    const now = Date.now();
+    const speed = userPosition.speed ?? 0;
+    const speedKmh = speed * 3.6; // Convert m/s to km/h
+    
+    // Add position to history for bearing calculation
+    positionHistoryRef.current.push({
+      lat: userPosition.lat,
+      lng: userPosition.lng,
+      time: now,
+    });
+    
+    // Keep only last 5 positions, max 5 seconds old
+    positionHistoryRef.current = positionHistoryRef.current.filter(
+      p => now - p.time < 5000
+    ).slice(-5);
+    
+    // Calculate bearing from position history (more stable than single GPS heading)
+    let calculatedBearing: number | null = null;
+    const history = positionHistoryRef.current;
+    
+    if (history.length >= 2) {
+      const oldest = history[0];
+      const newest = history[history.length - 1];
+      
+      // Only calculate if there's meaningful movement (> 3 meters)
+      const distanceMoved = Math.sqrt(
+        Math.pow((newest.lat - oldest.lat) * 111000, 2) +
+        Math.pow((newest.lng - oldest.lng) * 111000 * Math.cos(newest.lat * Math.PI / 180), 2)
+      );
+      
+      if (distanceMoved > 3) {
+        calculatedBearing = calculateBearingBetweenPoints(
+          oldest.lat, oldest.lng,
+          newest.lat, newest.lng
+        );
+      }
+    }
+    
+    // Decide which heading to use: prefer calculated, fallback to GPS
+    let headingToUse: number | null = null;
+    let headingSource: 'calculated' | 'gps' | 'none' = 'none';
+    
+    if (calculatedBearing !== null && speed > MIN_SPEED_FOR_HEADING) {
+      headingToUse = calculatedBearing;
+      headingSource = 'calculated';
+    } else if (userPosition.heading !== null && speed > MIN_SPEED_FOR_HEADING) {
+      headingToUse = userPosition.heading;
+      headingSource = 'gps';
+    }
+    
+    // Create or update user marker - FIXED pointing UP (no rotation in course-up mode)
     if (userMarker.current) {
       userMarker.current.setLngLat([userPosition.lng, userPosition.lat]);
+      // In course-up mode, the icon always points UP, so rotation = 0
+      // The map rotates instead, making the vehicle appear to go "forward"
+      userMarker.current.setRotation(0);
     } else {
-      // Create a direction arrow marker (pointing up)
+      // Create a simple direction arrow pointing UP
       const el = document.createElement('div');
       el.className = 'relative';
       el.innerHTML = `
-        <div class="w-8 h-8 flex items-center justify-center">
-          <svg viewBox="0 0 24 24" class="w-8 h-8 text-blue-500 drop-shadow-lg" fill="currentColor">
+        <div class="w-10 h-10 flex items-center justify-center">
+          <svg viewBox="0 0 24 24" class="w-10 h-10 drop-shadow-lg" fill="#3b82f6" stroke="#ffffff" stroke-width="0.5">
             <path d="M12 2L4.5 20.29l.71.71L12 18l6.79 3 .71-.71z"/>
           </svg>
-        </div>
-        <div class="absolute inset-0 flex items-center justify-center">
-          <div class="w-3 h-3 bg-white rounded-full border-2 border-blue-500 shadow-sm"></div>
         </div>
       `;
       userMarker.current = new mapboxgl.Marker({ 
         element: el, 
-        rotationAlignment: 'map',
-        pitchAlignment: 'map'
+        rotationAlignment: 'viewport', // CRITICAL: viewport alignment = icon stays fixed on screen
+        pitchAlignment: 'viewport'
       })
         .setLngLat([userPosition.lng, userPosition.lat])
+        .setRotation(0) // Always pointing UP on screen
         .addTo(map.current);
     }
 
-    // Check if we should apply heading rotation (only when moving above threshold)
-    const speed = userPosition.speed ?? 0;
-    const heading = userPosition.heading;
-    const shouldRotate = speed > MIN_SPEED_FOR_HEADING && heading !== null;
+    // Update debug info
+    setDebugInfo({
+      speed: speedKmh,
+      gpsAccuracy: userPosition.accuracy,
+      calculatedBearing,
+      gpsHeading: userPosition.heading,
+      appliedCameraBearing: headingToUse ?? lastAppliedBearingRef.current,
+      headingSource,
+      lastUpdate: now,
+    });
 
+    // Apply camera bearing (course-up: map rotates)
     if (followUser) {
-      if (shouldRotate && heading !== null) {
-        // Set target bearing for smooth animation
-        targetBearingRef.current = heading;
+      if (headingToUse !== null) {
+        // Only update if bearing changed significantly (reduces jitter)
+        const bearingChange = bearingDifference(lastAppliedBearingRef.current, headingToUse);
         
-        // Cancel any existing animation
-        if (bearingAnimationRef.current) {
-          cancelAnimationFrame(bearingAnimationRef.current);
+        if (bearingChange >= MIN_BEARING_CHANGE || bearingAnimationRef.current === null) {
+          targetBearingRef.current = headingToUse;
+          lastAppliedBearingRef.current = headingToUse;
+          
+          // Cancel existing animation
+          if (bearingAnimationRef.current) {
+            cancelAnimationFrame(bearingAnimationRef.current);
+          }
+          
+          // Smooth bearing animation
+          const animateBearing = () => {
+            const current = currentBearingRef.current;
+            const target = targetBearingRef.current;
+            
+            // Interpolate towards target (smooth factor 0.12)
+            const newBearing = interpolateBearing(current, target, 0.12);
+            currentBearingRef.current = newBearing;
+            
+            const diff = bearingDifference(current, target);
+            
+            if (diff > 1) {
+              map.current?.easeTo({
+                center: [userPosition.lng, userPosition.lat],
+                bearing: newBearing,
+                pitch: 60,
+                zoom: 17,
+                duration: 80,
+                easing: (t) => t,
+              });
+              bearingAnimationRef.current = requestAnimationFrame(animateBearing);
+            } else {
+              // Final snap
+              map.current?.easeTo({
+                center: [userPosition.lng, userPosition.lat],
+                bearing: target,
+                pitch: 60,
+                zoom: 17,
+                duration: 200,
+              });
+              bearingAnimationRef.current = null;
+            }
+          };
+          
+          animateBearing();
+        } else {
+          // Small bearing change - just update center
+          map.current.easeTo({
+            center: [userPosition.lng, userPosition.lat],
+            duration: 300,
+          });
         }
-        
-        // Animate bearing smoothly
-        const animateBearing = () => {
-          const current = currentBearingRef.current;
-          const target = targetBearingRef.current;
-          
-          // Interpolate towards target
-          const newBearing = interpolateBearing(current, target, 0.15);
-          currentBearingRef.current = newBearing;
-          
-          // Only update map if difference is noticeable
-          const diff = Math.abs(target - newBearing);
-          if (diff > 0.5 || diff < 0.5) {
-            map.current?.easeTo({
-              center: [userPosition.lng, userPosition.lat],
-              bearing: newBearing,
-              pitch: 60, // Higher pitch for better forward view
-              zoom: 17, // Closer zoom for navigation
-              duration: 100,
-              easing: (t) => t, // Linear for smooth continuous updates
-            });
-          }
-          
-          // Continue animation if not close enough
-          if (diff > 1) {
-            bearingAnimationRef.current = requestAnimationFrame(animateBearing);
-          }
-        };
-        
-        animateBearing();
       } else {
-        // When stationary or no heading, just center without rotation
+        // Not moving or no heading - just center, keep last bearing
         map.current.easeTo({
           center: [userPosition.lng, userPosition.lat],
           duration: 500,
@@ -317,7 +451,7 @@ const ActiveNavigationView = () => {
       }
     }
     
-    // Cleanup animation on unmount or when followUser changes
+    // Cleanup animation on unmount
     return () => {
       if (bearingAnimationRef.current) {
         cancelAnimationFrame(bearingAnimationRef.current);
@@ -399,7 +533,7 @@ const ActiveNavigationView = () => {
         onSpeedChange={simulation.setSpeed}
       />
 
-      {/* Map style toggle */}
+      {/* Map style toggle & Debug toggle */}
       <div className="absolute top-36 right-4 z-30 flex flex-col gap-2">
         <Button
           variant="secondary"
@@ -442,7 +576,39 @@ const ActiveNavigationView = () => {
         >
           <Layers className="w-5 h-5" />
         </Button>
+        
+        {/* Debug toggle button */}
+        <Button
+          variant={showDebug ? "default" : "secondary"}
+          size="icon"
+          className="rounded-full shadow-lg"
+          onClick={() => setShowDebug(!showDebug)}
+        >
+          <Bug className="w-5 h-5" />
+        </Button>
       </div>
+
+      {/* Orientation Debug Overlay */}
+      {showDebug && (
+        <div className="absolute top-48 left-4 z-40 bg-black/80 text-white text-xs p-3 rounded-lg font-mono space-y-1 max-w-[200px]">
+          <div className="font-bold text-yellow-400 mb-2">🧭 Orientation Debug</div>
+          <div>Speed: <span className="text-green-400">{debugInfo.speed.toFixed(1)} km/h</span></div>
+          <div>GPS Acc: <span className="text-blue-400">{debugInfo.gpsAccuracy?.toFixed(0) ?? 'N/A'} m</span></div>
+          <div className="border-t border-gray-600 pt-1 mt-1">
+            <div>Calc Bearing: <span className="text-orange-400">{debugInfo.calculatedBearing?.toFixed(1) ?? 'N/A'}°</span></div>
+            <div>GPS Heading: <span className="text-purple-400">{debugInfo.gpsHeading?.toFixed(1) ?? 'N/A'}°</span></div>
+          </div>
+          <div className="border-t border-gray-600 pt-1 mt-1">
+            <div>Camera Bearing: <span className="text-cyan-400">{debugInfo.appliedCameraBearing.toFixed(1)}°</span></div>
+            <div>Source: <span className={debugInfo.headingSource === 'calculated' ? 'text-green-400' : debugInfo.headingSource === 'gps' ? 'text-yellow-400' : 'text-gray-400'}>{debugInfo.headingSource}</span></div>
+          </div>
+          <div className="border-t border-gray-600 pt-1 mt-1 text-gray-400">
+            <div>Mode: Map rotates</div>
+            <div>Icon: Fixed UP</div>
+            <div>Offset: 0°</div>
+          </div>
+        </div>
+      )}
 
       {/* Re-center button - restores course-up following */}
       {!followUser && (
