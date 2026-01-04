@@ -18,6 +18,7 @@ import CompanyReviewScreen from "./pages/CompanyReview";
 import ChatRoomScreen from "./pages/ChatRoom";
 import BypassHistory from "./pages/BypassHistory";
 import Settings from "./pages/Settings";
+import NavigationScreen from "./pages/Navigation";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -44,6 +45,7 @@ const App = () => (
               <Route path="/chat/:id" element={<ChatRoomScreen />} />
               <Route path="/bypass-history" element={<BypassHistory />} />
               <Route path="/settings" element={<Settings />} />
+              <Route path="/navigation" element={<NavigationScreen />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </GeofenceProvider>

@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react';
 import { useLanguage } from '@/i18n/LanguageContext';
-import { Search, Filter, MapPin, Navigation } from 'lucide-react';
+import { Search, Filter, MapPin, Navigation, Route } from 'lucide-react';
 import BottomNav from '@/components/navigation/BottomNav';
 import { useNavigate } from 'react-router-dom';
+import { Button } from '@/components/ui/button';
 
 const HomeScreen = () => {
   const { t } = useLanguage();
@@ -159,6 +160,15 @@ const HomeScreen = () => {
           <MapPin className="w-12 h-12 text-primary mx-auto mb-2" />
           <p className="text-muted-foreground text-sm">{t.common.loading}</p>
           <p className="text-xs text-muted-foreground mt-1">Map integration coming soon</p>
+          
+          {/* Navigate Button */}
+          <Button
+            className="mt-4"
+            onClick={() => navigate('/navigation')}
+          >
+            <Route className="w-4 h-4 mr-2" />
+            {t.navigation?.calculateRoute || 'Calculate Route'}
+          </Button>
         </div>
 
         {/* Floating Current Location Button */}

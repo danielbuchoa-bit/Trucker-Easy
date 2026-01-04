@@ -5,3 +5,6 @@ verify_jwt = true
 
 [functions.here_weather_alerts_along_route]
 verify_jwt = true
+
+[functions.get_mapbox_token]
+verify_jwt = true
