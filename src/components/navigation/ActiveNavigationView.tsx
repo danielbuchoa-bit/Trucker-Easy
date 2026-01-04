@@ -45,6 +45,7 @@ interface OrientationDebug {
 }
 
 // Calculate bearing between two GPS points (returns degrees 0-360, 0 = North, clockwise)
+// Standard formula: https://www.movable-type.co.uk/scripts/latlong.html
 function calculateBearingBetweenPoints(
   lat1: number, 
   lon1: number, 
@@ -56,16 +57,20 @@ function calculateBearingBetweenPoints(
   
   const φ1 = toRad(lat1);
   const φ2 = toRad(lat2);
-  const Δλ = toRad(lon2 - lon1);
+  const λ1 = toRad(lon1);
+  const λ2 = toRad(lon2);
+  const Δλ = λ2 - λ1;
   
   const y = Math.sin(Δλ) * Math.cos(φ2);
   const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
   
   const θ = Math.atan2(y, x);
-  const bearing = toDeg(θ);
+  let bearing = toDeg(θ);
   
   // Normalize to 0-360 (North = 0, East = 90, South = 180, West = 270)
-  return ((bearing % 360) + 360) % 360;
+  bearing = ((bearing % 360) + 360) % 360;
+  
+  return bearing;
 }
 
 // Calculate shortest angular difference (handles wraparound)
@@ -429,19 +434,20 @@ const ActiveNavigationView = () => {
     // Create or update user marker
     if (userMarker.current) {
       userMarker.current.setLngLat([displayLng, displayLat]);
-      // Icon always points UP in viewport (map rotates, not icon)
-      userMarker.current.setRotation(0);
     } else {
       const el = createTruckCursorElement(52);
       
+      // Ensure element has proper styling
+      el.style.pointerEvents = 'none';
+      
       userMarker.current = new mapboxgl.Marker({ 
         element: el, 
-        rotationAlignment: 'viewport', // Icon stays fixed relative to screen
-        pitchAlignment: 'viewport'
+        rotationAlignment: 'viewport', // Icon stays fixed relative to screen (points UP)
+        pitchAlignment: 'viewport',
+        anchor: 'center'
       })
         .setLngLat([displayLng, displayLat])
-        .setRotation(0)
-        .addTo(map.current);
+        .addTo(map.current!);
     }
 
     // Update debug info
