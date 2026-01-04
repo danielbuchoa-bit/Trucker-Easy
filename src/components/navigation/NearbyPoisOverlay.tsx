@@ -9,13 +9,6 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet';
 
-interface NearbyPoisOverlayProps {
-  lat: number | null;
-  lng: number | null;
-  heading: number | null;
-  onNavigateTo?: (poi: Poi) => void;
-}
-
 interface Poi {
   id: string;
   name: string;
@@ -28,6 +21,17 @@ interface Poi {
   chainName: string | null;
   openingHours: string | null;
   contacts: string | null;
+}
+
+// Export Poi type for use in arrival detection
+export type { Poi };
+
+interface NearbyPoisOverlayProps {
+  lat: number | null;
+  lng: number | null;
+  heading: number | null;
+  onNavigateTo?: (poi: Poi) => void;
+  onPoisUpdate?: (pois: Poi[]) => void; // Callback for arrival detection
 }
 
 // HERE category IDs for truck-related POIs
@@ -117,7 +121,8 @@ const NearbyPoisOverlay: React.FC<NearbyPoisOverlayProps> = ({
   lat, 
   lng, 
   heading,
-  onNavigateTo 
+  onNavigateTo,
+  onPoisUpdate,
 }) => {
   const [pois, setPois] = useState<Poi[]>([]);
   const [loading, setLoading] = useState(false);
@@ -157,7 +162,21 @@ const NearbyPoisOverlay: React.FC<NearbyPoisOverlayProps> = ({
 
         if (!error && data?.pois) {
           lastFetchRef.current = { lat, lng, time: now };
-          setPois(data.pois.slice(0, 5)); // Show max 5
+          const allPois = data.pois.slice(0, 10); // Keep up to 10 for arrival detection
+          setPois(allPois.slice(0, 5)); // Show max 5 in UI
+          
+          // Notify parent for arrival detection
+          if (onPoisUpdate) {
+            onPoisUpdate(allPois.map((p: Poi) => ({
+              id: p.id,
+              name: p.chainName || p.name,
+              category: p.category,
+              lat: p.lat,
+              lng: p.lng,
+              distance: p.distance,
+              address: p.address,
+            })));
+          }
         }
       } catch (err) {
         console.error('POI fetch error:', err);

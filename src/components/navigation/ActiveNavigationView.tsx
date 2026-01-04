@@ -5,11 +5,14 @@ import { supabase } from '@/integrations/supabase/client';
 import { useActiveNavigation, type UserPosition } from '@/contexts/ActiveNavigationContext';
 import { useVoiceGuidance } from '@/hooks/useVoiceGuidance';
 import { useRouteSimulation } from '@/hooks/useRouteSimulation';
+import { useArrivalDetection, type DetectedPoi } from '@/hooks/useArrivalDetection';
 import NavigationHUD from './NavigationHUD';
 import VoiceControls from './VoiceControls';
 import SimulationControls from './SimulationControls';
 import LocationContextBar from './LocationContextBar';
 import NearbyPoisOverlay from './NearbyPoisOverlay';
+import ArrivalPrompt from './ArrivalPrompt';
+import ArrivalDebugPanel from './ArrivalDebugPanel';
 import { createTruckCursorElement } from './TruckCursor';
 import { MapPin, Navigation as NavIcon, RotateCcw, Layers, Bug } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -129,6 +132,19 @@ const ActiveNavigationView = () => {
     appliedCameraBearing: 0,
     headingSource: 'none',
     lastUpdate: Date.now(),
+  });
+
+  // Nearby POIs for arrival detection (populated by NearbyPoisOverlay callback)
+  const [nearbyPois, setNearbyPois] = useState<DetectedPoi[]>([]);
+
+  // Arrival detection hook
+  const arrival = useArrivalDetection({
+    lat: userPosition?.lat ?? null,
+    lng: userPosition?.lng ?? null,
+    speed: userPosition?.speed ?? null,
+    accuracy: userPosition?.accuracy ?? null,
+    pois: nearbyPois,
+    enabled: true,
   });
 
   // Simulation hook
@@ -498,6 +514,23 @@ const ActiveNavigationView = () => {
         lat={userPosition?.lat ?? null}
         lng={userPosition?.lng ?? null}
         heading={debugInfo.calculatedBearing ?? userPosition?.heading ?? null}
+        onPoisUpdate={setNearbyPois}
+      />
+
+      {/* Arrival Prompt */}
+      {arrival.arrivalState.isArrived && arrival.arrivalState.poi && (
+        <ArrivalPrompt
+          poi={arrival.arrivalState.poi}
+          onDismiss={() => arrival.dismissArrival(false)}
+          onSnooze={() => arrival.dismissArrival(true)}
+          onComplete={() => arrival.markHandled()}
+        />
+      )}
+
+      {/* Arrival Detection Debug (shown alongside orientation debug) */}
+      <ArrivalDebugPanel
+        debug={arrival.debugInfo}
+        visible={showDebug}
       />
 
       {/* Rerouting indicator */}
