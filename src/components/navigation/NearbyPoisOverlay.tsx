@@ -1,6 +1,6 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { Fuel, Truck, ParkingCircle, ChevronRight, Navigation, Scale } from 'lucide-react';
+import { Navigation } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Sheet,
@@ -8,6 +8,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
+import { detectBrand, getInitial, getColorForInitial, type TruckBrand } from '@/lib/truckBrands';
 
 interface Poi {
   id: string;
@@ -41,29 +42,59 @@ const TRUCK_CATEGORIES = [
   '550-5510-0000',   // Rest area
 ];
 
-const CategoryIcon = React.forwardRef<SVGSVGElement, { category: Poi['category']; className?: string }>(
-  ({ category, className = "w-5 h-5" }, ref) => {
-    switch (category) {
-      case 'truck_stop':
-        return <Truck ref={ref} className={`${className} text-orange-400`} />;
-      case 'rest_area':
-        return <ParkingCircle ref={ref} className={`${className} text-blue-400`} />;
-      case 'truck_service':
-        return <Scale ref={ref} className={`${className} text-purple-400`} />;
-      case 'fuel':
-      default:
-        return <Fuel ref={ref} className={`${className} text-amber-400`} />;
+/**
+ * Brand Badge Component - shows brand initial with brand-specific colors
+ * Uses memoization to prevent re-renders
+ */
+const BrandBadge = React.memo<{ 
+  name: string; 
+  chainName: string | null;
+  className?: string;
+}>(({ name, chainName, className = '' }) => {
+  const displayInfo = useMemo(() => {
+    const brand = detectBrand(name, chainName);
+    
+    if (brand) {
+      return {
+        initial: brand.initial,
+        bgColor: brand.color,
+        textColor: brand.textColor,
+        brandName: brand.name,
+      };
     }
-  }
-);
-CategoryIcon.displayName = 'CategoryIcon';
+    
+    // Fallback: use first letter with generated color
+    const initial = getInitial(chainName || name);
+    const colors = getColorForInitial(initial);
+    
+    return {
+      initial,
+      bgColor: colors.bg,
+      textColor: colors.text,
+      brandName: null,
+    };
+  }, [name, chainName]);
 
-// Trucker Path style POI card with colored distance badge
-const PoiCard = React.forwardRef<HTMLButtonElement, { 
+  return (
+    <div 
+      className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-sm shrink-0 ${displayInfo.bgColor} ${displayInfo.textColor} ${className}`}
+      title={displayInfo.brandName || (chainName || name)}
+    >
+      {displayInfo.initial}
+    </div>
+  );
+});
+BrandBadge.displayName = 'BrandBadge';
+
+/**
+ * POI Card with brand badge and distance indicator
+ * Trucker Path style with colored distance badge
+ */
+const PoiCard = React.memo<{ 
   poi: Poi; 
   onClick: () => void;
   color: 'green' | 'teal' | 'orange' | 'red';
-}>(({ poi, onClick, color }, ref) => {
+}>(({ poi, onClick, color }) => {
   const distanceDisplay = poi.distanceMiles < 10 
     ? `${poi.distanceMiles.toFixed(0)}` 
     : `${Math.round(poi.distanceMiles)}`;
@@ -77,20 +108,20 @@ const PoiCard = React.forwardRef<HTMLButtonElement, {
 
   return (
     <button
-      ref={ref}
       onClick={onClick}
       className="flex items-center gap-2 text-left group"
     >
-      {/* Distance badge - Trucker Path style */}
-      <div className={`flex flex-col items-center justify-center min-w-[52px] px-2 py-1.5 rounded-lg ${colorClasses[color]}`}>
-        <div className="flex items-center gap-0.5">
-          <CategoryIcon category={poi.category} className="w-4 h-4" />
-          {poi.chainName?.toLowerCase().includes("love") && (
-            <span className="text-xs">❤️</span>
-          )}
+      {/* Brand badge + Distance - Combined card */}
+      <div className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg ${colorClasses[color]}`}>
+        <BrandBadge 
+          name={poi.name} 
+          chainName={poi.chainName}
+          className="w-7 h-7 text-xs"
+        />
+        <div className="flex flex-col items-center min-w-[28px]">
+          <span className="text-lg font-black leading-none">{distanceDisplay}</span>
+          <span className="text-[9px] font-semibold leading-none opacity-80">mi</span>
         </div>
-        <span className="text-lg font-black leading-none">{distanceDisplay}</span>
-        <span className="text-[10px] font-semibold leading-none">mi</span>
       </div>
     </button>
   );
@@ -214,9 +245,11 @@ const NearbyPoisOverlay: React.FC<NearbyPoisOverlayProps> = ({
             <>
               <SheetHeader>
                 <div className="flex items-start gap-3">
-                  <div className="w-12 h-12 rounded-xl bg-muted flex items-center justify-center shrink-0">
-                    <CategoryIcon category={selectedPoi.category} className="w-7 h-7" />
-                  </div>
+                  <BrandBadge 
+                    name={selectedPoi.name}
+                    chainName={selectedPoi.chainName}
+                    className="w-12 h-12 rounded-xl text-xl"
+                  />
                   <div className="flex-1 min-w-0">
                     <SheetTitle className="text-left truncate">
                       {selectedPoi.chainName || selectedPoi.name}

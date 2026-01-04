@@ -5,7 +5,9 @@ import { useWakeLock } from '@/hooks/useWakeLock';
 import { HereService, type RouteResponse, type GeocodeResult, DEFAULT_TRUCK_PROFILE, type TruckProfile } from '@/services/HereService';
 
 const NAVIGATION_STATE_KEY = 'activeNavigation';
-const OFF_ROUTE_THRESHOLD = 100; // meters - trigger reroute if user is this far from route
+const OFF_ROUTE_THRESHOLD = 80; // meters - trigger reroute if user is this far from route
+const OFF_ROUTE_CONSECUTIVE_THRESHOLD = 3; // Must be off-route this many consecutive checks
+const REROUTE_COOLDOWN_MS = 30000; // 30 seconds minimum between reroutes
 
 interface NavigationState {
   route: RouteResponse;
@@ -61,6 +63,7 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
 
   const watchIdRef = useRef<number | null>(null);
   const lastRerouteTime = useRef<number>(0);
+  const offRouteCountRef = useRef<number>(0); // Consecutive off-route detections
   const isNavigating = route !== null;
 
   // Use simulated position if simulating, otherwise real position
@@ -162,14 +165,17 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
     };
   }, [isNavigating, isSimulating]);
 
-  // Check if off route and trigger reroute
+  // Check if off route and trigger reroute (with debounce and cooldown)
   const checkAndReroute = useCallback(async (position: { lat: number; lng: number }) => {
     if (!destination || !route || routeCoords.length === 0) return;
     if (isRerouting) return;
     
-    // Don't reroute more than once every 10 seconds
+    // Don't reroute during cooldown period
     const now = Date.now();
-    if (now - lastRerouteTime.current < 10000) return;
+    if (now - lastRerouteTime.current < REROUTE_COOLDOWN_MS) {
+      // Still in cooldown, but update off-route visual state
+      return;
+    }
 
     // Find closest point on route
     let minDist = Infinity;
@@ -178,52 +184,62 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
       if (dist < minDist) minDist = dist;
     }
 
+    // Check if currently off route
     if (minDist > OFF_ROUTE_THRESHOLD) {
-      setIsOffRoute(true);
-      setIsRerouting(true);
-      lastRerouteTime.current = now;
+      // Increment consecutive counter
+      offRouteCountRef.current += 1;
+      
+      // Only trigger reroute after consecutive detections (debounce GPS jitter)
+      if (offRouteCountRef.current >= OFF_ROUTE_CONSECUTIVE_THRESHOLD) {
+        setIsOffRoute(true);
+        setIsRerouting(true);
+        lastRerouteTime.current = now;
+        offRouteCountRef.current = 0; // Reset counter
 
-      try {
-        console.log('Off route detected, rerouting...');
-        const newRoute = await HereService.calculateRoute({
-          originLat: position.lat,
-          originLng: position.lng,
-          destLat: destination.lat,
-          destLng: destination.lng,
-          transportMode: 'truck',
-          truckProfile,
-        });
+        try {
+          console.log(`Off route detected (${minDist.toFixed(0)}m from route), rerouting...`);
+          const newRoute = await HereService.calculateRoute({
+            originLat: position.lat,
+            originLng: position.lng,
+            destLat: destination.lat,
+            destLng: destination.lng,
+            transportMode: 'truck',
+            truckProfile,
+          });
 
-        setRoute(newRoute);
-        setRouteCoords(decodeHereFlexiblePolyline(newRoute.polyline));
-        
-        // Update origin to current position
-        const newOrigin: GeocodeResult = {
-          id: 'reroute-origin',
-          title: 'Current Location',
-          address: `${position.lat.toFixed(4)}, ${position.lng.toFixed(4)}`,
-          lat: position.lat,
-          lng: position.lng,
-        };
-        setOrigin(newOrigin);
+          setRoute(newRoute);
+          setRouteCoords(decodeHereFlexiblePolyline(newRoute.polyline));
+          
+          // Update origin to current position
+          const newOrigin: GeocodeResult = {
+            id: 'reroute-origin',
+            title: 'Current Location',
+            address: `${position.lat.toFixed(4)}, ${position.lng.toFixed(4)}`,
+            lat: position.lat,
+            lng: position.lng,
+          };
+          setOrigin(newOrigin);
 
-        // Save updated state
-        const state: NavigationState = {
-          route: newRoute,
-          origin: newOrigin,
-          destination,
-          startedAt: Date.now(),
-          truckProfile,
-        };
-        localStorage.setItem(NAVIGATION_STATE_KEY, JSON.stringify(state));
+          // Save updated state
+          const state: NavigationState = {
+            route: newRoute,
+            origin: newOrigin,
+            destination,
+            startedAt: Date.now(),
+            truckProfile,
+          };
+          localStorage.setItem(NAVIGATION_STATE_KEY, JSON.stringify(state));
 
-        setIsOffRoute(false);
-      } catch (error) {
-        console.error('Reroute failed:', error);
-      } finally {
-        setIsRerouting(false);
+          setIsOffRoute(false);
+        } catch (error) {
+          console.error('Reroute failed:', error);
+        } finally {
+          setIsRerouting(false);
+        }
       }
     } else {
+      // Back on route - reset counter and state
+      offRouteCountRef.current = 0;
       setIsOffRoute(false);
     }
   }, [destination, route, routeCoords, isRerouting, truckProfile]);

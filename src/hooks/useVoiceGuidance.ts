@@ -28,6 +28,8 @@ const DEFAULT_VOICE_SETTINGS: VoiceSettings = {
 const VOICE_STORAGE_KEY = 'voiceGuidanceSettings';
 const VOICE_UNLOCKED_KEY = 'voiceUnlocked';
 const DEBUG_LOG_MAX = 20;
+const REROUTE_COOLDOWN_MS = 25000; // 25 seconds cooldown between "recalculating" announcements
+const DUPLICATE_TEXT_COOLDOWN_MS = 10000; // 10 seconds before repeating same text
 
 // Check if running in dev mode
 const isDev = import.meta.env.DEV;
@@ -62,8 +64,10 @@ export function useVoiceGuidance() {
 
   const lastSpokenTextRef = useRef<string | null>(null);
   const lastSpokenTimeRef = useRef<number>(0);
+  const lastRerouteSpokenRef = useRef<number>(0); // Separate cooldown for reroute announcements
   const currentInstructionIndexRef = useRef<number>(-1);
   const speakQueueRef = useRef<string[]>([]);
+  const isReroutingStateRef = useRef<boolean>(false); // Track rerouting state to prevent spam
 
   // Debug logger
   const addDebugLog = useCallback((message: string) => {
@@ -192,11 +196,11 @@ export function useVoiceGuidance() {
       return;
     }
 
-    // Deduplicate: prevent repeating same text within 8 seconds (unless forced)
+    // Deduplicate: prevent repeating same text within cooldown (unless forced)
     const now = Date.now();
     const timeSinceLastSpeak = now - lastSpokenTimeRef.current;
     
-    if (!force && text === lastSpokenTextRef.current && timeSinceLastSpeak < 8000) {
+    if (!force && text === lastSpokenTextRef.current && timeSinceLastSpeak < DUPLICATE_TEXT_COOLDOWN_MS) {
       addDebugLog(`Speak blocked: duplicate text within ${Math.round(timeSinceLastSpeak/1000)}s`);
       return;
     }
@@ -282,12 +286,36 @@ export function useVoiceGuidance() {
     speak(text, true);
   }, [settings.language, speak]);
 
-  // Speak rerouting
+  // Speak rerouting (with dedicated cooldown to prevent spam)
   const speakRerouting = useCallback(() => {
+    const now = Date.now();
+    const timeSinceLastReroute = now - lastRerouteSpokenRef.current;
+    
+    // Check cooldown - don't spam "recalculating" announcements
+    if (timeSinceLastReroute < REROUTE_COOLDOWN_MS) {
+      console.log(`[TTS] Reroute announcement blocked: cooldown (${Math.round(timeSinceLastReroute/1000)}s since last)`);
+      return;
+    }
+    
+    // Check if we're already in rerouting state (prevent multiple calls during same reroute)
+    if (isReroutingStateRef.current) {
+      console.log('[TTS] Reroute announcement blocked: already in rerouting state');
+      return;
+    }
+    
+    isReroutingStateRef.current = true;
+    lastRerouteSpokenRef.current = now;
+    
     const text = settings.language.startsWith('pt')
       ? 'Recalculando rota.'
       : 'Rerouting.';
+    
     speak(text, true);
+    
+    // Reset rerouting state after a delay
+    setTimeout(() => {
+      isReroutingStateRef.current = false;
+    }, 5000);
   }, [settings.language, speak]);
 
   // Repeat last instruction
