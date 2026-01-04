@@ -1,13 +1,36 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { decodeHereFlexiblePolyline, type LngLat } from '@/lib/hereFlexiblePolyline';
-import { calculateNavigationProgress, haversineDistance, type NavigationProgress } from '@/lib/navigationUtils';
+import {
+  calculateNavigationProgress,
+  haversineDistance,
+  matchPositionToRoute,
+  type NavigationProgress,
+  type RouteMatchResult,
+} from '@/lib/navigationUtils';
 import { useWakeLock } from '@/hooks/useWakeLock';
 import { HereService, type RouteResponse, type GeocodeResult, DEFAULT_TRUCK_PROFILE, type TruckProfile } from '@/services/HereService';
 
 const NAVIGATION_STATE_KEY = 'activeNavigation';
-const OFF_ROUTE_THRESHOLD = 50; // meters - trigger reroute if user is this far from route
-const OFF_ROUTE_CONSECUTIVE_THRESHOLD = 5; // Must be off-route for ~5 seconds (with 1s updates)
-const OFF_ROUTE_PERSIST_TIME_MS = 4000; // Must stay off-route for this duration
+
+// Off-route detection thresholds (meters) with hysteresis to prevent ping-pong.
+const OFF_ROUTE_THRESHOLD_M = 55;
+const ON_ROUTE_THRESHOLD_M = 35;
+
+// Confirmation requirements
+const OFF_ROUTE_CONSECUTIVE_THRESHOLD = 3; // readings
+const OFF_ROUTE_PERSIST_TIME_MS = 4000; // must stay off-route for this duration
+
+// If GPS accuracy is very poor, don't trust off-route detection.
+const MAX_ACCURACY_FOR_OFF_ROUTE_M = 120;
+
+// Search window for route matching (segments around last match)
+const ROUTE_MATCH_WINDOW = 90;
+
+// Soft snap strength (0..1). Higher = stronger pull toward route.
+const SNAP_MAX_BLEND = 0.6;
+const SNAP_MAX_DISTANCE_M = 80;
+
+// NOTE: REROUTE_COOLDOWN_MS remains conservative to avoid loops.
 const REROUTE_COOLDOWN_MS = 45000; // 45 seconds minimum between reroutes
 
 interface NavigationState {
@@ -168,109 +191,169 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
     };
   }, [isNavigating, isSimulating]);
 
-  // Check if off route and trigger reroute (with time-based debounce and cooldown)
-  const checkAndReroute = useCallback(async (position: { lat: number; lng: number }) => {
-    if (!destination || !route || routeCoords.length === 0) return;
-    
-    // Prevent concurrent reroutes
-    if (isReroutingRef.current || isRerouting) return;
-    
-    const now = Date.now();
-    
-    // Don't even check during cooldown period
-    if (now - lastRerouteTime.current < REROUTE_COOLDOWN_MS) {
-      return;
-    }
+  // Route matching + off-route detection + reroute (robust, with hysteresis)
+  const lastMatchRef = useRef<RouteMatchResult | null>(null);
+  const onRouteCountRef = useRef<number>(0);
+  const lastClosestSegRef = useRef<number | null>(null);
+  const lastDebugLogRef = useRef<number>(0);
 
-    // Find closest point on route (sample every 3rd point for performance)
-    let minDist = Infinity;
-    for (let i = 0; i < routeCoords.length; i += 3) {
-      const [lng, lat] = routeCoords[i];
-      const dist = haversineDistance(position.lat, position.lng, lat, lng);
-      if (dist < minDist) minDist = dist;
-    }
+  const checkAndReroute = useCallback(
+    async (
+      rawPosition: { lat: number; lng: number; accuracy: number | null },
+      match: RouteMatchResult,
+      isProgressingAlongRoute: boolean
+    ) => {
+      if (!destination || !route || routeCoords.length < 2) return;
 
-    // Check if currently off route
-    if (minDist > OFF_ROUTE_THRESHOLD) {
-      // Start or continue off-route timer
-      if (offRouteStartTimeRef.current === null) {
-        offRouteStartTimeRef.current = now;
-        offRouteCountRef.current = 1;
-      } else {
-        offRouteCountRef.current += 1;
+      // Prevent concurrent reroutes
+      if (isReroutingRef.current || isRerouting) return;
+
+      const now = Date.now();
+
+      // Don't even consider rerouting during cooldown period
+      if (now - lastRerouteTime.current < REROUTE_COOLDOWN_MS) {
+        return;
       }
-      
-      const offRouteDuration = now - offRouteStartTimeRef.current;
-      
-      // Only trigger reroute after sustained off-route (time-based + count-based)
-      if (offRouteDuration >= OFF_ROUTE_PERSIST_TIME_MS && 
-          offRouteCountRef.current >= OFF_ROUTE_CONSECUTIVE_THRESHOLD) {
-        
-        // Lock to prevent concurrent calls
-        isReroutingRef.current = true;
-        setIsOffRoute(true);
-        setIsRerouting(true);
-        lastRerouteTime.current = now;
-        offRouteCountRef.current = 0;
-        offRouteStartTimeRef.current = null;
 
-        try {
-          console.log(`Off route confirmed (${minDist.toFixed(0)}m, ${offRouteDuration}ms), rerouting...`);
-          const newRoute = await HereService.calculateRoute({
-            originLat: position.lat,
-            originLng: position.lng,
-            destLat: destination.lat,
-            destLng: destination.lng,
-            transportMode: 'truck',
-            truckProfile,
-          });
+      const accuracy = rawPosition.accuracy;
+      const accuracyTooPoor = typeof accuracy === 'number' && accuracy > MAX_ACCURACY_FOR_OFF_ROUTE_M;
 
-          setRoute(newRoute);
-          setRouteCoords(decodeHereFlexiblePolyline(newRoute.polyline));
-          
-          // Update origin to current position
-          const newOrigin: GeocodeResult = {
-            id: 'reroute-origin',
-            title: 'Current Location',
-            address: `${position.lat.toFixed(4)}, ${position.lng.toFixed(4)}`,
-            lat: position.lat,
-            lng: position.lng,
-          };
-          setOrigin(newOrigin);
+      // Dynamic thresholds based on reported accuracy (when available)
+      const offThreshold = Math.max(
+        OFF_ROUTE_THRESHOLD_M,
+        typeof accuracy === 'number' ? accuracy * 1.5 : OFF_ROUTE_THRESHOLD_M
+      );
+      const onThreshold = Math.max(
+        ON_ROUTE_THRESHOLD_M,
+        typeof accuracy === 'number' ? accuracy * 1.0 : ON_ROUTE_THRESHOLD_M
+      );
 
-          // Save updated state
-          const state: NavigationState = {
-            route: newRoute,
-            origin: newOrigin,
-            destination,
-            startedAt: Date.now(),
-            truckProfile,
-          };
-          localStorage.setItem(NAVIGATION_STATE_KEY, JSON.stringify(state));
+      const distToRoute = match.distanceToRouteM;
 
-          setIsOffRoute(false);
-        } catch (error) {
-          console.error('Reroute failed:', error);
-        } finally {
-          setIsRerouting(false);
-          isReroutingRef.current = false;
+      // --- Diagnostics (throttled) ---
+      if (now - lastDebugLogRef.current > 2000) {
+        lastDebugLogRef.current = now;
+        console.log('[NAV_DIAG]', {
+          raw: { lat: rawPosition.lat, lng: rawPosition.lng, acc: rawPosition.accuracy },
+          matched: { lat: match.matchedLat, lng: match.matchedLng },
+          distToRouteM: Math.round(distToRoute),
+          thresholds: { off: Math.round(offThreshold), on: Math.round(onThreshold) },
+          isOffRoute,
+          offRouteCount: offRouteCountRef.current,
+          onRouteCount: onRouteCountRef.current,
+          progressing: isProgressingAlongRoute,
+          closestSeg: match.closestSegmentIndex,
+        });
+      }
+
+      // If GPS accuracy is too poor, avoid toggling off-route; keep state stable.
+      if (accuracyTooPoor) {
+        return;
+      }
+
+      // Sanity check: if we're steadily progressing along the route, do not mark off-route
+      // unless deviation is very large.
+      const progressingGuard = isProgressingAlongRoute && distToRoute < offThreshold * 1.8;
+
+      const isClearlyOff = distToRoute > offThreshold;
+      const isClearlyOn = distToRoute < onThreshold;
+
+      if (!progressingGuard && isClearlyOff) {
+        // Start or continue off-route timer
+        if (offRouteStartTimeRef.current === null) {
+          offRouteStartTimeRef.current = now;
+          offRouteCountRef.current = 1;
+          onRouteCountRef.current = 0;
+        } else {
+          offRouteCountRef.current += 1;
+          onRouteCountRef.current = 0;
         }
-      } else {
+
+        const offRouteDuration = now - offRouteStartTimeRef.current;
+
         // Visually show off-route but don't reroute yet
         setIsOffRoute(true);
+
+        // Confirmed off-route (time + count)
+        if (
+          offRouteDuration >= OFF_ROUTE_PERSIST_TIME_MS &&
+          offRouteCountRef.current >= OFF_ROUTE_CONSECUTIVE_THRESHOLD
+        ) {
+          // Lock to prevent concurrent calls
+          isReroutingRef.current = true;
+          setIsRerouting(true);
+          lastRerouteTime.current = now;
+          offRouteCountRef.current = 0;
+          onRouteCountRef.current = 0;
+          offRouteStartTimeRef.current = null;
+
+          try {
+            console.log('[NAV_DIAG] reroute_requested', {
+              distToRouteM: Math.round(distToRoute),
+              accuracy,
+              closestSeg: match.closestSegmentIndex,
+            });
+
+            const newRoute = await HereService.calculateRoute({
+              originLat: rawPosition.lat,
+              originLng: rawPosition.lng,
+              destLat: destination.lat,
+              destLng: destination.lng,
+              transportMode: 'truck',
+              truckProfile,
+            });
+
+            setRoute(newRoute);
+            setRouteCoords(decodeHereFlexiblePolyline(newRoute.polyline));
+
+            // Update origin to current position
+            const newOrigin: GeocodeResult = {
+              id: 'reroute-origin',
+              title: 'Current Location',
+              address: `${rawPosition.lat.toFixed(4)}, ${rawPosition.lng.toFixed(4)}`,
+              lat: rawPosition.lat,
+              lng: rawPosition.lng,
+            };
+            setOrigin(newOrigin);
+
+            // Save updated state
+            const state: NavigationState = {
+              route: newRoute,
+              origin: newOrigin,
+              destination,
+              startedAt: Date.now(),
+              truckProfile,
+            };
+            localStorage.setItem(NAVIGATION_STATE_KEY, JSON.stringify(state));
+
+            setIsOffRoute(false);
+          } catch (error) {
+            console.error('Reroute failed:', error);
+          } finally {
+            setIsRerouting(false);
+            isReroutingRef.current = false;
+          }
+        }
+      } else if (isClearlyOn || progressingGuard) {
+        // Back on route - require a couple confirmations (hysteresis)
+        offRouteCountRef.current = 0;
+        offRouteStartTimeRef.current = null;
+        onRouteCountRef.current += 1;
+
+        if (onRouteCountRef.current >= 2) {
+          setIsOffRoute(false);
+        }
       }
-    } else {
-      // Back on route - reset everything
-      offRouteCountRef.current = 0;
-      offRouteStartTimeRef.current = null;
-      setIsOffRoute(false);
-    }
-  }, [destination, route, routeCoords, isRerouting, truckProfile]);
+    },
+    [destination, route, routeCoords, isRerouting, truckProfile, isOffRoute]
+  );
 
   // Update progress when position changes (throttled)
   const lastProgressUpdate = useRef<number>(0);
+  const filteredPosRef = useRef<{ lat: number; lng: number; time: number } | null>(null);
+
   useEffect(() => {
-    if (!effectivePosition || !route || routeCoords.length === 0) {
+    if (!effectivePosition || !route || routeCoords.length < 2) {
       setProgress(null);
       return;
     }
@@ -280,9 +363,63 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
     if (now - lastProgressUpdate.current < 1000) return;
     lastProgressUpdate.current = now;
 
+    // --- Position smoothing (EMA) + outlier rejection (anti-jitter) ---
+    const raw = effectivePosition;
+    const prev = filteredPosRef.current;
+
+    let filteredLat = raw.lat;
+    let filteredLng = raw.lng;
+
+    if (prev) {
+      const dt = Math.max(0.001, (now - prev.time) / 1000);
+      const jumpM = haversineDistance(prev.lat, prev.lng, raw.lat, raw.lng);
+
+      // Reject impossible jumps (helps iOS GPS spikes)
+      const maxReasonableSpeed = 60; // m/s (~216 km/h)
+      const impliedSpeed = jumpM / dt;
+      const accuracy = raw.accuracy ?? null;
+
+      if (impliedSpeed <= maxReasonableSpeed || (accuracy !== null && accuracy > 80)) {
+        const alpha = accuracy !== null && accuracy > 30 ? 0.18 : 0.35;
+        filteredLat = prev.lat + (raw.lat - prev.lat) * alpha;
+        filteredLng = prev.lng + (raw.lng - prev.lng) * alpha;
+      } else {
+        // Keep previous filtered (ignore spike)
+        filteredLat = prev.lat;
+        filteredLng = prev.lng;
+      }
+    }
+
+    filteredPosRef.current = { lat: filteredLat, lng: filteredLng, time: now };
+
+    // --- Map-matching (soft snap) ---
+    const baseMatch = matchPositionToRoute(filteredLng, filteredLat, routeCoords, {
+      searchFromIndex: lastMatchRef.current?.closestSegmentIndex,
+      searchWindow: ROUTE_MATCH_WINDOW,
+      step: 2,
+    });
+
+    // Blend toward route to avoid hard snapping
+    const blend = Math.min(
+      SNAP_MAX_BLEND,
+      Math.max(0, (SNAP_MAX_DISTANCE_M - baseMatch.distanceToRouteM) / SNAP_MAX_DISTANCE_M) * SNAP_MAX_BLEND
+    );
+
+    const matchedLat = filteredLat + (baseMatch.matchedLat - filteredLat) * blend;
+    const matchedLng = filteredLng + (baseMatch.matchedLng - filteredLng) * blend;
+
+    const match: RouteMatchResult = {
+      ...baseMatch,
+      matchedLat,
+      matchedLng,
+    };
+
+    lastMatchRef.current = match;
+
+    // Progress is computed against matched coordinates (more stable)
     const newProgress = calculateNavigationProgress(
-      effectivePosition.lng,
-      effectivePosition.lat,
+      match.matchedLng,
+      match.matchedLat,
       routeCoords,
       route.instructions,
       route.distance,
@@ -291,9 +428,18 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
 
     setProgress(newProgress);
 
+    // Progress sanity check: closest segment index should generally increase as you move.
+    const lastSeg = lastClosestSegRef.current;
+    const isProgressing = lastSeg === null ? true : match.closestSegmentIndex >= lastSeg - 2;
+    lastClosestSegRef.current = match.closestSegmentIndex;
+
     // Check if off route (only for real navigation, not simulation)
     if (!isSimulating) {
-      checkAndReroute(effectivePosition);
+      checkAndReroute(
+        { lat: raw.lat, lng: raw.lng, accuracy: raw.accuracy ?? null },
+        match,
+        isProgressing
+      );
     }
   }, [effectivePosition, route, routeCoords, isSimulating, checkAndReroute]);
 
