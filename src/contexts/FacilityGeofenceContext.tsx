@@ -5,6 +5,7 @@ import { useToast } from '@/hooks/use-toast';
 import type { Facility, FacilityAggregate } from '@/types/collaborative';
 import FacilityRatingPrompt from '@/components/facility/FacilityRatingPrompt';
 import FacilityIdentifyModal from '@/components/facility/FacilityIdentifyModal';
+import { useActiveNavigation } from '@/contexts/ActiveNavigationContext';
 
 interface FacilityGeofenceContextType {
   nearbyFacilities: Facility[];
@@ -28,7 +29,14 @@ interface FacilityGeofenceProviderProps {
 }
 
 export const FacilityGeofenceProvider = ({ children }: FacilityGeofenceProviderProps) => {
-  const { latitude, longitude } = useGeolocation({ watchPosition: true });
+  // Use active navigation position if navigating, otherwise fallback to geolocation
+  const { userPosition: navPosition, isNavigating } = useActiveNavigation();
+  const { latitude: geoLat, longitude: geoLng } = useGeolocation({ watchPosition: true });
+  
+  // Prefer navigation position when navigating (works with simulation too)
+  const latitude = isNavigating && navPosition ? navPosition.lat : geoLat;
+  const longitude = isNavigating && navPosition ? navPosition.lng : geoLng;
+  
   const { toast } = useToast();
   
   const [nearbyFacilities, setNearbyFacilities] = useState<Facility[]>([]);

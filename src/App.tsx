@@ -36,9 +36,9 @@ const App = () => (
         <Toaster />
         <Sonner />
         <BrowserRouter>
-          <GeofenceProvider>
-            <FacilityGeofenceProvider>
-              <ActiveNavigationProvider>
+          <ActiveNavigationProvider>
+            <GeofenceProvider>
+              <FacilityGeofenceProvider>
                 <Routes>
                   <Route path="/" element={<WelcomeScreen onComplete={() => {}} />} />
                   <Route path="/auth" element={<AuthScreen onComplete={() => {}} onBack={() => {}} />} />
@@ -60,9 +60,9 @@ const App = () => (
                   <Route path="/food-preferences" element={<FoodPreferencesScreen />} />
                   <Route path="*" element={<NotFound />} />
                 </Routes>
-              </ActiveNavigationProvider>
-            </FacilityGeofenceProvider>
-          </GeofenceProvider>
+              </FacilityGeofenceProvider>
+            </GeofenceProvider>
+          </ActiveNavigationProvider>
         </BrowserRouter>
       </TooltipProvider>
     </LanguageProvider>
