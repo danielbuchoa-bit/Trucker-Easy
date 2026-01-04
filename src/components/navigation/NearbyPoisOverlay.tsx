@@ -41,29 +41,29 @@ const TRUCK_CATEGORIES = [
   '550-5510-0000',   // Rest area
 ];
 
-const CategoryIcon: React.FC<{ category: Poi['category']; className?: string }> = ({ 
-  category, 
-  className = "w-5 h-5" 
-}) => {
-  switch (category) {
-    case 'truck_stop':
-      return <Truck className={`${className} text-orange-400`} />;
-    case 'rest_area':
-      return <ParkingCircle className={`${className} text-blue-400`} />;
-    case 'truck_service':
-      return <Scale className={`${className} text-purple-400`} />;
-    case 'fuel':
-    default:
-      return <Fuel className={`${className} text-amber-400`} />;
+const CategoryIcon = React.forwardRef<SVGSVGElement, { category: Poi['category']; className?: string }>(
+  ({ category, className = "w-5 h-5" }, ref) => {
+    switch (category) {
+      case 'truck_stop':
+        return <Truck ref={ref} className={`${className} text-orange-400`} />;
+      case 'rest_area':
+        return <ParkingCircle ref={ref} className={`${className} text-blue-400`} />;
+      case 'truck_service':
+        return <Scale ref={ref} className={`${className} text-purple-400`} />;
+      case 'fuel':
+      default:
+        return <Fuel ref={ref} className={`${className} text-amber-400`} />;
+    }
   }
-};
+);
+CategoryIcon.displayName = 'CategoryIcon';
 
 // Trucker Path style POI card with colored distance badge
-const PoiCard: React.FC<{ 
+const PoiCard = React.forwardRef<HTMLButtonElement, { 
   poi: Poi; 
   onClick: () => void;
   color: 'green' | 'teal' | 'orange' | 'red';
-}> = ({ poi, onClick, color }) => {
+}>(({ poi, onClick, color }, ref) => {
   const distanceDisplay = poi.distanceMiles < 10 
     ? `${poi.distanceMiles.toFixed(0)}` 
     : `${Math.round(poi.distanceMiles)}`;
@@ -77,6 +77,7 @@ const PoiCard: React.FC<{
 
   return (
     <button
+      ref={ref}
       onClick={onClick}
       className="flex items-center gap-2 text-left group"
     >
@@ -93,7 +94,8 @@ const PoiCard: React.FC<{
       </div>
     </button>
   );
-};
+});
+PoiCard.displayName = 'PoiCard';
 
 const NearbyPoisOverlay: React.FC<NearbyPoisOverlayProps> = ({ 
   lat, 
