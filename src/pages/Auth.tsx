@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useLanguage } from '@/i18n/LanguageContext';
 import { Mail, Lock, Eye, EyeOff, ArrowLeft } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 interface AuthScreenProps {
   onComplete: () => void;
@@ -9,6 +10,7 @@ interface AuthScreenProps {
 
 const AuthScreen = ({ onComplete, onBack }: AuthScreenProps) => {
   const { t } = useLanguage();
+  const navigate = useNavigate();
   const [isLogin, setIsLogin] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState('');
@@ -18,6 +20,12 @@ const AuthScreen = ({ onComplete, onBack }: AuthScreenProps) => {
     e.preventDefault();
     // TODO: Integrate with Supabase auth
     onComplete();
+    navigate('/onboarding');
+  };
+
+  const handleBack = () => {
+    onBack();
+    navigate('/');
   };
 
   return (
@@ -25,7 +33,7 @@ const AuthScreen = ({ onComplete, onBack }: AuthScreenProps) => {
       {/* Header */}
       <div className="p-4 safe-top">
         <button
-          onClick={onBack}
+          onClick={handleBack}
           className="w-12 h-12 flex items-center justify-center rounded-full bg-card hover:bg-secondary transition-colors"
         >
           <ArrowLeft className="w-6 h-6" />
@@ -111,3 +119,4 @@ const AuthScreen = ({ onComplete, onBack }: AuthScreenProps) => {
 };
 
 export default AuthScreen;
+

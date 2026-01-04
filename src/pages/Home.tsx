@@ -1,12 +1,22 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useLanguage } from '@/i18n/LanguageContext';
 import { Search, Filter, MapPin, Navigation } from 'lucide-react';
 import BottomNav from '@/components/navigation/BottomNav';
+import { useNavigate } from 'react-router-dom';
 
 const HomeScreen = () => {
   const { t } = useLanguage();
-  const [activeTab, setActiveTab] = useState('map');
+  const navigate = useNavigate();
+  const [activeFilter, setActiveFilter] = useState('nearMe');
   const [searchQuery, setSearchQuery] = useState('');
+
+  const filters = [
+    { id: 'nearMe', label: t.map.nearMe, icon: Navigation },
+    { id: 'truckStops', label: t.map.truckStops },
+    { id: 'weighStations', label: t.map.weighStations },
+    { id: 'restaurants', label: t.map.restaurants },
+    { id: 'restAreas', label: t.map.restAreas },
+  ];
 
   // Mock nearby places
   const mockPlaces = [
@@ -37,14 +47,45 @@ const HomeScreen = () => {
     },
     {
       id: '4',
-      name: 'Love\'s Travel Stop',
+      name: "Love's Travel Stop",
       type: 'truckStop',
       distance: '5.0 mi',
       parking: 'full',
       rating: 4.5,
       isOpen: true,
     },
+    {
+      id: '5',
+      name: 'Diner 24/7',
+      type: 'restaurant',
+      distance: '0.9 mi',
+      rating: 4.1,
+      isOpen: true,
+    },
+    {
+      id: '6',
+      name: 'Roadside Rest Area',
+      type: 'restArea',
+      distance: '7.8 mi',
+      parking: 'available',
+      isOpen: true,
+    },
   ];
+
+  const filteredPlaces = useMemo(() => {
+    const byType = mockPlaces.filter((place) => {
+      if (activeFilter === 'nearMe') return true;
+      if (activeFilter === 'truckStops') return place.type === 'truckStop';
+      if (activeFilter === 'weighStations') return place.type === 'weighStation';
+      if (activeFilter === 'restaurants') return place.type === 'restaurant';
+      if (activeFilter === 'restAreas') return place.type === 'restArea';
+      return true;
+    });
+
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return byType;
+    return byType.filter((p) => p.name.toLowerCase().includes(q));
+  }, [activeFilter, mockPlaces, searchQuery]);
 
   const getParkingColor = (status: string) => {
     switch (status) {
@@ -94,17 +135,12 @@ const HomeScreen = () => {
 
           {/* Filter Pills */}
           <div className="flex gap-2 overflow-x-auto hide-scrollbar pb-1">
-            {[
-              { id: 'nearMe', label: t.map.nearMe, icon: Navigation },
-              { id: 'truckStops', label: t.map.truckStops },
-              { id: 'weighStations', label: t.map.weighStations },
-              { id: 'restaurants', label: t.map.restaurants },
-              { id: 'restAreas', label: t.map.restAreas },
-            ].map((filter, index) => (
+            {filters.map((filter) => (
               <button
                 key={filter.id}
+                onClick={() => setActiveFilter(filter.id)}
                 className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all ${
-                  index === 0
+                  activeFilter === filter.id
                     ? 'bg-primary text-primary-foreground'
                     : 'bg-card border border-border text-foreground hover:border-primary/50'
                 }`}
@@ -121,12 +157,8 @@ const HomeScreen = () => {
       <div className="relative h-[40vh] bg-secondary/30 flex items-center justify-center border-b border-border">
         <div className="text-center">
           <MapPin className="w-12 h-12 text-primary mx-auto mb-2" />
-          <p className="text-muted-foreground text-sm">
-            {t.common.loading}
-          </p>
-          <p className="text-xs text-muted-foreground mt-1">
-            Map integration coming soon
-          </p>
+          <p className="text-muted-foreground text-sm">{t.common.loading}</p>
+          <p className="text-xs text-muted-foreground mt-1">Map integration coming soon</p>
         </div>
 
         {/* Floating Current Location Button */}
@@ -138,55 +170,66 @@ const HomeScreen = () => {
       {/* Nearby Places List */}
       <div className="p-4">
         <h2 className="text-lg font-semibold mb-3">{t.map.nearMe}</h2>
-        <div className="space-y-3">
-          {mockPlaces.map((place) => (
-            <button
-              key={place.id}
-              className="w-full flex items-center gap-4 p-4 bg-card rounded-xl border border-border hover:border-primary/50 transition-all text-left"
-            >
-              <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
-                <MapPin className="w-6 h-6 text-primary" />
-              </div>
 
-              <div className="flex-1 min-w-0">
-                <h3 className="font-semibold text-foreground truncate">{place.name}</h3>
-                <div className="flex items-center gap-2 mt-1">
-                  <span className="text-sm text-muted-foreground">{place.distance}</span>
-                  {place.parking && (
-                    <>
-                      <span className="text-muted-foreground">•</span>
-                      <div className="flex items-center gap-1.5">
-                        <div className={`w-2 h-2 rounded-full ${getParkingColor(place.parking)}`} />
-                        <span className="text-sm text-muted-foreground">
-                          {getParkingLabel(place.parking)}
+        {filteredPlaces.length === 0 ? (
+          <div className="bg-card border border-border rounded-xl p-4">
+            <p className="text-sm text-muted-foreground">Nenhum resultado para este filtro.</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {filteredPlaces.map((place) => (
+              <button
+                key={place.id}
+                onClick={() => navigate(`/place/${place.id}`)}
+                className="w-full flex items-center gap-4 p-4 bg-card rounded-xl border border-border hover:border-primary/50 transition-all text-left"
+              >
+                <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                  <MapPin className="w-6 h-6 text-primary" />
+                </div>
+
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-semibold text-foreground truncate">{place.name}</h3>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="text-sm text-muted-foreground">{place.distance}</span>
+                    {place.parking && (
+                      <>
+                        <span className="text-muted-foreground">•</span>
+                        <div className="flex items-center gap-1.5">
+                          <div className={`w-2 h-2 rounded-full ${getParkingColor(place.parking)}`} />
+                          <span className="text-sm text-muted-foreground">{getParkingLabel(place.parking)}</span>
+                        </div>
+                      </>
+                    )}
+                    {place.status && (
+                      <>
+                        <span className="text-muted-foreground">•</span>
+                        <span
+                          className={`text-sm ${place.status === 'open' ? 'text-status-open' : 'text-status-closed'}`}
+                        >
+                          {place.status === 'open' ? t.place.weighOpen : t.place.weighClosed}
                         </span>
-                      </div>
-                    </>
-                  )}
-                  {place.status && (
-                    <>
-                      <span className="text-muted-foreground">•</span>
-                      <span className={`text-sm ${place.status === 'open' ? 'text-status-open' : 'text-status-closed'}`}>
-                        {place.status === 'open' ? t.place.weighOpen : t.place.weighClosed}
-                      </span>
-                    </>
-                  )}
+                      </>
+                    )}
+                  </div>
                 </div>
-              </div>
 
-              {place.rating && (
-                <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                  <span className="text-primary">★</span>
-                  <span>{place.rating}</span>
-                </div>
-              )}
-            </button>
-          ))}
-        </div>
+                {place.rating && (
+                  <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                    <span className="text-primary">★</span>
+                    <span>{place.rating}</span>
+                  </div>
+                )}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Bottom Navigation */}
-      <BottomNav activeTab={activeTab} onTabChange={setActiveTab} />
+      <BottomNav
+        activeTab="map"
+        onTabChange={(tab) => navigate(`/${tab === 'map' ? 'home' : tab}`)}
+      />
     </div>
   );
 };

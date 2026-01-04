@@ -1,6 +1,7 @@
 import { useLanguage, languageOptions } from '@/i18n/LanguageContext';
 import { Language } from '@/i18n/translations';
 import { Truck } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 interface WelcomeScreenProps {
   onComplete: () => void;
@@ -8,6 +9,12 @@ interface WelcomeScreenProps {
 
 const WelcomeScreen = ({ onComplete }: WelcomeScreenProps) => {
   const { t, language, setLanguage } = useLanguage();
+  const navigate = useNavigate();
+
+  const handleGetStarted = () => {
+    onComplete();
+    navigate('/auth');
+  };
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-background">
@@ -54,7 +61,7 @@ const WelcomeScreen = ({ onComplete }: WelcomeScreenProps) => {
 
       {/* Get Started Button */}
       <button
-        onClick={onComplete}
+        onClick={handleGetStarted}
         className="w-full max-w-sm py-4 px-6 bg-primary text-primary-foreground rounded-xl font-semibold text-lg transition-all duration-200 hover:opacity-90 active:scale-[0.98] glow-primary"
       >
         {t.welcome.getStarted}
@@ -64,3 +71,4 @@ const WelcomeScreen = ({ onComplete }: WelcomeScreenProps) => {
 };
 
 export default WelcomeScreen;
+
