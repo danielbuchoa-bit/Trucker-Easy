@@ -3,8 +3,12 @@ import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { supabase } from '@/integrations/supabase/client';
 import { useActiveNavigation } from '@/contexts/ActiveNavigationContext';
+import { useVoiceGuidance } from '@/hooks/useVoiceGuidance';
+import { useRouteSimulation } from '@/hooks/useRouteSimulation';
 import NavigationHUD from './NavigationHUD';
-import { MapPin, Navigation as NavIcon } from 'lucide-react';
+import VoiceControls from './VoiceControls';
+import SimulationControls from './SimulationControls';
+import { MapPin, Navigation as NavIcon, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useLanguage } from '@/i18n/LanguageContext';
 
@@ -18,7 +22,14 @@ const ActiveNavigationView = () => {
     progress,
     endNavigation,
     positionError,
+    isRerouting,
+    isOffRoute,
+    isSimulating,
+    setSimulatedPosition,
+    setIsSimulating,
   } = useActiveNavigation();
+
+  const voice = useVoiceGuidance();
 
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
@@ -29,34 +40,64 @@ const ActiveNavigationView = () => {
   const [error, setError] = useState<string | null>(null);
   const [followUser, setFollowUser] = useState(true);
   const mapInitialized = useRef(false);
-  const lastSpokenInstruction = useRef<string | null>(null);
+  const lastVoiceInstructionIndex = useRef<number>(-1);
 
-  // Text-to-Speech for instructions
-  const speakInstruction = useCallback((text: string) => {
-    if (!text || text === lastSpokenInstruction.current) return;
-    
-    // Cancel any ongoing speech
-    window.speechSynthesis.cancel();
-    
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = 'pt-BR';
-    utterance.rate = 0.9;
-    utterance.pitch = 1;
-    
-    window.speechSynthesis.speak(utterance);
-    lastSpokenInstruction.current = text;
-  }, []);
+  // Simulation hook
+  const simulation = useRouteSimulation(routeCoords, (pos) => {
+    setSimulatedPosition(pos);
+  });
 
-  // Speak current instruction when it changes
+  // Handle simulation start/stop
+  const handleStartSimulation = useCallback(() => {
+    setIsSimulating(true);
+    simulation.startSimulation();
+  }, [setIsSimulating, simulation]);
+
+  const handleStopSimulation = useCallback(() => {
+    setIsSimulating(false);
+    simulation.stopSimulation();
+    setSimulatedPosition(null);
+  }, [setIsSimulating, simulation, setSimulatedPosition]);
+
+  // Current instruction
   const currentInstruction = useMemo(() => {
     return route && progress ? route.instructions[progress.currentInstructionIndex] : null;
   }, [route, progress?.currentInstructionIndex]);
 
+  // Voice guidance for instructions
   useEffect(() => {
-    if (currentInstruction?.instruction) {
-      speakInstruction(currentInstruction.instruction);
+    if (!currentInstruction || !progress || !voice.settings.enabled) return;
+    
+    // Speak instruction at key distances
+    const dist = progress.distanceToNextManeuver;
+    const idx = progress.currentInstructionIndex;
+
+    // Speak when instruction changes or at approach distances
+    if (idx !== lastVoiceInstructionIndex.current) {
+      lastVoiceInstructionIndex.current = idx;
+      voice.speakInstruction(currentInstruction, dist, idx);
+    } else if (dist < 150 && dist > 100) {
+      // Approaching (~500ft)
+      voice.speakInstruction(currentInstruction, dist, idx);
+    } else if (dist < 50) {
+      // Imminent (~150ft)
+      voice.speakInstruction(currentInstruction, dist, idx);
     }
-  }, [currentInstruction?.instruction, speakInstruction]);
+  }, [currentInstruction, progress, voice]);
+
+  // Voice for rerouting
+  useEffect(() => {
+    if (isRerouting && voice.settings.enabled) {
+      voice.speakRerouting();
+    }
+  }, [isRerouting, voice]);
+
+  // Voice for arrival
+  useEffect(() => {
+    if (progress?.arrived && voice.settings.enabled) {
+      voice.speakArrival();
+    }
+  }, [progress?.arrived, voice]);
 
   // Initialize map only once
   const initializeMap = useCallback(async () => {
@@ -134,16 +175,16 @@ const ActiveNavigationView = () => {
     initializeMap();
 
     return () => {
-      window.speechSynthesis.cancel();
+      voice.stop();
       userMarker.current?.remove();
       destMarker.current?.remove();
       map.current?.remove();
       map.current = null;
       mapInitialized.current = false;
     };
-  }, [initializeMap]);
+  }, [initializeMap, voice]);
 
-  // Update route source if routeCoords change after initial load
+  // Update route source if routeCoords change (e.g., after reroute)
   useEffect(() => {
     if (!map.current || !mapReady || routeCoords.length === 0) return;
 
@@ -161,7 +202,7 @@ const ActiveNavigationView = () => {
     }
   }, [routeCoords, mapReady]);
 
-  // Update user marker & camera (throttled)
+  // Update user marker & camera
   useEffect(() => {
     if (!map.current || !mapReady || !userPosition) return;
 
@@ -197,13 +238,6 @@ const ActiveNavigationView = () => {
     }
   }, [destination, mapReady]);
 
-  // Speak arrival
-  useEffect(() => {
-    if (progress?.arrived) {
-      speakInstruction(t.navigation?.arrived || 'Você chegou ao seu destino!');
-    }
-  }, [progress?.arrived, speakInstruction, t.navigation?.arrived]);
-
   if (error) {
     return (
       <div className="h-screen flex items-center justify-center bg-background">
@@ -223,6 +257,14 @@ const ActiveNavigationView = () => {
         </div>
       )}
 
+      {/* Rerouting indicator */}
+      {isRerouting && (
+        <div className="absolute top-20 inset-x-4 z-40 bg-orange-500 text-white p-3 rounded-lg text-center flex items-center justify-center gap-2">
+          <RotateCcw className="w-5 h-5 animate-spin" />
+          <span className="font-medium">Rerouting...</span>
+        </div>
+      )}
+
       {/* HUD */}
       {route && progress && (
         <NavigationHUD
@@ -231,13 +273,34 @@ const ActiveNavigationView = () => {
           remainingDistance={progress.remainingDistance}
           remainingDuration={progress.remainingDuration}
           onEndNavigation={endNavigation}
+          onRepeat={voice.repeatLastInstruction}
         />
       )}
+
+      {/* Voice Controls */}
+      <VoiceControls
+        settings={voice.settings}
+        onToggle={voice.toggleVoice}
+        onUpdateSettings={voice.updateSettings}
+      />
+
+      {/* Simulation Controls */}
+      <SimulationControls
+        isSimulating={isSimulating}
+        isPaused={simulation.isPaused}
+        progress={simulation.progress}
+        speed={simulation.speed}
+        onStart={handleStartSimulation}
+        onStop={handleStopSimulation}
+        onPause={simulation.pauseSimulation}
+        onResume={simulation.resumeSimulation}
+        onSpeedChange={simulation.setSpeed}
+      />
 
       {/* Re-center button */}
       {!followUser && (
         <Button
-          className="absolute bottom-24 right-4 z-30 rounded-full shadow-lg"
+          className="absolute bottom-32 right-4 z-30 rounded-full shadow-lg"
           size="icon"
           onClick={() => setFollowUser(true)}
         >
@@ -245,8 +308,15 @@ const ActiveNavigationView = () => {
         </Button>
       )}
 
+      {/* Off route warning */}
+      {isOffRoute && !isRerouting && (
+        <div className="absolute bottom-32 inset-x-4 z-30 bg-orange-500 text-white p-3 rounded-lg text-center text-sm">
+          You are off route. Calculating new route...
+        </div>
+      )}
+
       {/* Position error */}
-      {positionError && (
+      {positionError && !isSimulating && (
         <div className="absolute bottom-8 inset-x-4 z-30 bg-destructive text-destructive-foreground p-3 rounded-lg text-center text-sm">
           {positionError}
         </div>
@@ -257,11 +327,11 @@ const ActiveNavigationView = () => {
         <div className="absolute inset-0 z-40 bg-background/90 flex flex-col items-center justify-center p-6 text-center">
           <MapPin className="w-16 h-16 text-primary mb-4" />
           <h2 className="text-2xl font-bold mb-2">
-            {t.navigation?.arrived || 'Você chegou!'}
+            {t.navigation?.arrived || 'You have arrived!'}
           </h2>
           <p className="text-muted-foreground mb-6">{destination?.title}</p>
           <Button onClick={endNavigation}>
-            {t.navigation?.endNavigation || 'Encerrar Navegação'}
+            {t.navigation?.endNavigation || 'End Navigation'}
           </Button>
         </div>
       )}
