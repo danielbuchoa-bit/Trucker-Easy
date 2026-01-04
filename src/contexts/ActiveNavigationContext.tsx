@@ -113,12 +113,18 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
     };
   }, [isNavigating]);
 
-  // Update progress when position changes
+  // Update progress when position changes (throttled to reduce re-renders)
+  const lastProgressUpdate = useRef<number>(0);
   useEffect(() => {
     if (!userPosition || !route || routeCoords.length === 0) {
       setProgress(null);
       return;
     }
+
+    // Throttle updates to max once per second
+    const now = Date.now();
+    if (now - lastProgressUpdate.current < 1000) return;
+    lastProgressUpdate.current = now;
 
     const newProgress = calculateNavigationProgress(
       userPosition.lng,

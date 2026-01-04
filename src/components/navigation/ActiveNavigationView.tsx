@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { supabase } from '@/integrations/supabase/client';
@@ -28,10 +28,40 @@ const ActiveNavigationView = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [followUser, setFollowUser] = useState(true);
+  const mapInitialized = useRef(false);
+  const lastSpokenInstruction = useRef<string | null>(null);
 
-  // Initialize map
+  // Text-to-Speech for instructions
+  const speakInstruction = useCallback((text: string) => {
+    if (!text || text === lastSpokenInstruction.current) return;
+    
+    // Cancel any ongoing speech
+    window.speechSynthesis.cancel();
+    
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = 'pt-BR';
+    utterance.rate = 0.9;
+    utterance.pitch = 1;
+    
+    window.speechSynthesis.speak(utterance);
+    lastSpokenInstruction.current = text;
+  }, []);
+
+  // Speak current instruction when it changes
+  const currentInstruction = useMemo(() => {
+    return route && progress ? route.instructions[progress.currentInstructionIndex] : null;
+  }, [route, progress?.currentInstructionIndex]);
+
+  useEffect(() => {
+    if (currentInstruction?.instruction) {
+      speakInstruction(currentInstruction.instruction);
+    }
+  }, [currentInstruction?.instruction, speakInstruction]);
+
+  // Initialize map only once
   const initializeMap = useCallback(async () => {
-    if (!mapContainer.current || map.current) return;
+    if (!mapContainer.current || mapInitialized.current) return;
+    mapInitialized.current = true;
 
     try {
       const { data, error: tokenError } = await supabase.functions.invoke('get_mapbox_token');
@@ -62,6 +92,27 @@ const ActiveNavigationView = () => {
       map.current.once('load', () => {
         setMapReady(true);
         setLoading(false);
+        
+        // Draw route immediately after map loads
+        if (map.current && routeCoords.length > 0) {
+          const geojson: GeoJSON.Feature = {
+            type: 'Feature',
+            properties: {},
+            geometry: {
+              type: 'LineString',
+              coordinates: routeCoords,
+            },
+          };
+
+          map.current.addSource('nav-route', { type: 'geojson', data: geojson });
+          map.current.addLayer({
+            id: 'nav-route',
+            type: 'line',
+            source: 'nav-route',
+            layout: { 'line-join': 'round', 'line-cap': 'round' },
+            paint: { 'line-color': '#3b82f6', 'line-width': 6, 'line-opacity': 0.9 },
+          });
+        }
       });
 
       map.current.on('error', () => {
@@ -77,49 +128,40 @@ const ActiveNavigationView = () => {
       setError('Failed to initialize map');
       setLoading(false);
     }
-  }, [userPosition, routeCoords]);
+  }, []);
 
   useEffect(() => {
     initializeMap();
 
     return () => {
+      window.speechSynthesis.cancel();
       userMarker.current?.remove();
       destMarker.current?.remove();
       map.current?.remove();
       map.current = null;
+      mapInitialized.current = false;
     };
   }, [initializeMap]);
 
-  // Draw route
+  // Update route source if routeCoords change after initial load
   useEffect(() => {
     if (!map.current || !mapReady || routeCoords.length === 0) return;
 
     const source = map.current.getSource('nav-route') as mapboxgl.GeoJSONSource | undefined;
-
-    const geojson: GeoJSON.Feature = {
-      type: 'Feature',
-      properties: {},
-      geometry: {
-        type: 'LineString',
-        coordinates: routeCoords,
-      },
-    };
-
     if (source) {
+      const geojson: GeoJSON.Feature = {
+        type: 'Feature',
+        properties: {},
+        geometry: {
+          type: 'LineString',
+          coordinates: routeCoords,
+        },
+      };
       source.setData(geojson);
-    } else {
-      map.current.addSource('nav-route', { type: 'geojson', data: geojson });
-      map.current.addLayer({
-        id: 'nav-route',
-        type: 'line',
-        source: 'nav-route',
-        layout: { 'line-join': 'round', 'line-cap': 'round' },
-        paint: { 'line-color': '#3b82f6', 'line-width': 6, 'line-opacity': 0.9 },
-      });
     }
   }, [routeCoords, mapReady]);
 
-  // Update user marker & camera
+  // Update user marker & camera (throttled)
   useEffect(() => {
     if (!map.current || !mapReady || !userPosition) return;
 
@@ -127,10 +169,8 @@ const ActiveNavigationView = () => {
       userMarker.current.setLngLat([userPosition.lng, userPosition.lat]);
     } else {
       const el = document.createElement('div');
-      el.className =
-        'w-6 h-6 bg-blue-500 rounded-full border-4 border-white shadow-lg flex items-center justify-center';
-      el.innerHTML =
-        '<div class="w-2 h-2 bg-white rounded-full"></div>';
+      el.className = 'w-6 h-6 bg-blue-500 rounded-full border-4 border-white shadow-lg flex items-center justify-center';
+      el.innerHTML = '<div class="w-2 h-2 bg-white rounded-full"></div>';
       userMarker.current = new mapboxgl.Marker({ element: el, rotationAlignment: 'map' })
         .setLngLat([userPosition.lng, userPosition.lat])
         .addTo(map.current);
@@ -157,8 +197,12 @@ const ActiveNavigationView = () => {
     }
   }, [destination, mapReady]);
 
-  const currentInstruction =
-    route && progress ? route.instructions[progress.currentInstructionIndex] : null;
+  // Speak arrival
+  useEffect(() => {
+    if (progress?.arrived) {
+      speakInstruction(t.navigation?.arrived || 'Você chegou ao seu destino!');
+    }
+  }, [progress?.arrived, speakInstruction, t.navigation?.arrived]);
 
   if (error) {
     return (
@@ -213,11 +257,11 @@ const ActiveNavigationView = () => {
         <div className="absolute inset-0 z-40 bg-background/90 flex flex-col items-center justify-center p-6 text-center">
           <MapPin className="w-16 h-16 text-primary mb-4" />
           <h2 className="text-2xl font-bold mb-2">
-            {t.navigation?.arrived || 'You have arrived!'}
+            {t.navigation?.arrived || 'Você chegou!'}
           </h2>
           <p className="text-muted-foreground mb-6">{destination?.title}</p>
           <Button onClick={endNavigation}>
-            {t.navigation?.endNavigation || 'End Navigation'}
+            {t.navigation?.endNavigation || 'Encerrar Navegação'}
           </Button>
         </div>
       )}
