@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -14,10 +14,12 @@ import {
   ThumbsDown,
   ChefHat,
   Search,
-  HelpCircle
+  HelpCircle,
+  Store
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import type { DetectedPoi } from '@/hooks/useArrivalDetection';
+import { useNearbyRestaurants, type NearbyRestaurantsResult } from '@/hooks/useNearbyRestaurants';
 
 interface FoodRecommendation {
   best_choice: { item: string; reason: string };
@@ -45,6 +47,10 @@ export default function ArrivalPrompt({
   const [error, setError] = useState<string | null>(null);
   const [userProfile, setUserProfile] = useState<any>(null);
   const [isFallbackMode, setIsFallbackMode] = useState(false);
+  const [nearbyRestaurantsData, setNearbyRestaurantsData] = useState<NearbyRestaurantsResult | null>(null);
+  
+  const { fetchNearbyRestaurants, loading: restaurantsLoading } = useNearbyRestaurants();
+  const hasFetchedRestaurantsRef = useRef(false);
 
   // Fetch user's food profile
   useEffect(() => {
@@ -65,6 +71,28 @@ export default function ArrivalPrompt({
     fetchProfile();
   }, []);
 
+  // Fetch nearby restaurants once when modal opens
+  useEffect(() => {
+    if (!hasFetchedRestaurantsRef.current && poi.lat && poi.lng) {
+      hasFetchedRestaurantsRef.current = true;
+      fetchNearbyRestaurants(poi.lat, poi.lng, poi.name)
+        .then(setNearbyRestaurantsData)
+        .catch(console.error);
+    }
+  }, [poi, fetchNearbyRestaurants]);
+
+  // Build menu items from fallback offerings for AI recommendation
+  const buildMenuItemsFromFallback = (offerings: NearbyRestaurantsResult['fallback']) => {
+    if (!offerings) return [];
+    const items: { name: string; category: string }[] = [];
+    const { offerings: o } = offerings;
+    o.breakfast.forEach(item => items.push({ name: item, category: 'breakfast' }));
+    o.lunch_dinner.forEach(item => items.push({ name: item, category: 'lunch_dinner' }));
+    o.snacks.forEach(item => items.push({ name: item, category: 'snacks' }));
+    o.drinks.forEach(item => items.push({ name: item, category: 'drinks' }));
+    return items;
+  };
+
   // Get food recommendations
   const fetchRecommendations = async () => {
     setLoading(true);
@@ -72,12 +100,15 @@ export default function ArrivalPrompt({
     setIsFallbackMode(false);
 
     try {
-      // For now, we use fallback mode (no specific restaurant data)
-      // In a real scenario, we'd search for restaurants at this POI
+      // Build menu items from fallback if no restaurants found
+      const menuItems = nearbyRestaurantsData?.source === 'fallback' && nearbyRestaurantsData.fallback
+        ? buildMenuItemsFromFallback(nearbyRestaurantsData.fallback)
+        : [];
+
       const { data, error: fnError } = await supabase.functions.invoke('food_recommendation', {
         body: {
           profile: userProfile,
-          menuItems: [], // Empty = generic recommendations
+          menuItems,
           placeType: poi.category === 'truck_stop' ? 'truck stop' : 'gas station',
         },
       });
@@ -89,7 +120,7 @@ export default function ArrivalPrompt({
       }
 
       setRecommendation(data);
-      setIsFallbackMode(true); // Since we don't have specific menu items
+      setIsFallbackMode(nearbyRestaurantsData?.source === 'fallback');
     } catch (err) {
       console.error('Food recommendation error:', err);
       setError('Could not load recommendations. Try again.');
@@ -198,7 +229,24 @@ export default function ArrivalPrompt({
           ) : (
             /* Recommendations view */
             <div className="space-y-4 max-h-[50vh] overflow-y-auto">
-              {loading ? (
+              {/* Nearby restaurants section */}
+              {nearbyRestaurantsData?.restaurants && nearbyRestaurantsData.restaurants.length > 0 && (
+                <Card className="p-3 bg-primary/5 border-primary/30">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Store className="h-4 w-4 text-primary" />
+                    <span className="font-semibold text-sm">On-Site Restaurants</span>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {nearbyRestaurantsData.restaurants.slice(0, 6).map((r) => (
+                      <Badge key={r.id} variant="secondary" className="text-xs">
+                        {r.name}
+                      </Badge>
+                    ))}
+                  </div>
+                </Card>
+              )}
+
+              {loading || restaurantsLoading ? (
                 <div className="space-y-3">
                   <Skeleton className="h-20 w-full" />
                   <Skeleton className="h-20 w-full" />
@@ -206,13 +254,18 @@ export default function ArrivalPrompt({
                 </div>
               ) : recommendation ? (
                 <>
-                  {/* Fallback notice */}
-                  {isFallbackMode && (
-                    <div className="flex items-center gap-2 p-2 bg-amber-500/10 rounded-lg text-sm">
-                      <HelpCircle className="h-4 w-4 text-amber-500 shrink-0" />
-                      <span className="text-amber-700 dark:text-amber-300">
-                        Generic suggestions - we couldn't identify specific restaurants here
-                      </span>
+                  {/* Fallback notice - only show when no restaurants found */}
+                  {isFallbackMode && nearbyRestaurantsData?.source === 'fallback' && (
+                    <div className="flex items-start gap-2 p-2 bg-amber-500/10 rounded-lg text-sm">
+                      <HelpCircle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
+                      <div>
+                        <span className="text-amber-700 dark:text-amber-300 block">
+                          Couldn't identify restaurants registered on the map here.
+                        </span>
+                        <span className="text-amber-600 dark:text-amber-400 text-xs">
+                          Suggestions based on what this truck stop typically offers:
+                        </span>
+                      </div>
                     </div>
                   )}
 
