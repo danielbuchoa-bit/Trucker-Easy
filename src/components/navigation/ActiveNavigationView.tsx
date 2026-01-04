@@ -537,18 +537,24 @@ const ActiveNavigationView = () => {
       userMarker.current.setLngLat([displayLng, displayLat]);
     } else {
       const el = createTruckCursorElement(52);
-      
+
       // Ensure element has proper styling
       el.style.pointerEvents = 'none';
-      
-      userMarker.current = new mapboxgl.Marker({ 
-        element: el, 
-        rotationAlignment: 'viewport', // Icon stays fixed relative to screen (points UP)
+
+      userMarker.current = new mapboxgl.Marker({
+        element: el,
+        // NORTH-UP mode: map bearing stays at 0; marker rotates to match heading
+        rotationAlignment: 'viewport',
         pitchAlignment: 'viewport',
-        anchor: 'center'
+        anchor: 'center',
       })
         .setLngLat([displayLng, displayLat])
         .addTo(map.current!);
+    }
+
+    // Apply marker rotation (single source of truth for orientation)
+    if (headingToUse !== null) {
+      userMarker.current?.setRotation(headingToUse);
     }
 
     // Update debug info
@@ -563,72 +569,23 @@ const ActiveNavigationView = () => {
       lastUpdate: now,
     });
 
-    // Apply camera bearing (course-up: map rotates so that heading is "up")
-    // Mapbox bearing: degrees clockwise from north that the camera points to.
-    // For course-up, we want the camera to point in the direction of travel,
-    // which means setting bearing = heading (0-360, north=0, clockwise).
-    // The map will rotate so that heading direction is UP on the screen.
+    // NORTH-UP camera: keep map bearing fixed (0) and only follow the user's position.
+    // Orientation is handled exclusively by rotating the marker above.
     if (followUser) {
-      if (headingToUse !== null) {
-        const bearingChange = bearingDifference(lastAppliedBearingRef.current, headingToUse);
-        
-        // Only update if bearing changed meaningfully
-        if (bearingChange >= MIN_BEARING_CHANGE || bearingAnimationRef.current === null) {
-          targetBearingRef.current = headingToUse;
-          lastAppliedBearingRef.current = headingToUse;
-          
-          if (bearingAnimationRef.current) {
-            cancelAnimationFrame(bearingAnimationRef.current);
-          }
-          
-          const animateBearing = () => {
-            if (!map.current) return;
-            
-            const current = currentBearingRef.current;
-            const target = targetBearingRef.current;
-            
-            const newBearing = smoothAngle(current, target, 0.15);
-            currentBearingRef.current = newBearing;
-            
-            const diff = bearingDifference(current, target);
-            
-            if (diff > 0.5) {
-              map.current.easeTo({
-                center: [displayLng, displayLat],
-                bearing: newBearing,
-                pitch: 60,
-                zoom: 17,
-                duration: 60,
-                easing: (t) => t,
-              });
-              bearingAnimationRef.current = requestAnimationFrame(animateBearing);
-            } else {
-              map.current.easeTo({
-                center: [displayLng, displayLat],
-                bearing: target,
-                pitch: 60,
-                zoom: 17,
-                duration: 150,
-              });
-              bearingAnimationRef.current = null;
-            }
-          };
-          
-          animateBearing();
-        } else {
-          // Small change, just update center
-          map.current.easeTo({
-            center: [displayLng, displayLat],
-            duration: 200,
-          });
-        }
-      } else {
-        // No heading, just follow position
-        map.current.easeTo({
-          center: [displayLng, displayLat],
-          duration: 400,
-        });
+      // Cancel any leftover animation from previous versions
+      if (bearingAnimationRef.current) {
+        cancelAnimationFrame(bearingAnimationRef.current);
+        bearingAnimationRef.current = null;
       }
+
+      map.current.easeTo({
+        center: [displayLng, displayLat],
+        bearing: 0,
+        pitch: 60,
+        zoom: 17,
+        duration: 120,
+        easing: (t) => t,
+      });
     }
     
     return () => {
