@@ -368,49 +368,64 @@ const ActiveNavigationView = () => {
     
     // Calculate bearing from RECENT position change (last 2 points with meaningful distance)
     let calculatedBearing: number | null = null;
+    let movementSpeedEstimate: number | null = null;
+    let movementDistanceM: number | null = null;
     const history = positionHistoryRef.current;
-    
+
     // Use the two most recent points with sufficient distance apart
     if (history.length >= 2) {
       const newest = history[history.length - 1];
-      
+
       // Find the oldest point that is at least 2 meters away
       for (let i = history.length - 2; i >= 0; i--) {
         const older = history[i];
+
         const distanceMoved = Math.sqrt(
           Math.pow((newest.lat - older.lat) * 111000, 2) +
-          Math.pow((newest.lng - older.lng) * 111000 * Math.cos(newest.lat * Math.PI / 180), 2)
+            Math.pow(
+              (newest.lng - older.lng) * 111000 * Math.cos((newest.lat * Math.PI) / 180),
+              2
+            )
         );
-        
+
+        const dtSec = Math.max(0.001, (newest.time - older.time) / 1000);
+
         if (distanceMoved >= 2) {
           calculatedBearing = calculateBearingBetweenPoints(
-            older.lat, older.lng,
-            newest.lat, newest.lng
+            older.lat,
+            older.lng,
+            newest.lat,
+            newest.lng
           );
+          movementDistanceM = distanceMoved;
+          movementSpeedEstimate = distanceMoved / dtSec;
           break;
         }
       }
     }
-    
+
     // Calculate bearing from route segment as fallback
     let routeBearing: number | null = null;
     if (routeCoords.length >= 2 && progress) {
       // Find closest point on route
       let minDist = Infinity;
       let closestIdx = 0;
-      
+
       for (let i = 0; i < routeCoords.length; i++) {
         const [lng, lat] = routeCoords[i];
         const dist = Math.sqrt(
           Math.pow((userPosition.lat - lat) * 111000, 2) +
-          Math.pow((userPosition.lng - lng) * 111000 * Math.cos(userPosition.lat * Math.PI / 180), 2)
+            Math.pow(
+              (userPosition.lng - lng) * 111000 * Math.cos((userPosition.lat * Math.PI) / 180),
+              2
+            )
         );
         if (dist < minDist) {
           minDist = dist;
           closestIdx = i;
         }
       }
-      
+
       // Use bearing of next segment on route
       if (closestIdx < routeCoords.length - 1) {
         const [lng1, lat1] = routeCoords[closestIdx];
@@ -418,22 +433,33 @@ const ActiveNavigationView = () => {
         routeBearing = calculateBearingBetweenPoints(lat1, lng1, lat2, lng2);
       }
     }
-    
-    // Determine raw heading to use (priority: calculated > GPS > route)
+
+    // Determine raw heading to use (priority: calculated (COG) > GPS heading > route)
+    // IMPORTANT: On iOS Safari, `pos.coords.speed` is often null. So we rely on movement-derived speed.
+    const speedForHeading =
+      displaySpeed && displaySpeed > 0
+        ? displaySpeed
+        : movementSpeedEstimate !== null
+          ? movementSpeedEstimate
+          : 0;
+
     let rawHeading: number | null = null;
     let headingSource: 'calculated' | 'route' | 'gps' | 'none' = 'none';
-    
-    // 1) Prefer calculated bearing (course over ground) when moving fast enough
-    if (calculatedBearing !== null && displaySpeed > MIN_SPEED_FOR_HEADING) {
+
+    // 1) Prefer calculated bearing (course over ground) when we have meaningful movement
+    if (
+      calculatedBearing !== null &&
+      (speedForHeading > MIN_SPEED_FOR_HEADING || (movementDistanceM ?? 0) >= 10)
+    ) {
       rawHeading = calculatedBearing;
       headingSource = 'calculated';
-    } 
-    // 2) Fallback to GPS heading when moving
+    }
+    // 2) Fallback to GPS heading when moving (only when speed is available)
     else if (userPosition.heading !== null && displaySpeed > MIN_SPEED_FOR_HEADING) {
       rawHeading = userPosition.heading;
       headingSource = 'gps';
     }
-    // 3) Fallback to route bearing when stationary or slow (CRITICAL for simulation)
+    // 3) Fallback to route bearing (CRITICAL for simulation / missing speed)
     else if (routeBearing !== null) {
       rawHeading = routeBearing;
       headingSource = 'route';
