@@ -1,5 +1,5 @@
 import { useLanguage } from '@/i18n/LanguageContext';
-import { User, Settings, Globe, Moon, Bell, Shield, HelpCircle, LogOut, ChevronRight, Star, MessageSquare, Flag } from 'lucide-react';
+import { User, Settings, Globe, Moon, Bell, Shield, HelpCircle, LogOut, ChevronRight, Star, MessageSquare, Flag, Scale } from 'lucide-react';
 import BottomNav from '@/components/navigation/BottomNav';
 import { useNavigate } from 'react-router-dom';
 
@@ -14,6 +14,7 @@ const ProfileScreen = () => {
   ];
 
   const menuItems = [
+    { id: 'bypass', icon: Scale, label: t.bypass.history, route: '/bypass-history' },
     { id: 'settings', icon: Settings, label: t.settings.title, route: '/settings' },
     { id: 'language', icon: Globe, label: t.settings.language, action: 'language' },
     { id: 'notifications', icon: Bell, label: t.settings.notifications },
