@@ -100,6 +100,98 @@ export type Database = {
         }
         Relationships: []
       }
+      facilities: {
+        Row: {
+          address: string | null
+          created_at: string
+          created_by: string
+          facility_type: string
+          geofence_radius_m: number
+          id: string
+          lat: number
+          lng: number
+          name: string
+          place_id: string | null
+          updated_at: string
+          verified: boolean
+        }
+        Insert: {
+          address?: string | null
+          created_at?: string
+          created_by: string
+          facility_type?: string
+          geofence_radius_m?: number
+          id?: string
+          lat: number
+          lng: number
+          name: string
+          place_id?: string | null
+          updated_at?: string
+          verified?: boolean
+        }
+        Update: {
+          address?: string | null
+          created_at?: string
+          created_by?: string
+          facility_type?: string
+          geofence_radius_m?: number
+          id?: string
+          lat?: number
+          lng?: number
+          name?: string
+          place_id?: string | null
+          updated_at?: string
+          verified?: boolean
+        }
+        Relationships: []
+      }
+      facility_aggregates: {
+        Row: {
+          avg_exit_ease: number | null
+          avg_overall: number
+          avg_parking: number | null
+          avg_speed: number | null
+          avg_staff_help: number | null
+          avg_treatment: number | null
+          facility_id: string
+          review_count: number
+          typical_time: string | null
+          updated_at: string
+        }
+        Insert: {
+          avg_exit_ease?: number | null
+          avg_overall?: number
+          avg_parking?: number | null
+          avg_speed?: number | null
+          avg_staff_help?: number | null
+          avg_treatment?: number | null
+          facility_id: string
+          review_count?: number
+          typical_time?: string | null
+          updated_at?: string
+        }
+        Update: {
+          avg_exit_ease?: number | null
+          avg_overall?: number
+          avg_parking?: number | null
+          avg_speed?: number | null
+          avg_staff_help?: number | null
+          avg_treatment?: number | null
+          facility_id?: string
+          review_count?: number
+          typical_time?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "facility_aggregates_facility_id_fkey"
+            columns: ["facility_id"]
+            isOneToOne: true
+            referencedRelation: "facilities"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       facility_ratings: {
         Row: {
           address: string | null
@@ -154,6 +246,148 @@ export type Database = {
           tags?: string[] | null
           user_id?: string
           wait_time_rating?: number | null
+        }
+        Relationships: []
+      }
+      facility_reviews: {
+        Row: {
+          created_at: string
+          exit_ease_rating: number | null
+          facility_id: string
+          id: string
+          overall_rating: number
+          overnight_allowed: string | null
+          parking_available: string | null
+          parking_rating: number | null
+          restroom_available: string | null
+          speed_rating: number | null
+          staff_help_rating: number | null
+          time_spent: string | null
+          tips: string | null
+          treatment_rating: number | null
+          user_id: string
+          visit_type: string
+        }
+        Insert: {
+          created_at?: string
+          exit_ease_rating?: number | null
+          facility_id: string
+          id?: string
+          overall_rating: number
+          overnight_allowed?: string | null
+          parking_available?: string | null
+          parking_rating?: number | null
+          restroom_available?: string | null
+          speed_rating?: number | null
+          staff_help_rating?: number | null
+          time_spent?: string | null
+          tips?: string | null
+          treatment_rating?: number | null
+          user_id: string
+          visit_type?: string
+        }
+        Update: {
+          created_at?: string
+          exit_ease_rating?: number | null
+          facility_id?: string
+          id?: string
+          overall_rating?: number
+          overnight_allowed?: string | null
+          parking_available?: string | null
+          parking_rating?: number | null
+          restroom_available?: string | null
+          speed_rating?: number | null
+          staff_help_rating?: number | null
+          time_spent?: string | null
+          tips?: string | null
+          treatment_rating?: number | null
+          user_id?: string
+          visit_type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "facility_reviews_facility_id_fkey"
+            columns: ["facility_id"]
+            isOneToOne: false
+            referencedRelation: "facilities"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      report_votes: {
+        Row: {
+          created_at: string
+          id: string
+          report_id: string
+          user_id: string
+          vote_type: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          report_id: string
+          user_id: string
+          vote_type: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          report_id?: string
+          user_id?: string
+          vote_type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "report_votes_report_id_fkey"
+            columns: ["report_id"]
+            isOneToOne: false
+            referencedRelation: "road_reports"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      road_reports: {
+        Row: {
+          active: boolean
+          confirmations: number
+          created_at: string
+          denials: number
+          details: Json | null
+          expires_at: string
+          id: string
+          lat: number
+          lng: number
+          report_type: string
+          subtype: string | null
+          user_id: string
+        }
+        Insert: {
+          active?: boolean
+          confirmations?: number
+          created_at?: string
+          denials?: number
+          details?: Json | null
+          expires_at: string
+          id?: string
+          lat: number
+          lng: number
+          report_type: string
+          subtype?: string | null
+          user_id: string
+        }
+        Update: {
+          active?: boolean
+          confirmations?: number
+          created_at?: string
+          denials?: number
+          details?: Json | null
+          expires_at?: string
+          id?: string
+          lat?: number
+          lng?: number
+          report_type?: string
+          subtype?: string | null
+          user_id?: string
         }
         Relationships: []
       }
@@ -291,8 +525,13 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      can_create_report: { Args: { p_user_id: string }; Returns: boolean }
       can_insert_bypass_event: {
         Args: { p_user_id: string; p_weigh_station_id: string }
+        Returns: boolean
+      }
+      can_review_facility: {
+        Args: { p_facility_id: string; p_user_id: string }
         Returns: boolean
       }
     }
