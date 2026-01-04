@@ -10,6 +10,17 @@ export interface RouteRequest {
   avoidFerries?: boolean;
 }
 
+export interface GeocodeResult {
+  id: string;
+  title: string;
+  address: string;
+  lat: number;
+  lng: number;
+  city?: string;
+  state?: string;
+  country?: string;
+}
+
 export interface RouteResponse {
   polyline: string;
   distance: number; // meters
@@ -45,6 +56,23 @@ export interface WeatherAlertsResponse {
 }
 
 class HereServiceClass {
+  async geocode(query: string): Promise<GeocodeResult[]> {
+    const { data, error } = await supabase.functions.invoke('here_geocode', {
+      body: { query, limit: 5 },
+    });
+
+    if (error) {
+      console.error('Error calling here_geocode:', error);
+      throw new Error(error.message || 'Failed to geocode address');
+    }
+
+    if (data.error) {
+      throw new Error(data.error);
+    }
+
+    return data.results as GeocodeResult[];
+  }
+
   async calculateRoute(request: RouteRequest): Promise<RouteResponse> {
     const { data, error } = await supabase.functions.invoke('here_route', {
       body: request,
