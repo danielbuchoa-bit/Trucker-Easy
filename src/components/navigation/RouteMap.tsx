@@ -24,38 +24,37 @@ const RouteMap = ({ routePolyline, originLat, originLng, destLat, destLng, class
   const [mapReady, setMapReady] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const mapInitialized = useRef(false);
+
+  // Capture an initial center for first paint; later updates are handled by effects below.
+  const initialCenter = useRef<[number, number]>([
+    typeof originLng === 'number' ? originLng : -46.6333,
+    typeof originLat === 'number' ? originLat : -23.5505,
+  ]);
 
   const initializeMap = useCallback(async () => {
-    if (!mapContainer.current || map.current) return;
+    if (!mapContainer.current || mapInitialized.current) return;
+    mapInitialized.current = true;
 
     try {
-      console.log('Fetching Mapbox token...');
       const { data, error: tokenError } = await supabase.functions.invoke('get_mapbox_token');
-      
-      console.log('Mapbox token response:', { data, error: tokenError });
-      
-      if (tokenError) {
+
+      if (tokenError || !data?.token) {
         setError('Failed to load map');
-        console.error('Mapbox token error:', tokenError);
-        return;
-      }
-      
-      if (!data?.token) {
-        setError('Mapbox token not configured');
-        console.error('No token in response:', data);
+        setLoading(false);
         return;
       }
 
       mapboxgl.accessToken = data.token;
-      
-      const centerLng = originLng ?? -46.6333;
-      const centerLat = originLat ?? -23.5505;
-      
+
+      // Ensure container is empty (prevents Mapbox warnings/flicker if remounted)
+      mapContainer.current.innerHTML = '';
+
       map.current = new mapboxgl.Map({
         container: mapContainer.current,
         style: 'mapbox://styles/mapbox/navigation-night-v1',
         zoom: 4,
-        center: [centerLng, centerLat],
+        center: initialCenter.current,
       });
 
       map.current.addControl(
@@ -68,29 +67,19 @@ const RouteMap = ({ routePolyline, originLat, originLng, destLat, destLng, class
         setLoading(false);
       };
 
-      map.current.once('load', () => {
-        console.log('Map loaded successfully');
-        markReady();
-      });
-
+      map.current.once('load', markReady);
       // Fallback: some environments emit 'idle' before 'load'
-      map.current.once('idle', () => {
-        console.log('Map idle');
-        markReady();
-      });
-      
-      map.current.on('error', (e) => {
-        console.error('Map error:', e);
+      map.current.once('idle', markReady);
+
+      map.current.on('error', () => {
         setError('Map loading error');
         setLoading(false);
       });
-
-    } catch (err) {
-      console.error('Map initialization error:', err);
+    } catch {
       setError('Failed to initialize map');
       setLoading(false);
     }
-  }, [originLat, originLng]);
+  }, []);
 
   useEffect(() => {
     initializeMap();
@@ -100,6 +89,8 @@ const RouteMap = ({ routePolyline, originLat, originLng, destLat, destLng, class
       destMarker.current?.remove();
       map.current?.remove();
       map.current = null;
+      mapInitialized.current = false;
+      if (mapContainer.current) mapContainer.current.innerHTML = '';
     };
   }, [initializeMap]);
 
@@ -107,8 +98,11 @@ const RouteMap = ({ routePolyline, originLat, originLng, destLat, destLng, class
   useEffect(() => {
     if (!map.current || !mapReady) return;
 
+    const hasOrigin = typeof originLat === 'number' && typeof originLng === 'number';
+    const hasDest = typeof destLat === 'number' && typeof destLng === 'number';
+
     // Update origin marker
-    if (typeof originLat === 'number' && typeof originLng === 'number') {
+    if (hasOrigin) {
       if (originMarker.current) {
         originMarker.current.setLngLat([originLng, originLat]);
       } else {
@@ -121,7 +115,7 @@ const RouteMap = ({ routePolyline, originLat, originLng, destLat, destLng, class
     }
 
     // Update destination marker
-    if (typeof destLat === 'number' && typeof destLng === 'number') {
+    if (hasDest) {
       if (destMarker.current) {
         destMarker.current.setLngLat([destLng, destLat]);
       } else {
@@ -130,6 +124,19 @@ const RouteMap = ({ routePolyline, originLat, originLng, destLat, destLng, class
         destMarker.current = new mapboxgl.Marker(el)
           .setLngLat([destLng, destLat])
           .addTo(map.current);
+      }
+    }
+
+    // Keep the camera on pins before a route is calculated
+    if (!routePolyline) {
+      if (hasOrigin && hasDest) {
+        const bounds = new mapboxgl.LngLatBounds([originLng, originLat], [originLng, originLat]);
+        bounds.extend([destLng, destLat]);
+        map.current.fitBounds(bounds, { padding: 50, duration: 600 });
+      } else if (hasOrigin) {
+        map.current.easeTo({ center: [originLng, originLat], zoom: 10, duration: 600 });
+      } else if (hasDest) {
+        map.current.easeTo({ center: [destLng, destLat], zoom: 10, duration: 600 });
       }
     }
 

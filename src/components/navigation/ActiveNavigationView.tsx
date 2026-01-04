@@ -30,6 +30,11 @@ const ActiveNavigationView = () => {
   } = useActiveNavigation();
 
   const voice = useVoiceGuidance();
+  const voiceRef = useRef(voice);
+
+  useEffect(() => {
+    voiceRef.current = voice;
+  }, [voice]);
 
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
@@ -122,6 +127,9 @@ const ActiveNavigationView = () => {
         ? routeCoords[0]
         : [-46.6333, -23.5505];
 
+      // Ensure container is empty (prevents Mapbox warnings/flicker if remounted)
+      mapContainer.current.innerHTML = '';
+
       map.current = new mapboxgl.Map({
         container: mapContainer.current,
         style: 'mapbox://styles/mapbox/satellite-streets-v12',
@@ -176,14 +184,15 @@ const ActiveNavigationView = () => {
     initializeMap();
 
     return () => {
-      voice.stop();
+      voiceRef.current.stop();
       userMarker.current?.remove();
       destMarker.current?.remove();
       map.current?.remove();
       map.current = null;
       mapInitialized.current = false;
+      if (mapContainer.current) mapContainer.current.innerHTML = '';
     };
-  }, [initializeMap, voice]);
+  }, [initializeMap]);
 
   // Update route source if routeCoords change (e.g., after reroute)
   useEffect(() => {
