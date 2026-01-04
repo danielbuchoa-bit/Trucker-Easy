@@ -1,14 +1,14 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Navigation, MapPin, Truck, AlertTriangle, Clock, Route as RouteIcon, Ship, DollarSign } from 'lucide-react';
+import { ArrowLeft, Navigation, Truck, AlertTriangle, Clock, Route as RouteIcon, Ship, DollarSign, MapPin } from 'lucide-react';
 import { useLanguage } from '@/i18n/LanguageContext';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
-import { HereService, RouteResponse, WeatherAlertsResponse } from '@/services/HereService';
+import { HereService, RouteResponse, WeatherAlertsResponse, GeocodeResult } from '@/services/HereService';
 import WeatherAlertsList from '@/components/navigation/WeatherAlertsList';
 import RouteMap from '@/components/navigation/RouteMap';
+import AddressSearch from '@/components/navigation/AddressSearch';
 import BottomNav from '@/components/navigation/BottomNav';
 import { useToast } from '@/hooks/use-toast';
 
@@ -17,11 +17,9 @@ const NavigationScreen = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
 
-  // Form state
-  const [originLat, setOriginLat] = useState('');
-  const [originLng, setOriginLng] = useState('');
-  const [destLat, setDestLat] = useState('');
-  const [destLng, setDestLng] = useState('');
+  // Location state
+  const [origin, setOrigin] = useState<GeocodeResult | null>(null);
+  const [destination, setDestination] = useState<GeocodeResult | null>(null);
   const [transportMode, setTransportMode] = useState<'truck' | 'car'>('truck');
   const [avoidTolls, setAvoidTolls] = useState(false);
   const [avoidFerries, setAvoidFerries] = useState(false);
@@ -33,10 +31,10 @@ const NavigationScreen = () => {
   const [alertsLoading, setAlertsLoading] = useState(false);
 
   const handleCalculateRoute = async () => {
-    if (!originLat || !originLng || !destLat || !destLng) {
+    if (!origin || !destination) {
       toast({
         title: t.navigation?.error || 'Error',
-        description: t.navigation?.fillAllFields || 'Please fill all coordinate fields',
+        description: t.navigation?.fillAllFields || 'Please enter origin and destination',
         variant: 'destructive',
       });
       return;
@@ -48,10 +46,10 @@ const NavigationScreen = () => {
 
     try {
       const routeResult = await HereService.calculateRoute({
-        originLat: parseFloat(originLat),
-        originLng: parseFloat(originLng),
-        destLat: parseFloat(destLat),
-        destLng: parseFloat(destLng),
+        originLat: origin.lat,
+        originLng: origin.lng,
+        destLat: destination.lat,
+        destLng: destination.lng,
         transportMode,
         avoidTolls,
         avoidFerries,
@@ -96,14 +94,20 @@ const NavigationScreen = () => {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (position) => {
-          setOriginLat(position.coords.latitude.toFixed(6));
-          setOriginLng(position.coords.longitude.toFixed(6));
+          const currentLocation: GeocodeResult = {
+            id: 'current-location',
+            title: t.navigation?.useMyLocation || 'Current Location',
+            address: `${position.coords.latitude.toFixed(4)}, ${position.coords.longitude.toFixed(4)}`,
+            lat: position.coords.latitude,
+            lng: position.coords.longitude,
+          };
+          setOrigin(currentLocation);
           toast({
             title: t.navigation?.locationObtained || 'Location obtained',
-            description: `${position.coords.latitude.toFixed(4)}, ${position.coords.longitude.toFixed(4)}`,
+            description: currentLocation.address,
           });
         },
-        (error) => {
+        () => {
           toast({
             title: t.navigation?.error || 'Error',
             description: t.navigation?.locationError || 'Could not get current location',
@@ -130,10 +134,10 @@ const NavigationScreen = () => {
       <RouteMap
         className="h-[35vh]"
         routePolyline={route?.polyline}
-        originLat={originLat ? parseFloat(originLat) : undefined}
-        originLng={originLng ? parseFloat(originLng) : undefined}
-        destLat={destLat ? parseFloat(destLat) : undefined}
-        destLng={destLng ? parseFloat(destLng) : undefined}
+        originLat={origin?.lat}
+        originLng={origin?.lng}
+        destLat={destination?.lat}
+        destLng={destination?.lng}
       />
 
       {/* Content */}
@@ -150,22 +154,24 @@ const NavigationScreen = () => {
               {t.navigation?.useMyLocation || 'Use my location'}
             </Button>
           </div>
-          <div className="grid grid-cols-2 gap-2">
-            <Input
-              placeholder={t.navigation?.latitude || 'Latitude'}
-              value={originLat}
-              onChange={(e) => setOriginLat(e.target.value)}
-              type="number"
-              step="any"
+          
+          {origin ? (
+            <div className="flex items-center gap-3 p-3 bg-card border border-border rounded-lg">
+              <MapPin className="w-4 h-4 text-green-500 shrink-0" />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium truncate">{origin.title}</p>
+                <p className="text-xs text-muted-foreground truncate">{origin.address}</p>
+              </div>
+              <Button variant="ghost" size="sm" onClick={() => setOrigin(null)}>
+                ✕
+              </Button>
+            </div>
+          ) : (
+            <AddressSearch
+              placeholder={t.navigation?.searchAddress || 'Search address...'}
+              onSelect={setOrigin}
             />
-            <Input
-              placeholder={t.navigation?.longitude || 'Longitude'}
-              value={originLng}
-              onChange={(e) => setOriginLng(e.target.value)}
-              type="number"
-              step="any"
-            />
-          </div>
+          )}
         </div>
 
         {/* Destination */}
@@ -174,22 +180,24 @@ const NavigationScreen = () => {
             <div className="w-3 h-3 rounded-full bg-red-500" />
             {t.navigation?.destination || 'Destination'}
           </Label>
-          <div className="grid grid-cols-2 gap-2">
-            <Input
-              placeholder={t.navigation?.latitude || 'Latitude'}
-              value={destLat}
-              onChange={(e) => setDestLat(e.target.value)}
-              type="number"
-              step="any"
+          
+          {destination ? (
+            <div className="flex items-center gap-3 p-3 bg-card border border-border rounded-lg">
+              <MapPin className="w-4 h-4 text-red-500 shrink-0" />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium truncate">{destination.title}</p>
+                <p className="text-xs text-muted-foreground truncate">{destination.address}</p>
+              </div>
+              <Button variant="ghost" size="sm" onClick={() => setDestination(null)}>
+                ✕
+              </Button>
+            </div>
+          ) : (
+            <AddressSearch
+              placeholder={t.navigation?.searchAddress || 'Search address...'}
+              onSelect={setDestination}
             />
-            <Input
-              placeholder={t.navigation?.longitude || 'Longitude'}
-              value={destLng}
-              onChange={(e) => setDestLng(e.target.value)}
-              type="number"
-              step="any"
-            />
-          </div>
+          )}
         </div>
 
         {/* Options */}
@@ -228,7 +236,7 @@ const NavigationScreen = () => {
         <Button
           className="w-full h-12"
           onClick={handleCalculateRoute}
-          disabled={loading}
+          disabled={loading || !origin || !destination}
         >
           {loading ? (
             <span className="animate-pulse">{t.navigation?.calculating || 'Calculating...'}</span>
