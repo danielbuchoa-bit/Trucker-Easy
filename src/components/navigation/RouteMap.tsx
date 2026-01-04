@@ -66,7 +66,10 @@ const RouteMap = ({ routePolyline, originLat, originLng, destLat, destLng, class
     if (!mapContainer.current || mapInitialized.current) return;
     mapInitialized.current = true;
 
+    console.log('[RouteMap] 🗺️ Architecture: Mapbox for rendering (tiles), HERE for routing/POIs');
+
     try {
+      console.log('[RouteMap] Fetching Mapbox token...');
       const { data, error: tokenError } = await supabase.functions.invoke<{ token: string }>(
         'get_mapbox_token'
       );
@@ -74,12 +77,23 @@ const RouteMap = ({ routePolyline, originLat, originLng, destLat, destLng, class
       const token = data?.token;
 
       if (tokenError || !token) {
-        console.error('[MAP] token_error', tokenError, data);
+        console.error('[RouteMap] ❌ MAPBOX TOKEN ERROR:', {
+          status: tokenError?.status || 'N/A',
+          message: tokenError?.message || 'Token not returned',
+          endpoint: 'get_mapbox_token',
+          service: 'Mapbox (Tiles/Rendering)',
+        });
+        
+        if (tokenError?.status === 401 || tokenError?.status === 403) {
+          console.error('[RouteMap] 🔐 AUTH ISSUE: Mapbox token retrieval failed - check MAPBOX_PUBLIC_TOKEN secret');
+        }
+        
         setError('Failed to load map');
         setLoading(false);
         return;
       }
 
+      console.log('[RouteMap] ✅ Mapbox token obtained');
       mapboxgl.accessToken = token;
 
       // Ensure container is empty
@@ -87,6 +101,12 @@ const RouteMap = ({ routePolyline, originLat, originLng, destLat, destLng, class
 
       const initialCenter = getInitialCenter();
       const initialZoom = userLocation ? 15 : 4;
+
+      console.log('[RouteMap] Initializing Mapbox GL map...', { 
+        center: initialCenter, 
+        zoom: initialZoom,
+        style: 'navigation-night-v1',
+      });
 
       map.current = new mapboxgl.Map({
         container: mapContainer.current,
@@ -101,6 +121,7 @@ const RouteMap = ({ routePolyline, originLat, originLng, destLat, destLng, class
       );
 
       const markReady = () => {
+        console.log('[RouteMap] ✅ Map ready - Mapbox tiles loaded');
         setMapReady(true);
         setLoading(false);
       };
@@ -108,13 +129,23 @@ const RouteMap = ({ routePolyline, originLat, originLng, destLat, destLng, class
       map.current.once('load', markReady);
       map.current.once('idle', markReady);
 
-      map.current.on('error', (e) => {
-        console.error('[MAP] mapbox_error', e);
+      map.current.on('error', (e: any) => {
+        console.error('[RouteMap] ❌ MAPBOX ERROR:', {
+          message: e.error?.message || e.message || 'Unknown error',
+          status: e.error?.status || 'N/A',
+          service: 'Mapbox (Tiles/Rendering)',
+        });
+        
+        const status = e.error?.status;
+        if (status === 401 || status === 403) {
+          console.error('[RouteMap] 🔐 AUTH ISSUE: Mapbox tiles access denied - verify token permissions');
+        }
+        
         setError('Map loading error');
         setLoading(false);
       });
     } catch (e) {
-      console.error('[MAP] init_failed', e);
+      console.error('[RouteMap] ❌ INIT FAILED:', e);
       setError('Failed to initialize map');
       setLoading(false);
     }
@@ -211,12 +242,18 @@ const RouteMap = ({ routePolyline, originLat, originLng, destLat, destLng, class
       }
     }
 
-    // Update route
+    // Update route (from HERE Routing API)
     if (routePolyline) {
       try {
+        console.log('[RouteMap] 🛣️ Drawing route from HERE polyline on Mapbox');
         const coordinates = decodeHereFlexiblePolyline(routePolyline);
 
-        if (coordinates.length === 0) return;
+        if (coordinates.length === 0) {
+          console.warn('[RouteMap] Empty coordinates from HERE polyline');
+          return;
+        }
+
+        console.log('[RouteMap] Route coordinates:', coordinates.length, 'points');
 
         const source = map.current.getSource('route') as mapboxgl.GeoJSONSource | undefined;
 
@@ -259,8 +296,9 @@ const RouteMap = ({ routePolyline, originLat, originLng, destLat, destLng, class
         }, new mapboxgl.LngLatBounds(coordinates[0], coordinates[0]));
 
         map.current.fitBounds(bounds, { padding: 50 });
+        console.log('[RouteMap] ✅ Route drawn on Mapbox');
       } catch (e) {
-        console.error('Error rendering route on map:', e);
+        console.error('[RouteMap] ❌ Error rendering route on map:', e);
         setError('Erro ao desenhar a rota no mapa');
       }
     }

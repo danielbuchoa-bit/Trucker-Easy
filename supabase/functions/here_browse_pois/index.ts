@@ -67,15 +67,36 @@ serve(async (req) => {
     });
 
     const hereUrl = `https://browse.search.hereapi.com/v1/browse?${params.toString()}`;
-    console.log('Calling HERE Browse API');
+    console.log('[HERE_BROWSE_POIS] Service: Places API (Browse/Discover)');
+    console.log('[HERE_BROWSE_POIS] Endpoint:', hereUrl.replace(HERE_API_KEY, '***'));
 
     const response = await fetch(hereUrl);
     const data = await response.json();
 
+    // Diagnostic logging for errors
     if (!response.ok) {
-      console.error('HERE API error:', data);
+      console.error('[HERE_BROWSE_POIS] ❌ API Error:', {
+        status: response.status,
+        statusText: response.statusText,
+        endpoint: 'browse.search.hereapi.com/v1/browse',
+        service: 'Places/Discover',
+        error: data?.error || data?.message || data?.title || 'Unknown error',
+        cause: data?.cause || null,
+      });
+      
+      // Check for auth/permission issues
+      if (response.status === 401 || response.status === 403) {
+        console.error('[HERE_BROWSE_POIS] 🔐 AUTH ISSUE: HERE Places/Discover service may not be enabled');
+        console.error('[HERE_BROWSE_POIS] Verify in HERE Developer Portal that "Search & Geocoding" is enabled');
+      }
+      
       return new Response(
-        JSON.stringify({ error: 'POI browse failed', details: data }),
+        JSON.stringify({ 
+          error: 'POI browse failed', 
+          status: response.status,
+          service: 'Places/Discover',
+          details: data 
+        }),
         { status: response.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
