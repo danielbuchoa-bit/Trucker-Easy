@@ -21,11 +21,17 @@ import { MapPin, Navigation as NavIcon, RotateCcw, Layers, Bug, Plus, Route } fr
 import { Button } from '@/components/ui/button';
 import { useLanguage } from '@/i18n/LanguageContext';
 
-// Minimum speed (m/s) to apply heading rotation - ~5 km/h = 1.39 m/s
-const MIN_SPEED_FOR_HEADING = 1.39;
+// Minimum speed (m/s) to apply heading rotation - ~3 km/h = 0.83 m/s (lowered for responsiveness)
+const MIN_SPEED_FOR_HEADING = 0.8;
 
-// Minimum bearing change to trigger update (degrees)
-const MIN_BEARING_CHANGE = 8;
+// Minimum bearing change to trigger update (degrees) - lowered for smoother following
+const MIN_BEARING_CHANGE = 5;
+
+// Heading smoothing factor (0-1, lower = smoother but more latency)
+const HEADING_SMOOTH_FACTOR = 0.15;
+
+// Maximum allowed heading change per second (degrees) to filter outliers
+const MAX_HEADING_CHANGE_PER_SEC = 90;
 
 // Debug state for orientation
 interface OrientationDebug {
@@ -38,7 +44,7 @@ interface OrientationDebug {
   lastUpdate: number;
 }
 
-// Calculate bearing between two GPS points (returns degrees 0-360, 0 = North)
+// Calculate bearing between two GPS points (returns degrees 0-360, 0 = North, clockwise)
 function calculateBearingBetweenPoints(
   lat1: number, 
   lon1: number, 
@@ -48,36 +54,38 @@ function calculateBearingBetweenPoints(
   const toRad = (deg: number) => (deg * Math.PI) / 180;
   const toDeg = (rad: number) => (rad * 180) / Math.PI;
   
-  const dLon = toRad(lon2 - lon1);
-  const lat1Rad = toRad(lat1);
-  const lat2Rad = toRad(lat2);
+  const φ1 = toRad(lat1);
+  const φ2 = toRad(lat2);
+  const Δλ = toRad(lon2 - lon1);
   
-  const y = Math.sin(dLon) * Math.cos(lat2Rad);
-  const x = Math.cos(lat1Rad) * Math.sin(lat2Rad) - 
-            Math.sin(lat1Rad) * Math.cos(lat2Rad) * Math.cos(dLon);
+  const y = Math.sin(Δλ) * Math.cos(φ2);
+  const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
   
-  const bearing = toDeg(Math.atan2(y, x));
-  return ((bearing % 360) + 360) % 360; // Normalize to 0-360
+  const θ = Math.atan2(y, x);
+  const bearing = toDeg(θ);
+  
+  // Normalize to 0-360 (North = 0, East = 90, South = 180, West = 270)
+  return ((bearing % 360) + 360) % 360;
 }
 
-// Interpolate between two angles (for smooth rotation)
-function interpolateBearing(current: number, target: number, factor: number): number {
-  // Normalize angles to 0-360
-  current = ((current % 360) + 360) % 360;
-  target = ((target % 360) + 360) % 360;
-  
-  // Find shortest path
-  let diff = target - current;
-  if (diff > 180) diff -= 360;
-  if (diff < -180) diff += 360;
-  
-  return ((current + diff * factor) + 360) % 360;
-}
-
-// Calculate bearing difference (shortest path)
-function bearingDifference(a: number, b: number): number {
-  let diff = Math.abs(((a - b + 180) % 360) - 180);
+// Calculate shortest angular difference (handles wraparound)
+function angularDifference(a: number, b: number): number {
+  let diff = b - a;
+  while (diff > 180) diff -= 360;
+  while (diff < -180) diff += 360;
   return diff;
+}
+
+// Smooth interpolation between angles with circular wraparound
+function smoothAngle(current: number, target: number, factor: number): number {
+  const diff = angularDifference(current, target);
+  const newAngle = current + diff * factor;
+  return ((newAngle % 360) + 360) % 360;
+}
+
+// Calculate bearing difference (absolute, shortest path)
+function bearingDifference(a: number, b: number): number {
+  return Math.abs(angularDifference(a, b));
 }
 
 const ActiveNavigationView = () => {
@@ -321,76 +329,114 @@ const ActiveNavigationView = () => {
     }
   }, [routeCoords, mapReady]);
 
+  // Smoothed heading ref for continuous interpolation
+  const smoothedHeadingRef = useRef<number | null>(null);
+  const lastUpdateTimeRef = useRef<number>(0);
+
   // Update user marker & camera with COURSE-UP orientation (using smoothed/predicted position)
   useEffect(() => {
     if (!map.current || !mapReady || !userPosition) return;
 
     // Use predicted position for smoothest marker movement (dead reckoning)
-    // Falls back to interpolated, then raw position
     const displayLat = smoothedPosition?.predictedLat ?? smoothedPosition?.interpolatedLat ?? userPosition.lat;
     const displayLng = smoothedPosition?.predictedLng ?? smoothedPosition?.interpolatedLng ?? userPosition.lng;
-    const displayHeading = smoothedPosition?.smoothedHeading ?? userPosition.heading;
     const displaySpeed = smoothedPosition?.smoothedSpeed ?? userPosition.speed ?? 0;
 
     const now = Date.now();
+    const deltaTime = now - lastUpdateTimeRef.current;
+    lastUpdateTimeRef.current = now;
     const speedKmh = displaySpeed * 3.6;
     
-    // Add position to history for bearing calculation (use raw position for accuracy)
+    // Add position to history for bearing calculation
     positionHistoryRef.current.push({
       lat: userPosition.lat,
       lng: userPosition.lng,
       time: now,
     });
     
-    // Keep only last 5 positions, max 5 seconds old
+    // Keep only last 8 positions, max 3 seconds old (shorter window for current direction)
     positionHistoryRef.current = positionHistoryRef.current.filter(
-      p => now - p.time < 5000
-    ).slice(-5);
+      p => now - p.time < 3000
+    ).slice(-8);
     
-    // Calculate bearing from position history (more stable than single GPS heading)
+    // Calculate bearing from RECENT position change (last 2 points with meaningful distance)
     let calculatedBearing: number | null = null;
     const history = positionHistoryRef.current;
     
+    // Use the two most recent points with sufficient distance apart
     if (history.length >= 2) {
-      const oldest = history[0];
       const newest = history[history.length - 1];
       
-      // Only calculate if there's meaningful movement (> 3 meters)
-      const distanceMoved = Math.sqrt(
-        Math.pow((newest.lat - oldest.lat) * 111000, 2) +
-        Math.pow((newest.lng - oldest.lng) * 111000 * Math.cos(newest.lat * Math.PI / 180), 2)
-      );
-      
-      if (distanceMoved > 3) {
-        calculatedBearing = calculateBearingBetweenPoints(
-          oldest.lat, oldest.lng,
-          newest.lat, newest.lng
+      // Find the oldest point that is at least 2 meters away
+      for (let i = history.length - 2; i >= 0; i--) {
+        const older = history[i];
+        const distanceMoved = Math.sqrt(
+          Math.pow((newest.lat - older.lat) * 111000, 2) +
+          Math.pow((newest.lng - older.lng) * 111000 * Math.cos(newest.lat * Math.PI / 180), 2)
         );
+        
+        if (distanceMoved >= 2) {
+          calculatedBearing = calculateBearingBetweenPoints(
+            older.lat, older.lng,
+            newest.lat, newest.lng
+          );
+          break;
+        }
       }
     }
     
-    // Decide which heading to use
-    let headingToUse: number | null = null;
+    // Determine raw heading to use
+    let rawHeading: number | null = null;
     let headingSource: 'calculated' | 'gps' | 'none' = 'none';
     
+    // Prefer calculated bearing (course over ground) when moving
     if (calculatedBearing !== null && displaySpeed > MIN_SPEED_FOR_HEADING) {
-      headingToUse = calculatedBearing;
+      rawHeading = calculatedBearing;
       headingSource = 'calculated';
-    } else if (displayHeading !== null && displaySpeed > MIN_SPEED_FOR_HEADING) {
-      headingToUse = displayHeading;
+    } else if (userPosition.heading !== null && displaySpeed > MIN_SPEED_FOR_HEADING) {
+      // Fallback to GPS heading
+      rawHeading = userPosition.heading;
       headingSource = 'gps';
     }
     
-    // Create or update user marker (use smoothed interpolated position for smooth movement)
+    // Apply heading smoothing with outlier rejection
+    let headingToUse: number | null = null;
+    
+    if (rawHeading !== null) {
+      if (smoothedHeadingRef.current === null) {
+        // First heading - use directly
+        smoothedHeadingRef.current = rawHeading;
+        headingToUse = rawHeading;
+      } else {
+        // Check for outlier (heading jumping too fast)
+        const headingChange = Math.abs(angularDifference(smoothedHeadingRef.current, rawHeading));
+        const maxChange = deltaTime > 0 ? (MAX_HEADING_CHANGE_PER_SEC * deltaTime / 1000) : MAX_HEADING_CHANGE_PER_SEC;
+        
+        if (headingChange > maxChange && displaySpeed > 2) {
+          // Outlier detected - use stronger smoothing
+          smoothedHeadingRef.current = smoothAngle(smoothedHeadingRef.current, rawHeading, HEADING_SMOOTH_FACTOR * 0.3);
+        } else {
+          // Normal update - apply smoothing
+          smoothedHeadingRef.current = smoothAngle(smoothedHeadingRef.current, rawHeading, HEADING_SMOOTH_FACTOR);
+        }
+        headingToUse = smoothedHeadingRef.current;
+      }
+    } else if (smoothedHeadingRef.current !== null) {
+      // No new heading but we have a previous one - keep using it
+      headingToUse = smoothedHeadingRef.current;
+    }
+    
+    // Create or update user marker
     if (userMarker.current) {
       userMarker.current.setLngLat([displayLng, displayLat]);
+      // Icon always points UP in viewport (map rotates, not icon)
       userMarker.current.setRotation(0);
     } else {
       const el = createTruckCursorElement(52);
       
       userMarker.current = new mapboxgl.Marker({ 
         element: el, 
-        rotationAlignment: 'viewport',
+        rotationAlignment: 'viewport', // Icon stays fixed relative to screen
         pitchAlignment: 'viewport'
       })
         .setLngLat([displayLng, displayLat])
@@ -426,7 +472,7 @@ const ActiveNavigationView = () => {
             const current = currentBearingRef.current;
             const target = targetBearingRef.current;
             
-            const newBearing = interpolateBearing(current, target, 0.12);
+            const newBearing = smoothAngle(current, target, 0.12);
             currentBearingRef.current = newBearing;
             
             const diff = bearingDifference(current, target);
