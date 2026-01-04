@@ -28,8 +28,9 @@ const DEFAULT_VOICE_SETTINGS: VoiceSettings = {
 const VOICE_STORAGE_KEY = 'voiceGuidanceSettings';
 const VOICE_UNLOCKED_KEY = 'voiceUnlocked';
 const DEBUG_LOG_MAX = 20;
-const REROUTE_COOLDOWN_MS = 25000; // 25 seconds cooldown between "recalculating" announcements
-const DUPLICATE_TEXT_COOLDOWN_MS = 10000; // 10 seconds before repeating same text
+const REROUTE_COOLDOWN_MS = 45000; // 45 seconds cooldown between "recalculating" announcements
+const DUPLICATE_TEXT_COOLDOWN_MS = 8000; // 8 seconds before repeating same text
+const INSTRUCTION_COOLDOWN_MS = 3000; // 3 seconds between same instruction
 
 // Check if running in dev mode
 const isDev = import.meta.env.DEV;
@@ -258,21 +259,45 @@ export function useVoiceGuidance() {
     lastSpokenTimeRef.current = now;
   }, [settings, voiceState.isAvailable, voiceState.isUnlocked, addDebugLog]);
 
-  // Speak a turn-by-turn instruction
+  // Track last instruction announcement time per instruction index
+  const lastInstructionTimeRef = useRef<Map<number, number>>(new Map());
+  
+  // Speak a turn-by-turn instruction with look-ahead
   const speakInstruction = useCallback((
     instruction: RouteInstruction,
     distanceToManeuver: number,
-    instructionIndex: number
+    instructionIndex: number,
+    speedMs: number = 0 // Current speed in m/s for look-ahead calculation
   ) => {
     if (!settings.enabled || !voiceState.isUnlocked) return;
 
-    // Only speak if instruction changed or we're approaching the maneuver
+    const now = Date.now();
+    const lastTimeForThisInstruction = lastInstructionTimeRef.current.get(instructionIndex) || 0;
+    
+    // Calculate time to maneuver based on current speed (look-ahead)
+    const timeToManeuverSeconds = speedMs > 1 ? distanceToManeuver / speedMs : Infinity;
+    
+    // Only speak if instruction changed
     const isNewInstruction = instructionIndex !== currentInstructionIndexRef.current;
-    const isApproaching = distanceToManeuver < 150 && distanceToManeuver > 30; // ~500ft
-    const isImminent = distanceToManeuver < 30; // ~100ft
+    
+    // Announce based on time-to-maneuver (look-ahead) rather than just distance
+    // This ensures announcements come BEFORE the maneuver at any speed
+    const shouldAnnounceByTime = timeToManeuverSeconds < 8 && timeToManeuverSeconds > 2; // 2-8 seconds ahead
+    const isImminent = timeToManeuverSeconds < 3 || distanceToManeuver < 30; // ~3 seconds or 100ft
+    
+    // Distance-based fallback for low speeds
+    const isApproaching = distanceToManeuver < 200 && distanceToManeuver > 50;
+    
+    // Prevent spam: check cooldown for this specific instruction
+    const cooldownPassed = now - lastTimeForThisInstruction > INSTRUCTION_COOLDOWN_MS;
 
-    if (isNewInstruction || isApproaching || isImminent) {
+    if (isNewInstruction) {
       currentInstructionIndexRef.current = instructionIndex;
+      lastInstructionTimeRef.current.set(instructionIndex, now);
+      const voiceText = HereService.buildVoicePrompt(instruction, distanceToManeuver);
+      speak(voiceText, true);
+    } else if ((shouldAnnounceByTime || isApproaching || isImminent) && cooldownPassed) {
+      lastInstructionTimeRef.current.set(instructionIndex, now);
       const voiceText = HereService.buildVoicePrompt(instruction, distanceToManeuver);
       speak(voiceText, isImminent);
     }
