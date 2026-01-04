@@ -11,17 +11,28 @@ import {
   DollarSign,
   MapPin,
   Play,
+  Settings,
 } from 'lucide-react';
 import { useLanguage } from '@/i18n/LanguageContext';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
 import {
   HereService,
   RouteResponse,
   WeatherAlertsResponse,
   GeocodeResult,
+  TruckProfile,
+  DEFAULT_TRUCK_PROFILE,
 } from '@/services/HereService';
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from '@/components/ui/sheet';
 import WeatherAlertsList from '@/components/navigation/WeatherAlertsList';
 import RouteMap from '@/components/navigation/RouteMap';
 import AddressSearch from '@/components/navigation/AddressSearch';
@@ -42,6 +53,10 @@ const NavigationScreen = () => {
   const [transportMode, setTransportMode] = useState<'truck' | 'car'>('truck');
   const [avoidTolls, setAvoidTolls] = useState(false);
   const [avoidFerries, setAvoidFerries] = useState(false);
+
+  // Truck profile state
+  const [truckProfile, setTruckProfile] = useState<TruckProfile>(DEFAULT_TRUCK_PROFILE);
+  const [showTruckSettings, setShowTruckSettings] = useState(false);
 
   // Results state
   const [route, setRoute] = useState<RouteResponse | null>(null);
@@ -72,6 +87,7 @@ const NavigationScreen = () => {
         transportMode,
         avoidTolls,
         avoidFerries,
+        truckProfile: transportMode === 'truck' ? truckProfile : undefined,
       });
 
       setRoute(routeResult);
@@ -87,7 +103,7 @@ const NavigationScreen = () => {
         try {
           const alerts = await HereService.getWeatherAlertsAlongRoute(
             routeResult.polyline,
-            'pt-BR'
+            'en-US'
           );
           setWeatherAlerts(alerts);
         } catch (alertError) {
@@ -145,7 +161,7 @@ const NavigationScreen = () => {
 
   const handleStartNavigation = () => {
     if (route && origin && destination) {
-      startNavigation(route, origin, destination);
+      startNavigation(route, origin, destination, transportMode === 'truck' ? truckProfile : undefined);
     }
   };
 
@@ -240,14 +256,85 @@ const NavigationScreen = () => {
 
         {/* Options */}
         <div className="space-y-4 bg-card border border-border rounded-xl p-4">
-          <h3 className="font-semibold text-sm">
-            {t.navigation?.options || 'Route Options'}
-          </h3>
+          <div className="flex items-center justify-between">
+            <h3 className="font-semibold text-sm">
+              {t.navigation?.options || 'Route Options'}
+            </h3>
+            {transportMode === 'truck' && (
+              <Sheet open={showTruckSettings} onOpenChange={setShowTruckSettings}>
+                <SheetTrigger asChild>
+                  <Button variant="ghost" size="sm">
+                    <Settings className="w-4 h-4 mr-1" />
+                    Truck Settings
+                  </Button>
+                </SheetTrigger>
+                <SheetContent>
+                  <SheetHeader>
+                    <SheetTitle>🚛 Truck Profile (53' Trailer)</SheetTitle>
+                  </SheetHeader>
+                  <div className="mt-6 space-y-6">
+                    <div className="space-y-2">
+                      <Label>Trailer Length (ft)</Label>
+                      <Input
+                        type="number"
+                        value={truckProfile.trailerLengthFt}
+                        onChange={(e) => setTruckProfile(prev => ({
+                          ...prev,
+                          trailerLengthFt: parseFloat(e.target.value) || 53,
+                        }))}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Height (ft)</Label>
+                      <Input
+                        type="number"
+                        step="0.1"
+                        value={truckProfile.heightFt}
+                        onChange={(e) => setTruckProfile(prev => ({
+                          ...prev,
+                          heightFt: parseFloat(e.target.value) || 13.6,
+                        }))}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Gross Weight (lbs)</Label>
+                      <Input
+                        type="number"
+                        value={truckProfile.weightLbs}
+                        onChange={(e) => setTruckProfile(prev => ({
+                          ...prev,
+                          weightLbs: parseFloat(e.target.value) || 80000,
+                        }))}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Axles</Label>
+                      <Input
+                        type="number"
+                        value={truckProfile.axles}
+                        onChange={(e) => setTruckProfile(prev => ({
+                          ...prev,
+                          axles: parseInt(e.target.value) || 5,
+                        }))}
+                      />
+                    </div>
+                    <Button
+                      variant="outline"
+                      className="w-full"
+                      onClick={() => setTruckProfile(DEFAULT_TRUCK_PROFILE)}
+                    >
+                      Reset to Default
+                    </Button>
+                  </div>
+                </SheetContent>
+              </Sheet>
+            )}
+          </div>
 
           <div className="flex items-center justify-between">
             <Label className="flex items-center gap-2 text-sm">
               <Truck className="w-4 h-4 text-muted-foreground" />
-              {t.navigation?.truckMode || 'Truck mode'}
+              {t.navigation?.truckMode || 'Truck mode (53\' trailer)'}
             </Label>
             <Switch
               checked={transportMode === 'truck'}
@@ -331,7 +418,9 @@ const NavigationScreen = () => {
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Truck className="w-4 h-4" />
               <span>
-                {t.navigation?.mode || 'Mode'}: {route.transportMode}
+                {route.transportMode === 'truck' 
+                  ? `Truck (${truckProfile.trailerLengthFt}' trailer)`
+                  : 'Car'}
               </span>
             </div>
           </div>

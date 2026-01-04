@@ -6,6 +6,17 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+interface TruckProfile {
+  // Length in feet (will be converted to meters)
+  trailerLengthFt?: number;
+  // Height in feet (will be converted to meters)
+  heightFt?: number;
+  // Weight in pounds (will be converted to metric tons)
+  weightLbs?: number;
+  // Number of axles
+  axles?: number;
+}
+
 interface RouteRequest {
   originLat: number;
   originLng: number;
@@ -14,6 +25,18 @@ interface RouteRequest {
   transportMode?: string;
   avoidTolls?: boolean;
   avoidFerries?: boolean;
+  // Truck-specific options
+  truckProfile?: TruckProfile;
+}
+
+// Convert feet to meters
+function feetToMeters(feet: number): number {
+  return feet * 0.3048;
+}
+
+// Convert pounds to metric tons
+function poundsToTons(lbs: number): number {
+  return lbs * 0.000453592;
 }
 
 serve(async (req) => {
@@ -39,10 +62,11 @@ serve(async (req) => {
       destLng, 
       transportMode = 'truck',
       avoidTolls = false,
-      avoidFerries = false
+      avoidFerries = false,
+      truckProfile
     } = body;
 
-    console.log('Route request:', { originLat, originLng, destLat, destLng, transportMode });
+    console.log('Route request:', { originLat, originLng, destLat, destLng, transportMode, truckProfile });
 
     // Build avoid features
     const avoidFeatures: string[] = [];
@@ -55,11 +79,44 @@ serve(async (req) => {
       origin: `${originLat},${originLng}`,
       destination: `${destLat},${destLng}`,
       transportMode: transportMode,
-      return: 'polyline,summary,actions,instructions',
+      return: 'polyline,summary,actions,instructions,turnByTurnActions',
+      lang: 'en-US',
     });
 
     if (avoidFeatures.length > 0) {
       params.append('avoid[features]', avoidFeatures.join(','));
+    }
+
+    // Add truck-specific parameters for 53' trailer
+    if (transportMode === 'truck') {
+      // Default truck profile for 53' semi-truck
+      const profile = {
+        trailerLengthFt: truckProfile?.trailerLengthFt ?? 53,
+        heightFt: truckProfile?.heightFt ?? 13.6,
+        weightLbs: truckProfile?.weightLbs ?? 80000,
+        axles: truckProfile?.axles ?? 5,
+      };
+
+      // Total truck length (tractor ~25ft + trailer 53ft = ~78ft total)
+      const totalLengthMeters = feetToMeters(profile.trailerLengthFt + 25);
+      const heightMeters = feetToMeters(profile.heightFt);
+      const grossWeightTons = poundsToTons(profile.weightLbs);
+
+      // HERE API truck parameters
+      params.append('truck[grossWeight]', Math.round(grossWeightTons * 1000).toString()); // kg
+      params.append('truck[height]', heightMeters.toFixed(2)); // meters
+      params.append('truck[length]', totalLengthMeters.toFixed(2)); // meters
+      params.append('truck[width]', '2.6'); // Standard truck width ~8.5ft = 2.6m
+      params.append('truck[axleCount]', profile.axles.toString());
+      params.append('truck[type]', 'tractorTruck');
+      params.append('truck[trailerCount]', '1');
+
+      console.log('Truck profile applied:', {
+        grossWeight: `${Math.round(grossWeightTons * 1000)} kg`,
+        height: `${heightMeters.toFixed(2)} m`,
+        length: `${totalLengthMeters.toFixed(2)} m`,
+        axles: profile.axles,
+      });
     }
 
     const hereUrl = `https://router.hereapi.com/v8/routes?${params.toString()}`;
@@ -74,6 +131,12 @@ serve(async (req) => {
       if (transportMode === 'truck' && data.error) {
         console.log('Truck mode failed, trying car mode...');
         params.set('transportMode', 'car');
+        // Remove truck params for car mode
+        for (const key of [...params.keys()]) {
+          if (key.startsWith('truck[')) {
+            params.delete(key);
+          }
+        }
         const fallbackUrl = `https://router.hereapi.com/v8/routes?${params.toString()}`;
         const fallbackResponse = await fetch(fallbackUrl);
         const fallbackData = await fallbackResponse.json();
@@ -118,13 +181,33 @@ function processRouteResponse(data: any, usedMode: string) {
   const summary = section?.summary || {};
   const polyline = section?.polyline || '';
   
-  // Extract instructions
-  const instructions = section?.actions?.map((action: any) => ({
-    instruction: action.instruction,
-    duration: action.duration,
-    length: action.length,
-    direction: action.direction,
-  })) || [];
+  // Extract turn-by-turn instructions with road names
+  const instructions = section?.actions?.map((action: any, index: number) => {
+    // Build a clean instruction text without coordinates
+    let instruction = action.instruction || '';
+    
+    // Get road/street name
+    const roadName = action.nextRoad?.name?.[0]?.value || 
+                     action.currentRoad?.name?.[0]?.value || 
+                     '';
+    
+    // Get exit info if available
+    const exitInfo = action.exit?.name?.[0]?.value || 
+                     action.exit?.number || 
+                     '';
+
+    return {
+      instruction: instruction,
+      duration: action.duration || 0,
+      length: action.length || 0,
+      direction: action.direction || '',
+      action: action.action || '',
+      roadName: roadName,
+      exitInfo: exitInfo,
+      // Offset in meters from start for timing voice prompts
+      offset: action.offset || 0,
+    };
+  }) || [];
 
   const result = {
     polyline,
@@ -132,9 +215,15 @@ function processRouteResponse(data: any, usedMode: string) {
     duration: summary.duration || 0, // seconds
     instructions,
     transportMode: usedMode,
+    // Include notices about route (e.g., truck restrictions bypassed)
+    notices: route.notices || [],
   };
 
-  console.log('Route calculated:', { distance: result.distance, duration: result.duration });
+  console.log('Route calculated:', { 
+    distance: result.distance, 
+    duration: result.duration,
+    instructionCount: result.instructions.length,
+  });
 
   return new Response(
     JSON.stringify(result),

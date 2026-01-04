@@ -1,5 +1,5 @@
 import React from 'react';
-import { Clock, MapPin, X } from 'lucide-react';
+import { Clock, MapPin, X, Volume2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import ManeuverIcon from './ManeuverIcon';
 import { getManeuverIcon } from '@/lib/navigationUtils';
@@ -12,6 +12,7 @@ interface NavigationHUDProps {
   remainingDistance: number;
   remainingDuration: number;
   onEndNavigation: () => void;
+  onRepeat?: () => void;
 }
 
 const NavigationHUD = ({
@@ -20,11 +21,16 @@ const NavigationHUD = ({
   remainingDistance,
   remainingDuration,
   onEndNavigation,
+  onRepeat,
 }: NavigationHUDProps) => {
   const { t } = useLanguage();
   const maneuverType = currentInstruction
     ? getManeuverIcon(currentInstruction.instruction)
     : 'straight';
+
+  // Get road name for display
+  const roadName = currentInstruction?.roadName || '';
+  const displayInstruction = currentInstruction?.instruction || t.navigation?.continueOn || 'Continue';
 
   return (
     <div className="absolute inset-x-0 top-0 z-30 safe-top">
@@ -35,13 +41,28 @@ const NavigationHUD = ({
             <ManeuverIcon maneuver={maneuverType} className="w-10 h-10" />
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-2xl font-bold">
+            <p className="text-3xl font-bold">
               {HereService.formatDistance(distanceToNextManeuver)}
             </p>
             <p className="text-sm opacity-90 truncate">
-              {currentInstruction?.instruction || t.navigation?.continueOn || 'Continue'}
+              {displayInstruction}
             </p>
+            {roadName && (
+              <p className="text-xs opacity-75 truncate">
+                {roadName}
+              </p>
+            )}
           </div>
+          {onRepeat && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={onRepeat}
+              className="text-primary-foreground/80 hover:text-primary-foreground hover:bg-primary-foreground/20"
+            >
+              <Volume2 className="w-5 h-5" />
+            </Button>
+          )}
         </div>
       </div>
 
