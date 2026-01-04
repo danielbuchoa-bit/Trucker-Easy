@@ -13,24 +13,54 @@ interface RouteMapProps {
   className?: string;
 }
 
-// Polyline decoding moved to src/lib/hereFlexiblePolyline.ts (official HERE decoder)
-
-
 const RouteMap = ({ routePolyline, originLat, originLng, destLat, destLng, className }: RouteMapProps) => {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
   const originMarker = useRef<mapboxgl.Marker | null>(null);
   const destMarker = useRef<mapboxgl.Marker | null>(null);
+  const userLocationMarker = useRef<mapboxgl.Marker | null>(null);
   const [mapReady, setMapReady] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [gettingLocation, setGettingLocation] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const mapInitialized = useRef(false);
 
-  // Capture an initial center for first paint; later updates are handled by effects below.
-  const initialCenter = useRef<[number, number]>([
-    typeof originLng === 'number' ? originLng : -46.6333,
-    typeof originLat === 'number' ? originLat : -23.5505,
-  ]);
+  // Get user's current location
+  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
+
+  // Request user location on mount
+  useEffect(() => {
+    if (!navigator.geolocation) {
+      setGettingLocation(false);
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setUserLocation({
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+        });
+        setGettingLocation(false);
+      },
+      (err) => {
+        console.warn('[RouteMap] Geolocation error:', err.message);
+        setGettingLocation(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
+    );
+  }, []);
+
+  // Determine initial center: user location > origin > fallback
+  const getInitialCenter = useCallback((): [number, number] => {
+    if (userLocation) {
+      return [userLocation.lng, userLocation.lat];
+    }
+    if (typeof originLng === 'number' && typeof originLat === 'number') {
+      return [originLng, originLat];
+    }
+    return [-46.6333, -23.5505]; // Fallback
+  }, [userLocation, originLat, originLng]);
 
   const initializeMap = useCallback(async () => {
     if (!mapContainer.current || mapInitialized.current) return;
@@ -52,14 +82,17 @@ const RouteMap = ({ routePolyline, originLat, originLng, destLat, destLng, class
 
       mapboxgl.accessToken = token;
 
-      // Ensure container is empty (prevents Mapbox warnings/flicker if remounted)
+      // Ensure container is empty
       mapContainer.current.innerHTML = '';
+
+      const initialCenter = getInitialCenter();
+      const initialZoom = userLocation ? 15 : 4;
 
       map.current = new mapboxgl.Map({
         container: mapContainer.current,
         style: 'mapbox://styles/mapbox/navigation-night-v1',
-        zoom: 4,
-        center: initialCenter.current,
+        zoom: initialZoom,
+        center: initialCenter,
       });
 
       map.current.addControl(
@@ -73,7 +106,6 @@ const RouteMap = ({ routePolyline, originLat, originLng, destLat, destLng, class
       };
 
       map.current.once('load', markReady);
-      // Some environments emit 'idle' before 'load'
       map.current.once('idle', markReady);
 
       map.current.on('error', (e) => {
@@ -86,20 +118,52 @@ const RouteMap = ({ routePolyline, originLat, originLng, destLat, destLng, class
       setError('Failed to initialize map');
       setLoading(false);
     }
-  }, []);
+  }, [getInitialCenter, userLocation]);
 
+  // Initialize map after we have location (or timeout)
   useEffect(() => {
-    initializeMap();
+    if (!gettingLocation) {
+      initializeMap();
+    }
 
     return () => {
       originMarker.current?.remove();
       destMarker.current?.remove();
+      userLocationMarker.current?.remove();
       map.current?.remove();
       map.current = null;
       mapInitialized.current = false;
       if (mapContainer.current) mapContainer.current.innerHTML = '';
     };
-  }, [initializeMap]);
+  }, [gettingLocation, initializeMap]);
+
+  // Center on user location when it becomes available (after map ready)
+  useEffect(() => {
+    if (!map.current || !mapReady || !userLocation) return;
+    
+    const hasOrigin = typeof originLat === 'number' && typeof originLng === 'number';
+    const hasDest = typeof destLat === 'number' && typeof destLng === 'number';
+    
+    // Update user location marker
+    if (userLocationMarker.current) {
+      userLocationMarker.current.setLngLat([userLocation.lng, userLocation.lat]);
+    } else {
+      const el = document.createElement('div');
+      el.className = 'w-4 h-4 bg-blue-500 rounded-full border-2 border-white shadow-lg animate-pulse';
+      userLocationMarker.current = new mapboxgl.Marker(el)
+        .setLngLat([userLocation.lng, userLocation.lat])
+        .addTo(map.current);
+    }
+    
+    // Center map on user location if no route/origin/dest set
+    if (!hasOrigin && !hasDest && !routePolyline) {
+      map.current.easeTo({
+        center: [userLocation.lng, userLocation.lat],
+        zoom: 15,
+        duration: 800,
+      });
+    }
+  }, [userLocation, mapReady, originLat, originLng, destLat, destLng, routePolyline]);
 
   // Update markers and route when props change
   useEffect(() => {
@@ -213,9 +277,12 @@ const RouteMap = ({ routePolyline, originLat, originLng, destLat, destLng, class
   return (
     <div className={`relative ${className}`}>
       <div ref={mapContainer} className="absolute inset-0" />
-      {loading && (
-        <div className="absolute inset-0 flex items-center justify-center bg-muted/50">
+      {(loading || gettingLocation) && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-muted/50 gap-2">
           <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+          {gettingLocation && (
+            <p className="text-sm text-muted-foreground">Obtendo localização atual…</p>
+          )}
         </div>
       )}
     </div>
