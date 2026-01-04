@@ -135,20 +135,21 @@ export function useSmoothPosition(
     return result;
   }, [lerpBearing]);
 
-  // Animation loop for smooth interpolation
+  // Animation loop for smooth interpolation (only runs when needed)
   const animate = useCallback(() => {
     const prev = prevSmoothedRef.current;
     const target = targetPositionRef.current;
     const lastRaw = lastRawPositionRef.current;
     
     if (!prev || !target || !lastRaw) {
-      rafRef.current = requestAnimationFrame(animate);
+      rafRef.current = null;
       return;
     }
 
     const now = performance.now();
     const timeSinceStart = now - interpolationStartTimeRef.current;
     const duration = interpolationDurationRef.current;
+    const timeSinceLastGps = now - lastRawTimeRef.current;
     
     // Calculate interpolation progress (0 to 1)
     const t = Math.min(1, timeSinceStart / duration);
@@ -162,16 +163,17 @@ export function useSmoothPosition(
     const interpHeading = lerpBearing(prev.heading, target.heading, easeOut);
 
     // Dead reckoning: predict ahead based on current speed and heading
-    const timeSinceLastGps = now - lastRawTimeRef.current;
     const currentSpeed = smoothedSpeedRef.current;
     const currentHeading = smoothedHeadingRef.current;
     
+    // Only apply dead reckoning if we have valid data and interpolation is complete
+    const predictTime = t >= 1 ? Math.min(timeSinceLastGps - duration, 500) : 0;
     const predicted = predictPosition(
-      interpLat,
-      interpLng,
+      t >= 1 ? target.lat : interpLat,
+      t >= 1 ? target.lng : interpLng,
       currentSpeed,
       currentHeading,
-      Math.min(timeSinceLastGps, 500) // Only predict up to 500ms ahead
+      predictTime > 0 ? predictTime : 0
     );
 
     setSmoothedPosition({
@@ -187,8 +189,12 @@ export function useSmoothPosition(
       predictedLng: predicted.lng,
     });
 
-    // Always continue animation for smooth dead reckoning
-    rafRef.current = requestAnimationFrame(animate);
+    // Continue animation while interpolating OR if we need dead reckoning (up to 2 seconds)
+    if (t < 1 || (currentSpeed > 0.5 && timeSinceLastGps < 2000)) {
+      rafRef.current = requestAnimationFrame(animate);
+    } else {
+      rafRef.current = null;
+    }
   }, [lerp, lerpBearing, predictPosition]);
 
   // Process new raw position
@@ -267,18 +273,15 @@ export function useSmoothPosition(
     }
   }, [rawPosition, alpha, minDistanceThreshold, maxAge, haversineDistance, lerp, lerpBearing, smoothSpeed, smoothHeading, animate]);
 
-  // Cleanup
+  // Cleanup only
   useEffect(() => {
-    // Start animation loop on mount
-    rafRef.current = requestAnimationFrame(animate);
-    
     return () => {
       if (rafRef.current) {
         cancelAnimationFrame(rafRef.current);
         rafRef.current = null;
       }
     };
-  }, [animate]);
+  }, []);
 
   return smoothedPosition;
 }
