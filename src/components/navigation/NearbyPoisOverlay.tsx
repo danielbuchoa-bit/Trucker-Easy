@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { Fuel, Truck, ParkingCircle, ChevronRight, Navigation } from 'lucide-react';
+import { Fuel, Truck, ParkingCircle, ChevronRight, Navigation, Scale } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Sheet,
@@ -31,7 +31,7 @@ interface NearbyPoisOverlayProps {
   lng: number | null;
   heading: number | null;
   onNavigateTo?: (poi: Poi) => void;
-  onPoisUpdate?: (pois: Poi[]) => void; // Callback for arrival detection
+  onPoisUpdate?: (pois: Poi[]) => void;
 }
 
 // HERE category IDs for truck-related POIs
@@ -47,74 +47,52 @@ const CategoryIcon: React.FC<{ category: Poi['category']; className?: string }> 
 }) => {
   switch (category) {
     case 'truck_stop':
-      return <Truck className={`${className} text-orange-500`} />;
+      return <Truck className={`${className} text-orange-400`} />;
     case 'rest_area':
-      return <ParkingCircle className={`${className} text-green-500`} />;
+      return <ParkingCircle className={`${className} text-blue-400`} />;
     case 'truck_service':
-      return <Truck className={`${className} text-blue-500`} />;
+      return <Scale className={`${className} text-purple-400`} />;
     case 'fuel':
     default:
-      return <Fuel className={`${className} text-amber-500`} />;
+      return <Fuel className={`${className} text-amber-400`} />;
   }
 };
 
-const CategoryBadge: React.FC<{ category: Poi['category'] }> = ({ category }) => {
-  const labels: Record<Poi['category'], string> = {
-    fuel: 'Fuel',
-    truck_stop: 'Truck Stop',
-    rest_area: 'Rest Area',
-    truck_service: 'Service',
-  };
-
-  const colors: Record<Poi['category'], string> = {
-    fuel: 'bg-amber-500/20 text-amber-700',
-    truck_stop: 'bg-orange-500/20 text-orange-700',
-    rest_area: 'bg-green-500/20 text-green-700',
-    truck_service: 'bg-blue-500/20 text-blue-700',
-  };
-
-  return (
-    <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${colors[category]}`}>
-      {labels[category]}
-    </span>
-  );
-};
-
+// Trucker Path style POI card with colored distance badge
 const PoiCard: React.FC<{ 
   poi: Poi; 
   onClick: () => void;
-  compact?: boolean;
-}> = ({ poi, onClick, compact = true }) => {
+  color: 'green' | 'teal' | 'orange' | 'red';
+}> = ({ poi, onClick, color }) => {
   const distanceDisplay = poi.distanceMiles < 10 
-    ? `${poi.distanceMiles.toFixed(1)} mi`
-    : `${Math.round(poi.distanceMiles)} mi`;
+    ? `${poi.distanceMiles.toFixed(0)}` 
+    : `${Math.round(poi.distanceMiles)}`;
 
-  if (compact) {
-    return (
-      <button
-        onClick={onClick}
-        className="w-full bg-background/95 backdrop-blur-sm rounded-lg shadow-md p-2.5 flex items-center gap-2.5 hover:bg-accent/50 transition-colors text-left"
-      >
-        <div className="shrink-0 w-9 h-9 rounded-lg bg-muted flex items-center justify-center">
-          <CategoryIcon category={poi.category} className="w-5 h-5" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="text-sm font-medium truncate">
-            {poi.chainName || poi.name}
-          </div>
-          <div className="flex items-center gap-1.5">
-            <CategoryBadge category={poi.category} />
-          </div>
-        </div>
-        <div className="shrink-0 text-right">
-          <div className="text-sm font-bold text-primary">{distanceDisplay}</div>
-          <ChevronRight className="w-4 h-4 text-muted-foreground ml-auto" />
-        </div>
-      </button>
-    );
-  }
+  const colorClasses = {
+    green: 'bg-success text-success-foreground',
+    teal: 'bg-info text-info-foreground',
+    orange: 'bg-warning text-warning-foreground',
+    red: 'bg-destructive text-destructive-foreground',
+  };
 
-  return null;
+  return (
+    <button
+      onClick={onClick}
+      className="flex items-center gap-2 text-left group"
+    >
+      {/* Distance badge - Trucker Path style */}
+      <div className={`flex flex-col items-center justify-center min-w-[52px] px-2 py-1.5 rounded-lg ${colorClasses[color]}`}>
+        <div className="flex items-center gap-0.5">
+          <CategoryIcon category={poi.category} className="w-4 h-4" />
+          {poi.chainName?.toLowerCase().includes("love") && (
+            <span className="text-xs">❤️</span>
+          )}
+        </div>
+        <span className="text-lg font-black leading-none">{distanceDisplay}</span>
+        <span className="text-[10px] font-semibold leading-none">mi</span>
+      </div>
+    </button>
+  );
 };
 
 const NearbyPoisOverlay: React.FC<NearbyPoisOverlayProps> = ({ 
@@ -162,8 +140,8 @@ const NearbyPoisOverlay: React.FC<NearbyPoisOverlayProps> = ({
 
         if (!error && data?.pois) {
           lastFetchRef.current = { lat, lng, time: now };
-          const allPois = data.pois.slice(0, 10); // Keep up to 10 for arrival detection
-          setPois(allPois.slice(0, 5)); // Show max 5 in UI
+          const allPois = data.pois.slice(0, 10);
+          setPois(allPois.slice(0, 5));
           
           // Notify parent for arrival detection
           if (onPoisUpdate) {
@@ -195,18 +173,25 @@ const NearbyPoisOverlay: React.FC<NearbyPoisOverlayProps> = ({
     }
   };
 
+  // Get color based on distance
+  const getPoiColor = (distanceMiles: number): 'green' | 'teal' | 'orange' | 'red' => {
+    if (distanceMiles <= 10) return 'green';
+    if (distanceMiles <= 25) return 'teal';
+    if (distanceMiles <= 40) return 'orange';
+    return 'red';
+  };
+
   if (pois.length === 0 && !loading) {
     return null;
   }
 
   return (
     <>
-      {/* POI Cards Stack - Bottom Left */}
-      <div className="absolute bottom-28 left-4 z-30 w-56 space-y-2">
+      {/* POI Cards Stack - Left side, vertically stacked */}
+      <div className="absolute top-32 left-4 z-30 flex flex-col gap-2 safe-top">
         {loading && pois.length === 0 && (
-          <div className="bg-background/90 backdrop-blur-sm rounded-lg p-3 text-center">
-            <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto" />
-            <span className="text-xs text-muted-foreground mt-1 block">Finding stops...</span>
+          <div className="bg-card/90 backdrop-blur-sm rounded-lg px-3 py-2 text-center">
+            <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto" />
           </div>
         )}
         
@@ -215,16 +200,9 @@ const NearbyPoisOverlay: React.FC<NearbyPoisOverlayProps> = ({
             key={poi.id}
             poi={poi}
             onClick={() => setSelectedPoi(poi)}
+            color={getPoiColor(poi.distanceMiles)}
           />
         ))}
-
-        {pois.length > 0 && (
-          <div className="text-center">
-            <span className="text-xs text-muted-foreground bg-background/80 px-2 py-1 rounded">
-              {pois.length} stops ahead
-            </span>
-          </div>
-        )}
       </div>
 
       {/* POI Detail Sheet */}
@@ -242,7 +220,6 @@ const NearbyPoisOverlay: React.FC<NearbyPoisOverlayProps> = ({
                       {selectedPoi.chainName || selectedPoi.name}
                     </SheetTitle>
                     <div className="flex items-center gap-2 mt-1">
-                      <CategoryBadge category={selectedPoi.category} />
                       <span className="text-sm font-semibold text-primary">
                         {selectedPoi.distanceMiles.toFixed(1)} mi
                       </span>
