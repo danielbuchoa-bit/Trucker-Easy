@@ -2,7 +2,6 @@ export type Language = 'en' | 'es' | 'pt';
 
 export const translations = {
   en: {
-    // Common
     common: {
       continue: 'Continue',
       back: 'Back',
@@ -27,7 +26,6 @@ export const translations = {
       days: 'days',
     },
     
-    // Welcome Screen
     welcome: {
       title: 'TRUCKEREASY',
       subtitle: 'Your road companion',
@@ -36,7 +34,6 @@ export const translations = {
       getStarted: 'Get Started',
     },
     
-    // Auth
     auth: {
       login: 'Log In',
       signup: 'Sign Up',
@@ -47,9 +44,9 @@ export const translations = {
       noAccount: "Don't have an account?",
       hasAccount: 'Already have an account?',
       orContinueWith: 'Or continue with',
+      logout: 'Log Out',
     },
     
-    // Onboarding
     onboarding: {
       welcome: 'Welcome, Driver!',
       letsSetup: "Let's set up your profile",
@@ -66,7 +63,6 @@ export const translations = {
       optional: '(Optional)',
     },
     
-    // Truck Types
     truckTypes: {
       semi: 'Semi Truck',
       daycab: 'Day Cab',
@@ -75,7 +71,6 @@ export const translations = {
       flatbed: 'Flatbed',
     },
     
-    // Trailer Types
     trailerTypes: {
       dryvan: 'Dry Van',
       reefer: 'Reefer',
@@ -86,7 +81,6 @@ export const translations = {
       none: 'No Trailer',
     },
     
-    // Diet Options
     diet: {
       none: 'No restrictions',
       vegetarian: 'Vegetarian',
@@ -99,7 +93,6 @@ export const translations = {
       kosher: 'Kosher',
     },
     
-    // Allergies
     allergies: {
       nuts: 'Nuts',
       shellfish: 'Shellfish',
@@ -110,7 +103,6 @@ export const translations = {
       fish: 'Fish',
     },
     
-    // Health Conditions
     health: {
       diabetes: 'Diabetes',
       hypertension: 'High Blood Pressure',
@@ -119,7 +111,6 @@ export const translations = {
       none: 'None',
     },
     
-    // Fitness Goals
     goals: {
       loseWeight: 'Lose Weight',
       gainMuscle: 'Gain Muscle',
@@ -128,7 +119,6 @@ export const translations = {
       moreEnergy: 'More Energy',
     },
     
-    // Navigation
     nav: {
       map: 'Map',
       stops: 'Stops',
@@ -137,7 +127,6 @@ export const translations = {
       profile: 'Profile',
     },
     
-    // Map & Places
     map: {
       nearMe: 'Near Me',
       searchPlaces: 'Search truck stops, restaurants...',
@@ -150,7 +139,6 @@ export const translations = {
       gasStations: 'Gas Stations',
     },
     
-    // Place Details
     place: {
       openNow: 'Open Now',
       closed: 'Closed',
@@ -170,9 +158,11 @@ export const translations = {
       weighOpen: 'Open',
       weighClosed: 'Closed',
       weighBypass: 'Bypass Available',
+      info: 'Info',
+      reports: 'Reports',
+      recentReports: 'Recent Reports',
     },
     
-    // Amenities
     amenities: {
       showers: 'Showers',
       laundry: 'Laundry',
@@ -186,22 +176,28 @@ export const translations = {
       pets: 'Pet Friendly',
     },
     
-    // Reports
     report: {
       title: 'Quick Report',
       subtitle: 'Help other drivers',
+      parking: 'Parking Status',
       parkingStatus: 'Parking Status',
       weighStation: 'Weigh Station',
+      hazard: 'Safety Hazard',
+      conditions: 'Road Conditions',
       safetyAlert: 'Safety Alert',
       roadConditions: 'Road Conditions',
       other: 'Other',
       thankYou: 'Thanks for reporting!',
+      thanks: 'Thanks for reporting!',
       lotFull: 'Lot is Full',
       spotsAvailable: 'Spots Available',
       limitedSpots: 'Limited Spots',
+      helpOthers: 'Help other drivers by reporting conditions',
+      currentLocation: 'Current Location',
+      submit: 'Submit Report',
+      quickReport: 'Quick Report',
     },
     
-    // Company Reviews
     review: {
       title: 'Rate this Location',
       howWasIt: 'How was your experience?',
@@ -214,8 +210,45 @@ export const translations = {
       tags: 'Add tags',
       submit: 'Submit Review',
     },
+
+    reviews: {
+      writeReview: 'Write a Review',
+      shareFeedback: 'Share your experience...',
+      submit: 'Submit',
+      thankYou: 'Thanks for your review!',
+      companyRating: 'Company Rating',
+      rateShipper: 'Rate this shipper or receiver based on your experience',
+      rateCompany: 'Rate Company',
+      shipperReceiver: 'Shipper / Receiver',
+      companyName: 'Company Name',
+      enterCompanyName: 'Enter company name...',
+      overallRating: 'Overall Rating',
+      waitTime: 'Wait Time',
+      detailedRatings: 'Detailed Ratings',
+      selectTags: 'Select Tags',
+      additionalNotes: 'Additional Notes',
+      shareExperience: 'Share more about your experience...',
+      submitReview: 'Submit Review',
+      tags: {
+        friendly: 'Friendly',
+        organized: 'Organized',
+        clean: 'Clean',
+        quickLoad: 'Quick Loading',
+        goodRestrooms: 'Good Restrooms',
+        safeParking: 'Safe Parking',
+        slowProcess: 'Slow Process',
+        rude: 'Rude Staff',
+        disorganized: 'Disorganized',
+        noRestrooms: 'No Restrooms',
+      },
+      categories: {
+        service: 'Service',
+        organization: 'Organization',
+        facilities: 'Facilities',
+        loading: 'Loading/Unloading',
+      },
+    },
     
-    // Review Tags
     reviewTags: {
       quickService: 'Quick Service',
       friendly: 'Friendly Staff',
@@ -227,7 +260,6 @@ export const translations = {
       limitedParking: 'Limited Parking',
     },
     
-    // Community
     community: {
       title: 'Communities',
       join: 'Join',
@@ -241,9 +273,13 @@ export const translations = {
       trailerType: 'Trailer Type (Optional)',
       publicGroup: 'Public Group',
       privateGroup: 'Private Group',
+      all: 'All',
+      byLanguage: 'By Language',
+      byRegion: 'By Region',
+      byTrailer: 'By Trailer',
+      typeMessage: 'Type a message...',
     },
     
-    // Chat
     chat: {
       typeMessage: 'Type a message...',
       send: 'Send',
@@ -253,7 +289,6 @@ export const translations = {
       block: 'Block User',
     },
     
-    // Profile
     profile: {
       title: 'Profile',
       editProfile: 'Edit Profile',
@@ -272,9 +307,20 @@ export const translations = {
       reportsSubmitted: 'Reports Submitted',
       reviewsWritten: 'Reviews Written',
       helpedDrivers: 'Drivers Helped',
+      reports: 'Reports',
+      reviews: 'Reviews',
+      messages: 'Messages',
     },
     
-    // Food Recommendations
+    settings: {
+      title: 'Settings',
+      language: 'Language',
+      notifications: 'Notifications',
+      darkMode: 'Dark Mode',
+      privacy: 'Privacy',
+      help: 'Help & Support',
+    },
+    
     food: {
       recommendedForYou: 'Recommended for You',
       basedOnProfile: 'Based on your health profile',
@@ -330,6 +376,7 @@ export const translations = {
       noAccount: '¿No tienes cuenta?',
       hasAccount: '¿Ya tienes cuenta?',
       orContinueWith: 'O continúa con',
+      logout: 'Cerrar Sesión',
     },
     
     onboarding: {
@@ -443,6 +490,9 @@ export const translations = {
       weighOpen: 'Abierto',
       weighClosed: 'Cerrado',
       weighBypass: 'Bypass Disponible',
+      info: 'Info',
+      reports: 'Reportes',
+      recentReports: 'Reportes Recientes',
     },
     
     amenities: {
@@ -461,15 +511,23 @@ export const translations = {
     report: {
       title: 'Reporte Rápido',
       subtitle: 'Ayuda a otros conductores',
+      parking: 'Estado del Estacionamiento',
       parkingStatus: 'Estado del Estacionamiento',
       weighStation: 'Estación de Pesaje',
+      hazard: 'Peligro de Seguridad',
+      conditions: 'Condiciones del Camino',
       safetyAlert: 'Alerta de Seguridad',
       roadConditions: 'Condiciones del Camino',
       other: 'Otro',
       thankYou: '¡Gracias por reportar!',
+      thanks: '¡Gracias por reportar!',
       lotFull: 'Estacionamiento Lleno',
       spotsAvailable: 'Lugares Disponibles',
       limitedSpots: 'Lugares Limitados',
+      helpOthers: 'Ayuda a otros conductores reportando condiciones',
+      currentLocation: 'Ubicación Actual',
+      submit: 'Enviar Reporte',
+      quickReport: 'Reporte Rápido',
     },
     
     review: {
@@ -483,6 +541,44 @@ export const translations = {
       addComment: 'Añade un comentario...',
       tags: 'Añadir etiquetas',
       submit: 'Enviar Reseña',
+    },
+
+    reviews: {
+      writeReview: 'Escribir Reseña',
+      shareFeedback: 'Comparte tu experiencia...',
+      submit: 'Enviar',
+      thankYou: '¡Gracias por tu reseña!',
+      companyRating: 'Calificación de Empresa',
+      rateShipper: 'Califica este embarcador o receptor según tu experiencia',
+      rateCompany: 'Calificar Empresa',
+      shipperReceiver: 'Embarcador / Receptor',
+      companyName: 'Nombre de Empresa',
+      enterCompanyName: 'Ingresa nombre de empresa...',
+      overallRating: 'Calificación General',
+      waitTime: 'Tiempo de Espera',
+      detailedRatings: 'Calificaciones Detalladas',
+      selectTags: 'Seleccionar Etiquetas',
+      additionalNotes: 'Notas Adicionales',
+      shareExperience: 'Comparte más sobre tu experiencia...',
+      submitReview: 'Enviar Reseña',
+      tags: {
+        friendly: 'Amable',
+        organized: 'Organizado',
+        clean: 'Limpio',
+        quickLoad: 'Carga Rápida',
+        goodRestrooms: 'Buenos Baños',
+        safeParking: 'Estacionamiento Seguro',
+        slowProcess: 'Proceso Lento',
+        rude: 'Personal Grosero',
+        disorganized: 'Desorganizado',
+        noRestrooms: 'Sin Baños',
+      },
+      categories: {
+        service: 'Servicio',
+        organization: 'Organización',
+        facilities: 'Instalaciones',
+        loading: 'Carga/Descarga',
+      },
     },
     
     reviewTags: {
@@ -509,6 +605,11 @@ export const translations = {
       trailerType: 'Tipo de Remolque (Opcional)',
       publicGroup: 'Grupo Público',
       privateGroup: 'Grupo Privado',
+      all: 'Todos',
+      byLanguage: 'Por Idioma',
+      byRegion: 'Por Región',
+      byTrailer: 'Por Remolque',
+      typeMessage: 'Escribe un mensaje...',
     },
     
     chat: {
@@ -538,6 +639,18 @@ export const translations = {
       reportsSubmitted: 'Reportes Enviados',
       reviewsWritten: 'Reseñas Escritas',
       helpedDrivers: 'Conductores Ayudados',
+      reports: 'Reportes',
+      reviews: 'Reseñas',
+      messages: 'Mensajes',
+    },
+    
+    settings: {
+      title: 'Configuración',
+      language: 'Idioma',
+      notifications: 'Notificaciones',
+      darkMode: 'Modo Oscuro',
+      privacy: 'Privacidad',
+      help: 'Ayuda y Soporte',
     },
     
     food: {
@@ -595,6 +708,7 @@ export const translations = {
       noAccount: 'Não tem conta?',
       hasAccount: 'Já tem conta?',
       orContinueWith: 'Ou continue com',
+      logout: 'Sair',
     },
     
     onboarding: {
@@ -708,6 +822,9 @@ export const translations = {
       weighOpen: 'Aberta',
       weighClosed: 'Fechada',
       weighBypass: 'Bypass Disponível',
+      info: 'Info',
+      reports: 'Reportes',
+      recentReports: 'Reportes Recentes',
     },
     
     amenities: {
@@ -726,15 +843,23 @@ export const translations = {
     report: {
       title: 'Reporte Rápido',
       subtitle: 'Ajude outros motoristas',
+      parking: 'Status do Estacionamento',
       parkingStatus: 'Status do Estacionamento',
       weighStation: 'Balança',
+      hazard: 'Perigo de Segurança',
+      conditions: 'Condições da Estrada',
       safetyAlert: 'Alerta de Segurança',
       roadConditions: 'Condições da Estrada',
       other: 'Outro',
       thankYou: 'Obrigado por reportar!',
+      thanks: 'Obrigado por reportar!',
       lotFull: 'Estacionamento Lotado',
       spotsAvailable: 'Vagas Disponíveis',
       limitedSpots: 'Vagas Limitadas',
+      helpOthers: 'Ajude outros motoristas reportando condições',
+      currentLocation: 'Localização Atual',
+      submit: 'Enviar Reporte',
+      quickReport: 'Reporte Rápido',
     },
     
     review: {
@@ -748,6 +873,44 @@ export const translations = {
       addComment: 'Adicione um comentário...',
       tags: 'Adicionar tags',
       submit: 'Enviar Avaliação',
+    },
+
+    reviews: {
+      writeReview: 'Escrever Avaliação',
+      shareFeedback: 'Compartilhe sua experiência...',
+      submit: 'Enviar',
+      thankYou: 'Obrigado pela sua avaliação!',
+      companyRating: 'Avaliação de Empresa',
+      rateShipper: 'Avalie este embarcador ou recebedor baseado na sua experiência',
+      rateCompany: 'Avaliar Empresa',
+      shipperReceiver: 'Embarcador / Recebedor',
+      companyName: 'Nome da Empresa',
+      enterCompanyName: 'Digite nome da empresa...',
+      overallRating: 'Avaliação Geral',
+      waitTime: 'Tempo de Espera',
+      detailedRatings: 'Avaliações Detalhadas',
+      selectTags: 'Selecionar Tags',
+      additionalNotes: 'Notas Adicionais',
+      shareExperience: 'Compartilhe mais sobre sua experiência...',
+      submitReview: 'Enviar Avaliação',
+      tags: {
+        friendly: 'Simpático',
+        organized: 'Organizado',
+        clean: 'Limpo',
+        quickLoad: 'Carga Rápida',
+        goodRestrooms: 'Bons Banheiros',
+        safeParking: 'Estacionamento Seguro',
+        slowProcess: 'Processo Lento',
+        rude: 'Funcionários Grosseiros',
+        disorganized: 'Desorganizado',
+        noRestrooms: 'Sem Banheiros',
+      },
+      categories: {
+        service: 'Atendimento',
+        organization: 'Organização',
+        facilities: 'Instalações',
+        loading: 'Carga/Descarga',
+      },
     },
     
     reviewTags: {
@@ -774,6 +937,11 @@ export const translations = {
       trailerType: 'Tipo de Carreta (Opcional)',
       publicGroup: 'Grupo Público',
       privateGroup: 'Grupo Privado',
+      all: 'Todos',
+      byLanguage: 'Por Idioma',
+      byRegion: 'Por Região',
+      byTrailer: 'Por Carreta',
+      typeMessage: 'Digite uma mensagem...',
     },
     
     chat: {
@@ -803,6 +971,18 @@ export const translations = {
       reportsSubmitted: 'Reportes Enviados',
       reviewsWritten: 'Avaliações Escritas',
       helpedDrivers: 'Motoristas Ajudados',
+      reports: 'Reportes',
+      reviews: 'Avaliações',
+      messages: 'Mensagens',
+    },
+    
+    settings: {
+      title: 'Configurações',
+      language: 'Idioma',
+      notifications: 'Notificações',
+      darkMode: 'Modo Escuro',
+      privacy: 'Privacidade',
+      help: 'Ajuda e Suporte',
     },
     
     food: {
@@ -818,4 +998,4 @@ export const translations = {
   },
 } as const;
 
-export type TranslationKeys = typeof translations.en;
+export type TranslationsForLanguage = typeof translations.en;
