@@ -1,1 +1,7 @@
 project_id = "ohuejjhakbncfzhhdfhn"
+
+[functions.here_route]
+verify_jwt = true
+
+[functions.here_weather_alerts_along_route]
+verify_jwt = true
