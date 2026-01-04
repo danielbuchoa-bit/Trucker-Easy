@@ -158,10 +158,10 @@ const ActiveNavigationView = () => {
   // Nearby POIs for arrival detection (populated by NearbyPoisOverlay callback)
   const [nearbyPois, setNearbyPois] = useState<DetectedPoi[]>([]);
 
-  // Smooth position for marker rendering (eliminates GPS jitter)
+  // Smooth position for marker rendering (continuous interpolation between filtered GPS fixes)
   const smoothedPosition = useSmoothPosition(userPosition, {
-    alpha: 0.25, // Moderate smoothing
-    minDistanceThreshold: 2, // 2 meters minimum movement
+    alpha: 1, // no extra low-pass filtering here; only interpolation + dead reckoning
+    minDistanceThreshold: 0.5,
     maxAge: 5000,
   });
 
@@ -357,243 +357,77 @@ const ActiveNavigationView = () => {
     }
   }, [routeCoords, mapReady]);
 
-  // Smoothed heading ref for continuous interpolation
-  const smoothedHeadingRef = useRef<number | null>(null);
-  const lastUpdateTimeRef = useRef<number>(0);
-
-  // Update user marker & camera with COURSE-UP orientation (using smoothed/predicted position)
+  // Update user marker & camera with FIXED COURSE-UP orientation.
+  // Heading comes exclusively from the navigation core (COG from consecutive GPS fixes).
   useEffect(() => {
     if (!map.current || !mapReady || !userPosition) return;
 
-    // Use predicted position for smoothest marker movement (dead reckoning)
-    const displayLat = smoothedPosition?.predictedLat ?? smoothedPosition?.interpolatedLat ?? userPosition.lat;
-    const displayLng = smoothedPosition?.predictedLng ?? smoothedPosition?.interpolatedLng ?? userPosition.lng;
+    // Use interpolated position for visual smoothness (derived from the SAME filtered fixes)
+    const displayLat = smoothedPosition?.interpolatedLat ?? userPosition.lat;
+    const displayLng = smoothedPosition?.interpolatedLng ?? userPosition.lng;
     const displaySpeed = smoothedPosition?.smoothedSpeed ?? userPosition.speed ?? 0;
 
     const now = Date.now();
-    const deltaTime = now - lastUpdateTimeRef.current;
-    lastUpdateTimeRef.current = now;
     const speedKmh = displaySpeed * 3.6;
-    
-    // Add position to history for bearing calculation
-    positionHistoryRef.current.push({
-      lat: userPosition.lat,
-      lng: userPosition.lng,
-      time: now,
-    });
-    
-    // Keep only last 8 positions, max 3 seconds old (shorter window for current direction)
-    positionHistoryRef.current = positionHistoryRef.current.filter(
-      p => now - p.time < 3000
-    ).slice(-8);
-    
-    // Calculate bearing from RECENT position change (last 2 points with meaningful distance)
-    let calculatedBearing: number | null = null;
-    let movementSpeedEstimate: number | null = null;
-    let movementDistanceM: number | null = null;
-    const history = positionHistoryRef.current;
 
-    // Use the two most recent points with sufficient distance apart
-    if (history.length >= 2) {
-      const newest = history[history.length - 1];
-
-      // Find the oldest point that is at least 2 meters away
-      for (let i = history.length - 2; i >= 0; i--) {
-        const older = history[i];
-
-        const distanceMoved = Math.sqrt(
-          Math.pow((newest.lat - older.lat) * 111000, 2) +
-            Math.pow(
-              (newest.lng - older.lng) * 111000 * Math.cos((newest.lat * Math.PI) / 180),
-              2
-            )
-        );
-
-        const dtSec = Math.max(0.001, (newest.time - older.time) / 1000);
-
-        if (distanceMoved >= 2) {
-          calculatedBearing = calculateBearingBetweenPoints(
-            older.lat,
-            older.lng,
-            newest.lat,
-            newest.lng
-          );
-          movementDistanceM = distanceMoved;
-          movementSpeedEstimate = distanceMoved / dtSec;
-          break;
-        }
-      }
+    // Heading is ALWAYS course-over-ground from core.
+    const headingToUse = userPosition.heading;
+    if (headingToUse !== null) {
+      lastAppliedBearingRef.current = headingToUse;
     }
 
-    // Calculate bearing from route segment as fallback
-    let routeBearing: number | null = null;
-    if (routeCoords.length >= 2 && progress) {
-      // Find closest point on route
-      let minDist = Infinity;
-      let closestIdx = 0;
-
-      for (let i = 0; i < routeCoords.length; i++) {
-        const [lng, lat] = routeCoords[i];
-        const dist = Math.sqrt(
-          Math.pow((userPosition.lat - lat) * 111000, 2) +
-            Math.pow(
-              (userPosition.lng - lng) * 111000 * Math.cos((userPosition.lat * Math.PI) / 180),
-              2
-            )
-        );
-        if (dist < minDist) {
-          minDist = dist;
-          closestIdx = i;
-        }
-      }
-
-      // Use bearing of next segment on route
-      if (closestIdx < routeCoords.length - 1) {
-        const [lng1, lat1] = routeCoords[closestIdx];
-        const [lng2, lat2] = routeCoords[closestIdx + 1];
-        routeBearing = calculateBearingBetweenPoints(lat1, lng1, lat2, lng2);
-      }
-    }
-
-    // Determine raw heading to use (priority: calculated (COG) > GPS heading > route)
-    // IMPORTANT: On iOS Safari, `pos.coords.speed` is often null. So we rely on movement-derived speed.
-    const speedForHeading =
-      displaySpeed && displaySpeed > 0
-        ? displaySpeed
-        : movementSpeedEstimate !== null
-          ? movementSpeedEstimate
-          : 0;
-
-    let rawHeading: number | null = null;
-    let headingSource: 'calculated' | 'route' | 'gps' | 'simulation' | 'none' = 'none';
-
-    // SIMULATION MODE: Use heading from simulation hook (already calculated from route segment)
-    if (isSimulating && userPosition.heading !== null && userPosition.heading !== undefined) {
-      rawHeading = userPosition.heading;
-      headingSource = 'simulation';
-    }
-    // 1) Prefer calculated bearing (course over ground) when we have meaningful real movement
-    else if (
-      calculatedBearing !== null &&
-      !isSimulating &&
-      (speedForHeading > MIN_SPEED_FOR_HEADING || (movementDistanceM ?? 0) >= 10)
-    ) {
-      rawHeading = calculatedBearing;
-      headingSource = 'calculated';
-    }
-    // 2) Fallback to GPS heading when moving (only when speed is available, not simulating)
-    else if (userPosition.heading !== null && displaySpeed > MIN_SPEED_FOR_HEADING && !isSimulating) {
-      rawHeading = userPosition.heading;
-      headingSource = 'gps';
-    }
-    // 3) Fallback to route bearing
-    else if (routeBearing !== null) {
-      rawHeading = routeBearing;
-      headingSource = 'route';
-    }
-    
-    // Log heading diagnostics (throttled)
-    if (now - lastUpdateTimeRef.current > 500 || headingSource === 'simulation') {
-      console.log('[NAV_HEADING]', {
-        isSimulating,
-        speedForHeading: speedForHeading.toFixed(2),
-        simHeading: userPosition.heading?.toFixed(1),
-        calculatedBearing: calculatedBearing?.toFixed(1),
-        routeBearing: routeBearing?.toFixed(1),
-        rawHeading: rawHeading?.toFixed(1),
-        headingSource,
-      });
-    }
-    
-    // Apply heading smoothing with outlier rejection
-    let headingToUse: number | null = null;
-    
-    if (rawHeading !== null) {
-      if (smoothedHeadingRef.current === null) {
-        // First heading - use directly
-        smoothedHeadingRef.current = rawHeading;
-        headingToUse = rawHeading;
-      } else {
-        // Check for outlier (heading jumping too fast)
-        const headingChange = Math.abs(angularDifference(smoothedHeadingRef.current, rawHeading));
-        const maxChange = deltaTime > 0 ? (MAX_HEADING_CHANGE_PER_SEC * deltaTime / 1000) : MAX_HEADING_CHANGE_PER_SEC;
-        
-        if (headingChange > maxChange && displaySpeed > 2) {
-          // Outlier detected - use stronger smoothing
-          smoothedHeadingRef.current = smoothAngle(smoothedHeadingRef.current, rawHeading, HEADING_SMOOTH_FACTOR * 0.3);
-        } else {
-          // Normal update - apply smoothing
-          smoothedHeadingRef.current = smoothAngle(smoothedHeadingRef.current, rawHeading, HEADING_SMOOTH_FACTOR);
-        }
-        headingToUse = smoothedHeadingRef.current;
-      }
-    } else if (smoothedHeadingRef.current !== null) {
-      // No new heading but we have a previous one - keep using it
-      headingToUse = smoothedHeadingRef.current;
-    }
-    
-    // Create or update user marker
+    // Create or update user marker (marker is fixed pointing UP; map rotates)
     if (userMarker.current) {
       userMarker.current.setLngLat([displayLng, displayLat]);
     } else {
       const el = createTruckCursorElement(52);
-
-      // Ensure element has proper styling
       el.style.pointerEvents = 'none';
 
       userMarker.current = new mapboxgl.Marker({
         element: el,
-        // NORTH-UP mode: map bearing stays at 0; marker rotates to match heading
         rotationAlignment: 'viewport',
         pitchAlignment: 'viewport',
         anchor: 'center',
       })
         .setLngLat([displayLng, displayLat])
-        .addTo(map.current!);
+        .addTo(map.current);
     }
 
-    // Apply marker rotation (single source of truth for orientation)
-    if (headingToUse !== null) {
-      userMarker.current?.setRotation(headingToUse);
-    }
-
-    // Update debug info
+    // Update debug info (does not affect UI layout)
     setDebugInfo({
       speed: speedKmh,
       gpsAccuracy: userPosition.accuracy,
-      calculatedBearing,
-      routeBearing,
-      gpsHeading: userPosition.heading,
+      calculatedBearing: headingToUse,
+      routeBearing: null,
+      gpsHeading: null,
       appliedCameraBearing: headingToUse ?? lastAppliedBearingRef.current,
-      headingSource,
+      headingSource: isSimulating ? 'simulation' : headingToUse !== null ? 'calculated' : 'none',
       lastUpdate: now,
     });
 
-    // NORTH-UP camera: keep map bearing fixed (0) and only follow the user's position.
-    // Orientation is handled exclusively by rotating the marker above.
+    // COURSE-UP camera: rotate map so that direction of travel is UP.
+    // IMPORTANT: Use jumpTo (not easeTo) because this effect can run frequently due to interpolation.
     if (followUser) {
-      // Cancel any leftover animation from previous versions
       if (bearingAnimationRef.current) {
         cancelAnimationFrame(bearingAnimationRef.current);
         bearingAnimationRef.current = null;
       }
 
-      map.current.easeTo({
+      map.current.jumpTo({
         center: [displayLng, displayLat],
-        bearing: 0,
+        bearing: headingToUse ?? lastAppliedBearingRef.current,
         pitch: 60,
         zoom: 17,
-        duration: 120,
-        easing: (t) => t,
       });
     }
-    
+
     return () => {
       if (bearingAnimationRef.current) {
         cancelAnimationFrame(bearingAnimationRef.current);
+        bearingAnimationRef.current = null;
       }
     };
-  }, [userPosition, smoothedPosition, mapReady, followUser, routeCoords, progress]);
+  }, [userPosition, smoothedPosition, mapReady, followUser, isSimulating]);
 
   // Destination marker
   useEffect(() => {
