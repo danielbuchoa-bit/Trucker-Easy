@@ -36,7 +36,7 @@ interface ActiveNavigationContextValue {
   positionError: string | null;
 }
 
-const ActiveNavigationContext = createContext<ActiveNavigationContextValue | null>(null);
+const ActiveNavigationContext = createContext<ActiveNavigationContextValue | undefined>(undefined);
 
 export function ActiveNavigationProvider({ children }: { children: React.ReactNode }) {
   const [route, setRoute] = useState<RouteResponse | null>(null);
@@ -186,9 +186,9 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
   );
 }
 
-export function useActiveNavigation() {
+export function useActiveNavigation(): ActiveNavigationContextValue {
   const ctx = useContext(ActiveNavigationContext);
-  if (!ctx) {
+  if (ctx === undefined) {
     throw new Error('useActiveNavigation must be used within ActiveNavigationProvider');
   }
   return ctx;
