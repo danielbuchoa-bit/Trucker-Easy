@@ -6,6 +6,7 @@ import { useActiveNavigation, type UserPosition } from '@/contexts/ActiveNavigat
 import { useVoiceGuidance } from '@/hooks/useVoiceGuidance';
 import { useRouteSimulation } from '@/hooks/useRouteSimulation';
 import { useArrivalDetection, type DetectedPoi } from '@/hooks/useArrivalDetection';
+import { useSmoothPosition } from '@/hooks/useSmoothPosition';
 import NavigationHUD from './NavigationHUD';
 import SpeedIndicator from './SpeedIndicator';
 import BottomETABar from './BottomETABar';
@@ -141,6 +142,13 @@ const ActiveNavigationView = () => {
 
   // Nearby POIs for arrival detection (populated by NearbyPoisOverlay callback)
   const [nearbyPois, setNearbyPois] = useState<DetectedPoi[]>([]);
+
+  // Smooth position for marker rendering (eliminates GPS jitter)
+  const smoothedPosition = useSmoothPosition(userPosition, {
+    alpha: 0.25, // Moderate smoothing
+    minDistanceThreshold: 2, // 2 meters minimum movement
+    maxAge: 5000,
+  });
 
   // Arrival detection hook
   const arrival = useArrivalDetection({
@@ -322,15 +330,20 @@ const ActiveNavigationView = () => {
     }
   }, [routeCoords, mapReady]);
 
-  // Update user marker & camera with COURSE-UP orientation
+  // Update user marker & camera with COURSE-UP orientation (using smoothed position)
   useEffect(() => {
     if (!map.current || !mapReady || !userPosition) return;
 
+    // Use smoothed position for marker rendering (eliminates stutter)
+    const displayLat = smoothedPosition?.interpolatedLat ?? userPosition.lat;
+    const displayLng = smoothedPosition?.interpolatedLng ?? userPosition.lng;
+    const displayHeading = smoothedPosition?.smoothedHeading ?? userPosition.heading;
+    const displaySpeed = smoothedPosition?.smoothedSpeed ?? userPosition.speed ?? 0;
+
     const now = Date.now();
-    const speed = userPosition.speed ?? 0;
-    const speedKmh = speed * 3.6;
+    const speedKmh = displaySpeed * 3.6;
     
-    // Add position to history for bearing calculation
+    // Add position to history for bearing calculation (use raw position for accuracy)
     positionHistoryRef.current.push({
       lat: userPosition.lat,
       lng: userPosition.lng,
@@ -368,17 +381,17 @@ const ActiveNavigationView = () => {
     let headingToUse: number | null = null;
     let headingSource: 'calculated' | 'gps' | 'none' = 'none';
     
-    if (calculatedBearing !== null && speed > MIN_SPEED_FOR_HEADING) {
+    if (calculatedBearing !== null && displaySpeed > MIN_SPEED_FOR_HEADING) {
       headingToUse = calculatedBearing;
       headingSource = 'calculated';
-    } else if (userPosition.heading !== null && speed > MIN_SPEED_FOR_HEADING) {
-      headingToUse = userPosition.heading;
+    } else if (displayHeading !== null && displaySpeed > MIN_SPEED_FOR_HEADING) {
+      headingToUse = displayHeading;
       headingSource = 'gps';
     }
     
-    // Create or update user marker
+    // Create or update user marker (use smoothed interpolated position for smooth movement)
     if (userMarker.current) {
-      userMarker.current.setLngLat([userPosition.lng, userPosition.lat]);
+      userMarker.current.setLngLat([displayLng, displayLat]);
       userMarker.current.setRotation(0);
     } else {
       const el = createTruckCursorElement(52);
@@ -388,7 +401,7 @@ const ActiveNavigationView = () => {
         rotationAlignment: 'viewport',
         pitchAlignment: 'viewport'
       })
-        .setLngLat([userPosition.lng, userPosition.lat])
+        .setLngLat([displayLng, displayLat])
         .setRotation(0)
         .addTo(map.current);
     }
@@ -404,7 +417,7 @@ const ActiveNavigationView = () => {
       lastUpdate: now,
     });
 
-    // Apply camera bearing (course-up: map rotates)
+    // Apply camera bearing (course-up: map rotates) - use smoothed position
     if (followUser) {
       if (headingToUse !== null) {
         const bearingChange = bearingDifference(lastAppliedBearingRef.current, headingToUse);
@@ -428,7 +441,7 @@ const ActiveNavigationView = () => {
             
             if (diff > 1) {
               map.current?.easeTo({
-                center: [userPosition.lng, userPosition.lat],
+                center: [displayLng, displayLat],
                 bearing: newBearing,
                 pitch: 60,
                 zoom: 17,
@@ -438,7 +451,7 @@ const ActiveNavigationView = () => {
               bearingAnimationRef.current = requestAnimationFrame(animateBearing);
             } else {
               map.current?.easeTo({
-                center: [userPosition.lng, userPosition.lat],
+                center: [displayLng, displayLat],
                 bearing: target,
                 pitch: 60,
                 zoom: 17,
@@ -451,13 +464,13 @@ const ActiveNavigationView = () => {
           animateBearing();
         } else {
           map.current.easeTo({
-            center: [userPosition.lng, userPosition.lat],
+            center: [displayLng, displayLat],
             duration: 300,
           });
         }
       } else {
         map.current.easeTo({
-          center: [userPosition.lng, userPosition.lat],
+          center: [displayLng, displayLat],
           duration: 500,
         });
       }
@@ -468,7 +481,7 @@ const ActiveNavigationView = () => {
         cancelAnimationFrame(bearingAnimationRef.current);
       }
     };
-  }, [userPosition, mapReady, followUser]);
+  }, [userPosition, smoothedPosition, mapReady, followUser]);
 
   // Destination marker
   useEffect(() => {
