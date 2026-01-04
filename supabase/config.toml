@@ -7,7 +7,7 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.get_mapbox_token]
-verify_jwt = true
+verify_jwt = false
 
 [functions.here_geocode]
 verify_jwt = false
