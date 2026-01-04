@@ -235,15 +235,20 @@ const ActiveNavigationView = () => {
     mapInitialized.current = true;
 
     try {
-      const { data, error: tokenError } = await supabase.functions.invoke('get_mapbox_token');
+      const { data, error: tokenError } = await supabase.functions.invoke<{ token: string }>(
+        'get_mapbox_token'
+      );
 
-      if (tokenError || !data?.token) {
+      const token = data?.token;
+
+      if (tokenError || !token) {
+        console.error('[NAV_MAP] token_error', tokenError, data);
         setError('Failed to load map');
         setLoading(false);
         return;
       }
 
-      mapboxgl.accessToken = data.token;
+      mapboxgl.accessToken = token;
 
       const center: [number, number] = userPosition
         ? [userPosition.lng, userPosition.lat]
@@ -263,21 +268,24 @@ const ActiveNavigationView = () => {
         bearing: 0,
       });
 
-      map.current.once('load', () => {
+      const markReady = () => {
         setMapReady(true);
         setLoading(false);
-        
-        // Draw route immediately after map loads
-        if (map.current && routeCoords.length > 0) {
-          const geojson: GeoJSON.Feature = {
-            type: 'Feature',
-            properties: {},
-            geometry: {
-              type: 'LineString',
-              coordinates: routeCoords,
-            },
-          };
+      };
 
+      const drawInitialRoute = () => {
+        if (!map.current || routeCoords.length === 0) return;
+
+        const geojson: GeoJSON.Feature = {
+          type: 'Feature',
+          properties: {},
+          geometry: {
+            type: 'LineString',
+            coordinates: routeCoords,
+          },
+        };
+
+        if (!map.current.getSource('nav-route')) {
           map.current.addSource('nav-route', { type: 'geojson', data: geojson });
           map.current.addLayer({
             id: 'nav-route',
@@ -287,9 +295,21 @@ const ActiveNavigationView = () => {
             paint: { 'line-color': '#3b82f6', 'line-width': 6, 'line-opacity': 0.9 },
           });
         }
+      };
+
+      map.current.once('load', () => {
+        markReady();
+        drawInitialRoute();
       });
 
-      map.current.on('error', () => {
+      // Some environments emit 'idle' before 'load'
+      map.current.once('idle', () => {
+        markReady();
+        drawInitialRoute();
+      });
+
+      map.current.on('error', (e) => {
+        console.error('[NAV_MAP] mapbox_error', e);
         setError('Map loading error');
         setLoading(false);
       });
@@ -298,7 +318,8 @@ const ActiveNavigationView = () => {
       map.current.on('dragstart', () => {
         setFollowUser(false);
       });
-    } catch {
+    } catch (e) {
+      console.error('[NAV_MAP] init_failed', e);
       setError('Failed to initialize map');
       setLoading(false);
     }

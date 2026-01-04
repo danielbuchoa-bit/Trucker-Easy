@@ -37,15 +37,20 @@ const RouteMap = ({ routePolyline, originLat, originLng, destLat, destLng, class
     mapInitialized.current = true;
 
     try {
-      const { data, error: tokenError } = await supabase.functions.invoke('get_mapbox_token');
+      const { data, error: tokenError } = await supabase.functions.invoke<{ token: string }>(
+        'get_mapbox_token'
+      );
 
-      if (tokenError || !data?.token) {
+      const token = data?.token;
+
+      if (tokenError || !token) {
+        console.error('[MAP] token_error', tokenError, data);
         setError('Failed to load map');
         setLoading(false);
         return;
       }
 
-      mapboxgl.accessToken = data.token;
+      mapboxgl.accessToken = token;
 
       // Ensure container is empty (prevents Mapbox warnings/flicker if remounted)
       mapContainer.current.innerHTML = '';
@@ -68,14 +73,16 @@ const RouteMap = ({ routePolyline, originLat, originLng, destLat, destLng, class
       };
 
       map.current.once('load', markReady);
-      // Fallback: some environments emit 'idle' before 'load'
+      // Some environments emit 'idle' before 'load'
       map.current.once('idle', markReady);
 
-      map.current.on('error', () => {
+      map.current.on('error', (e) => {
+        console.error('[MAP] mapbox_error', e);
         setError('Map loading error');
         setLoading(false);
       });
-    } catch {
+    } catch (e) {
+      console.error('[MAP] init_failed', e);
       setError('Failed to initialize map');
       setLoading(false);
     }
