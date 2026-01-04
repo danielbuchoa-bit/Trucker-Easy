@@ -5,9 +5,10 @@ import { useWakeLock } from '@/hooks/useWakeLock';
 import { HereService, type RouteResponse, type GeocodeResult, DEFAULT_TRUCK_PROFILE, type TruckProfile } from '@/services/HereService';
 
 const NAVIGATION_STATE_KEY = 'activeNavigation';
-const OFF_ROUTE_THRESHOLD = 80; // meters - trigger reroute if user is this far from route
-const OFF_ROUTE_CONSECUTIVE_THRESHOLD = 3; // Must be off-route this many consecutive checks
-const REROUTE_COOLDOWN_MS = 30000; // 30 seconds minimum between reroutes
+const OFF_ROUTE_THRESHOLD = 50; // meters - trigger reroute if user is this far from route
+const OFF_ROUTE_CONSECUTIVE_THRESHOLD = 5; // Must be off-route for ~5 seconds (with 1s updates)
+const OFF_ROUTE_PERSIST_TIME_MS = 4000; // Must stay off-route for this duration
+const REROUTE_COOLDOWN_MS = 45000; // 45 seconds minimum between reroutes
 
 interface NavigationState {
   route: RouteResponse;
@@ -64,6 +65,8 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
   const watchIdRef = useRef<number | null>(null);
   const lastRerouteTime = useRef<number>(0);
   const offRouteCountRef = useRef<number>(0); // Consecutive off-route detections
+  const offRouteStartTimeRef = useRef<number | null>(null); // When off-route started
+  const isReroutingRef = useRef<boolean>(false); // Prevent concurrent reroutes
   const isNavigating = route !== null;
 
   // Use simulated position if simulating, otherwise real position
@@ -152,7 +155,7 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
       },
       {
         enableHighAccuracy: true,
-        maximumAge: 2000,
+        maximumAge: 500, // Reduced from 2000ms for fresher data
         timeout: 10000,
       }
     );
@@ -165,39 +168,54 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
     };
   }, [isNavigating, isSimulating]);
 
-  // Check if off route and trigger reroute (with debounce and cooldown)
+  // Check if off route and trigger reroute (with time-based debounce and cooldown)
   const checkAndReroute = useCallback(async (position: { lat: number; lng: number }) => {
     if (!destination || !route || routeCoords.length === 0) return;
-    if (isRerouting) return;
     
-    // Don't reroute during cooldown period
+    // Prevent concurrent reroutes
+    if (isReroutingRef.current || isRerouting) return;
+    
     const now = Date.now();
+    
+    // Don't even check during cooldown period
     if (now - lastRerouteTime.current < REROUTE_COOLDOWN_MS) {
-      // Still in cooldown, but update off-route visual state
       return;
     }
 
-    // Find closest point on route
+    // Find closest point on route (sample every 3rd point for performance)
     let minDist = Infinity;
-    for (const [lng, lat] of routeCoords) {
+    for (let i = 0; i < routeCoords.length; i += 3) {
+      const [lng, lat] = routeCoords[i];
       const dist = haversineDistance(position.lat, position.lng, lat, lng);
       if (dist < minDist) minDist = dist;
     }
 
     // Check if currently off route
     if (minDist > OFF_ROUTE_THRESHOLD) {
-      // Increment consecutive counter
-      offRouteCountRef.current += 1;
+      // Start or continue off-route timer
+      if (offRouteStartTimeRef.current === null) {
+        offRouteStartTimeRef.current = now;
+        offRouteCountRef.current = 1;
+      } else {
+        offRouteCountRef.current += 1;
+      }
       
-      // Only trigger reroute after consecutive detections (debounce GPS jitter)
-      if (offRouteCountRef.current >= OFF_ROUTE_CONSECUTIVE_THRESHOLD) {
+      const offRouteDuration = now - offRouteStartTimeRef.current;
+      
+      // Only trigger reroute after sustained off-route (time-based + count-based)
+      if (offRouteDuration >= OFF_ROUTE_PERSIST_TIME_MS && 
+          offRouteCountRef.current >= OFF_ROUTE_CONSECUTIVE_THRESHOLD) {
+        
+        // Lock to prevent concurrent calls
+        isReroutingRef.current = true;
         setIsOffRoute(true);
         setIsRerouting(true);
         lastRerouteTime.current = now;
-        offRouteCountRef.current = 0; // Reset counter
+        offRouteCountRef.current = 0;
+        offRouteStartTimeRef.current = null;
 
         try {
-          console.log(`Off route detected (${minDist.toFixed(0)}m from route), rerouting...`);
+          console.log(`Off route confirmed (${minDist.toFixed(0)}m, ${offRouteDuration}ms), rerouting...`);
           const newRoute = await HereService.calculateRoute({
             originLat: position.lat,
             originLng: position.lng,
@@ -235,11 +253,16 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
           console.error('Reroute failed:', error);
         } finally {
           setIsRerouting(false);
+          isReroutingRef.current = false;
         }
+      } else {
+        // Visually show off-route but don't reroute yet
+        setIsOffRoute(true);
       }
     } else {
-      // Back on route - reset counter and state
+      // Back on route - reset everything
       offRouteCountRef.current = 0;
+      offRouteStartTimeRef.current = null;
       setIsOffRoute(false);
     }
   }, [destination, route, routeCoords, isRerouting, truckProfile]);

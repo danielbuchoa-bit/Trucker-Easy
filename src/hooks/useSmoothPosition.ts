@@ -12,20 +12,26 @@ interface SmoothedPosition extends UserPosition {
   interpolatedLng: number;
   smoothedSpeed: number;
   smoothedHeading: number | null;
+  predictedLat: number; // Dead reckoning prediction
+  predictedLng: number;
 }
+
+// Constants for dead reckoning
+const PREDICTION_INTERVAL_MS = 16; // ~60fps
+const MAX_PREDICTION_TIME_MS = 2000; // Don't predict beyond 2 seconds
 
 /**
  * Hook that provides smoothed GPS position to eliminate stuttering
- * Uses low-pass filter + requestAnimationFrame interpolation
+ * Uses low-pass filter + requestAnimationFrame interpolation + dead reckoning
  */
 export function useSmoothPosition(
   rawPosition: UserPosition | null,
   config: SmoothPositionConfig = {}
 ) {
   const {
-    alpha = 0.2, // Smoothing factor (higher = more responsive, lower = smoother)
-    minDistanceThreshold = 2, // meters
-    maxAge = 5000, // ms
+    alpha = 0.3, // Smoothing factor (higher = more responsive, lower = smoother)
+    minDistanceThreshold = 1, // meters (reduced for more responsive updates)
+    maxAge = 3000, // ms
   } = config;
 
   // Smoothed position state (for components that need reactive updates)
@@ -35,12 +41,14 @@ export function useSmoothPosition(
   const prevSmoothedRef = useRef<{ lat: number; lng: number; heading: number | null } | null>(null);
   const targetPositionRef = useRef<{ lat: number; lng: number; heading: number | null } | null>(null);
   const lastRawTimeRef = useRef<number>(0);
+  const lastRawPositionRef = useRef<UserPosition | null>(null);
   const rafRef = useRef<number | null>(null);
-  const interpolationProgressRef = useRef<number>(1); // 0 = at prev, 1 = at target
+  const interpolationStartTimeRef = useRef<number>(0);
+  const interpolationDurationRef = useRef<number>(300); // ms to interpolate
   
-  // Speed smoothing
-  const speedHistoryRef = useRef<number[]>([]);
-  const MAX_SPEED_SAMPLES = 5;
+  // Speed smoothing with EMA
+  const smoothedSpeedRef = useRef<number>(0);
+  const smoothedHeadingRef = useRef<number | null>(null);
 
   // Calculate distance between two points in meters
   const haversineDistance = useCallback((lat1: number, lng1: number, lat2: number, lng2: number) => {
@@ -57,7 +65,7 @@ export function useSmoothPosition(
 
   // Linear interpolation
   const lerp = useCallback((a: number, b: number, t: number) => {
-    return a + (b - a) * t;
+    return a + (b - a) * Math.min(1, Math.max(0, t));
   }, []);
 
   // Interpolate bearing (handles 360° wraparound)
@@ -68,59 +76,120 @@ export function useSmoothPosition(
     if (diff > 180) diff -= 360;
     if (diff < -180) diff += 360;
     
-    return ((a + diff * t) + 360) % 360;
+    return ((a + diff * Math.min(1, Math.max(0, t))) + 360) % 360;
   }, []);
 
-  // Smooth speed using moving average
-  const smoothSpeed = useCallback((newSpeed: number | null): number => {
-    if (newSpeed === null || newSpeed < 0) return 0;
+  // Dead reckoning: predict position based on speed and heading
+  const predictPosition = useCallback((
+    baseLat: number,
+    baseLng: number,
+    speed: number, // m/s
+    heading: number | null,
+    deltaTimeMs: number
+  ): { lat: number; lng: number } => {
+    if (speed < 0.5 || heading === null || deltaTimeMs <= 0 || deltaTimeMs > MAX_PREDICTION_TIME_MS) {
+      return { lat: baseLat, lng: baseLng };
+    }
+
+    const distanceMeters = speed * (deltaTimeMs / 1000);
+    const headingRad = (heading * Math.PI) / 180;
     
-    speedHistoryRef.current.push(newSpeed);
-    if (speedHistoryRef.current.length > MAX_SPEED_SAMPLES) {
-      speedHistoryRef.current.shift();
+    // Convert meters to degrees (approximate)
+    const latOffset = (distanceMeters * Math.cos(headingRad)) / 111000;
+    const lngOffset = (distanceMeters * Math.sin(headingRad)) / (111000 * Math.cos(baseLat * Math.PI / 180));
+
+    return {
+      lat: baseLat + latOffset,
+      lng: baseLng + lngOffset,
+    };
+  }, []);
+
+  // Smooth speed using EMA
+  const smoothSpeed = useCallback((newSpeed: number | null): number => {
+    if (newSpeed === null || newSpeed < 0) {
+      // Decay speed when no reading
+      smoothedSpeedRef.current = smoothedSpeedRef.current * 0.9;
+      return smoothedSpeedRef.current;
     }
     
-    const sum = speedHistoryRef.current.reduce((a, b) => a + b, 0);
-    return sum / speedHistoryRef.current.length;
+    // EMA smoothing
+    const emaAlpha = 0.3;
+    smoothedSpeedRef.current = emaAlpha * newSpeed + (1 - emaAlpha) * smoothedSpeedRef.current;
+    return smoothedSpeedRef.current;
   }, []);
+
+  // Smooth heading using EMA with wraparound handling
+  const smoothHeading = useCallback((newHeading: number | null): number | null => {
+    if (newHeading === null) {
+      return smoothedHeadingRef.current;
+    }
+    
+    if (smoothedHeadingRef.current === null) {
+      smoothedHeadingRef.current = newHeading;
+      return newHeading;
+    }
+
+    const emaAlpha = 0.25;
+    const result = lerpBearing(smoothedHeadingRef.current, newHeading, emaAlpha);
+    smoothedHeadingRef.current = result;
+    return result;
+  }, [lerpBearing]);
 
   // Animation loop for smooth interpolation
   const animate = useCallback(() => {
     const prev = prevSmoothedRef.current;
     const target = targetPositionRef.current;
+    const lastRaw = lastRawPositionRef.current;
     
-    if (!prev || !target || !rawPosition) {
-      rafRef.current = null;
+    if (!prev || !target || !lastRaw) {
+      rafRef.current = requestAnimationFrame(animate);
       return;
     }
 
-    // Increment interpolation progress (complete in ~300ms at 60fps)
-    interpolationProgressRef.current = Math.min(1, interpolationProgressRef.current + 0.08);
-    const t = interpolationProgressRef.current;
+    const now = performance.now();
+    const timeSinceStart = now - interpolationStartTimeRef.current;
+    const duration = interpolationDurationRef.current;
+    
+    // Calculate interpolation progress (0 to 1)
+    const t = Math.min(1, timeSinceStart / duration);
+    
+    // Ease-out function for smoother motion
+    const easeOut = 1 - Math.pow(1 - t, 3);
 
     // Interpolate position
-    const interpLat = lerp(prev.lat, target.lat, t);
-    const interpLng = lerp(prev.lng, target.lng, t);
-    const interpHeading = lerpBearing(prev.heading, target.heading, t);
+    const interpLat = lerp(prev.lat, target.lat, easeOut);
+    const interpLng = lerp(prev.lng, target.lng, easeOut);
+    const interpHeading = lerpBearing(prev.heading, target.heading, easeOut);
+
+    // Dead reckoning: predict ahead based on current speed and heading
+    const timeSinceLastGps = now - lastRawTimeRef.current;
+    const currentSpeed = smoothedSpeedRef.current;
+    const currentHeading = smoothedHeadingRef.current;
+    
+    const predicted = predictPosition(
+      interpLat,
+      interpLng,
+      currentSpeed,
+      currentHeading,
+      Math.min(timeSinceLastGps, 500) // Only predict up to 500ms ahead
+    );
 
     setSmoothedPosition({
-      ...rawPosition,
+      ...lastRaw,
       lat: target.lat,
       lng: target.lng,
       heading: target.heading,
       interpolatedLat: interpLat,
       interpolatedLng: interpLng,
-      smoothedSpeed: smoothSpeed(rawPosition.speed),
+      smoothedSpeed: currentSpeed,
       smoothedHeading: interpHeading,
+      predictedLat: predicted.lat,
+      predictedLng: predicted.lng,
     });
 
-    // Continue animation if not complete
-    if (t < 1) {
-      rafRef.current = requestAnimationFrame(animate);
-    } else {
-      rafRef.current = null;
-    }
-  }, [rawPosition, lerp, lerpBearing, smoothSpeed]);
+    // Always continue animation for smooth dead reckoning
+    rafRef.current = requestAnimationFrame(animate);
+  }, [lerp, lerpBearing, predictPosition]);
 
   // Process new raw position
   useEffect(() => {
@@ -128,68 +197,88 @@ export function useSmoothPosition(
       setSmoothedPosition(null);
       prevSmoothedRef.current = null;
       targetPositionRef.current = null;
+      lastRawPositionRef.current = null;
       return;
     }
 
-    const now = Date.now();
+    const now = performance.now();
     const timeSinceLastRaw = now - lastRawTimeRef.current;
-    lastRawTimeRef.current = now;
+    
+    // Store raw position for reference
+    lastRawPositionRef.current = rawPosition;
 
-    // If too much time passed, reset smoothing
+    // Update smoothed speed and heading
+    const currentSpeed = smoothSpeed(rawPosition.speed);
+    const currentHeading = smoothHeading(rawPosition.heading);
+
+    // If too much time passed or first update, reset smoothing
     if (timeSinceLastRaw > maxAge || !prevSmoothedRef.current) {
       prevSmoothedRef.current = { lat: rawPosition.lat, lng: rawPosition.lng, heading: rawPosition.heading };
       targetPositionRef.current = { lat: rawPosition.lat, lng: rawPosition.lng, heading: rawPosition.heading };
-      interpolationProgressRef.current = 1;
+      lastRawTimeRef.current = now;
       
       setSmoothedPosition({
         ...rawPosition,
         interpolatedLat: rawPosition.lat,
         interpolatedLng: rawPosition.lng,
-        smoothedSpeed: smoothSpeed(rawPosition.speed),
-        smoothedHeading: rawPosition.heading,
+        smoothedSpeed: currentSpeed,
+        smoothedHeading: currentHeading,
+        predictedLat: rawPosition.lat,
+        predictedLng: rawPosition.lng,
       });
-      return;
-    }
-
-    const prev = prevSmoothedRef.current;
-    const distance = haversineDistance(prev.lat, prev.lng, rawPosition.lat, rawPosition.lng);
-
-    // Only update target if moved significantly
-    if (distance >= minDistanceThreshold) {
-      // Store current smoothed as previous
-      if (targetPositionRef.current) {
-        prevSmoothedRef.current = { ...targetPositionRef.current };
-      }
-
-      // Apply low-pass filter to new target
-      const filteredLat = lerp(prev.lat, rawPosition.lat, alpha);
-      const filteredLng = lerp(prev.lng, rawPosition.lng, alpha);
-      const filteredHeading = lerpBearing(prev.heading, rawPosition.heading, alpha);
-
-      targetPositionRef.current = {
-        lat: filteredLat,
-        lng: filteredLng,
-        heading: filteredHeading,
-      };
-
-      // Reset interpolation progress
-      interpolationProgressRef.current = 0;
-
-      // Start animation if not running
+      
+      // Start animation loop if not running
       if (!rafRef.current) {
         rafRef.current = requestAnimationFrame(animate);
       }
+      return;
     }
-  }, [rawPosition, alpha, minDistanceThreshold, maxAge, haversineDistance, lerp, lerpBearing, smoothSpeed, animate]);
+
+    const prev = targetPositionRef.current || prevSmoothedRef.current;
+    const distance = haversineDistance(prev.lat, prev.lng, rawPosition.lat, rawPosition.lng);
+
+    // Always update target, apply stronger smoothing for small movements
+    const effectiveAlpha = distance < minDistanceThreshold ? alpha * 0.5 : alpha;
+    
+    // Store current target as previous
+    if (targetPositionRef.current) {
+      prevSmoothedRef.current = { ...targetPositionRef.current };
+    }
+
+    // Apply low-pass filter to new target
+    const filteredLat = lerp(prev.lat, rawPosition.lat, effectiveAlpha);
+    const filteredLng = lerp(prev.lng, rawPosition.lng, effectiveAlpha);
+    const filteredHeading = lerpBearing(prev.heading, rawPosition.heading, effectiveAlpha);
+
+    targetPositionRef.current = {
+      lat: filteredLat,
+      lng: filteredLng,
+      heading: filteredHeading,
+    };
+
+    // Set interpolation duration based on expected update rate (~1 second between GPS updates)
+    interpolationDurationRef.current = Math.min(timeSinceLastRaw * 0.8, 1000);
+    interpolationStartTimeRef.current = now;
+    lastRawTimeRef.current = now;
+
+    // Start animation if not running
+    if (!rafRef.current) {
+      rafRef.current = requestAnimationFrame(animate);
+    }
+  }, [rawPosition, alpha, minDistanceThreshold, maxAge, haversineDistance, lerp, lerpBearing, smoothSpeed, smoothHeading, animate]);
 
   // Cleanup
   useEffect(() => {
+    // Start animation loop on mount
+    rafRef.current = requestAnimationFrame(animate);
+    
     return () => {
       if (rafRef.current) {
         cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
       }
     };
-  }, []);
+  }, [animate]);
 
   return smoothedPosition;
 }

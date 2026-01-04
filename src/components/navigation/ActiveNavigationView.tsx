@@ -188,26 +188,17 @@ const ActiveNavigationView = () => {
     return userPosition.speed * 2.237; // m/s to mph
   }, [userPosition?.speed]);
 
-  // Voice guidance for instructions
+  // Voice guidance for instructions - with look-ahead based on speed
   useEffect(() => {
     if (!currentInstruction || !progress || !voice.settings.enabled) return;
     
-    // Speak instruction at key distances
     const dist = progress.distanceToNextManeuver;
     const idx = progress.currentInstructionIndex;
+    const speedMs = smoothedPosition?.smoothedSpeed ?? userPosition?.speed ?? 0;
 
-    // Speak when instruction changes or at approach distances
-    if (idx !== lastVoiceInstructionIndex.current) {
-      lastVoiceInstructionIndex.current = idx;
-      voice.speakInstruction(currentInstruction, dist, idx);
-    } else if (dist < 150 && dist > 100) {
-      // Approaching (~500ft)
-      voice.speakInstruction(currentInstruction, dist, idx);
-    } else if (dist < 50) {
-      // Imminent (~150ft)
-      voice.speakInstruction(currentInstruction, dist, idx);
-    }
-  }, [currentInstruction, progress, voice]);
+    // Let the speakInstruction handle the logic with look-ahead
+    voice.speakInstruction(currentInstruction, dist, idx, speedMs);
+  }, [currentInstruction, progress, voice, smoothedPosition?.smoothedSpeed, userPosition?.speed]);
 
   // Voice for rerouting
   useEffect(() => {
@@ -330,13 +321,14 @@ const ActiveNavigationView = () => {
     }
   }, [routeCoords, mapReady]);
 
-  // Update user marker & camera with COURSE-UP orientation (using smoothed position)
+  // Update user marker & camera with COURSE-UP orientation (using smoothed/predicted position)
   useEffect(() => {
     if (!map.current || !mapReady || !userPosition) return;
 
-    // Use smoothed position for marker rendering (eliminates stutter)
-    const displayLat = smoothedPosition?.interpolatedLat ?? userPosition.lat;
-    const displayLng = smoothedPosition?.interpolatedLng ?? userPosition.lng;
+    // Use predicted position for smoothest marker movement (dead reckoning)
+    // Falls back to interpolated, then raw position
+    const displayLat = smoothedPosition?.predictedLat ?? smoothedPosition?.interpolatedLat ?? userPosition.lat;
+    const displayLng = smoothedPosition?.predictedLng ?? smoothedPosition?.interpolatedLng ?? userPosition.lng;
     const displayHeading = smoothedPosition?.smoothedHeading ?? userPosition.heading;
     const displaySpeed = smoothedPosition?.smoothedSpeed ?? userPosition.speed ?? 0;
 
