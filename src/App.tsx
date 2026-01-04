@@ -5,6 +5,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { GeofenceProvider } from './contexts/GeofenceContext';
+import { ActiveNavigationProvider } from './contexts/ActiveNavigationContext';
 import WelcomeScreen from "./pages/Welcome";
 import AuthScreen from "./pages/Auth";
 import OnboardingScreen from "./pages/Onboarding";
@@ -31,23 +32,25 @@ const App = () => (
         <Sonner />
         <BrowserRouter>
           <GeofenceProvider>
-            <Routes>
-              <Route path="/" element={<WelcomeScreen onComplete={() => {}} />} />
-              <Route path="/auth" element={<AuthScreen onComplete={() => {}} onBack={() => {}} />} />
-              <Route path="/onboarding" element={<OnboardingScreen onComplete={() => {}} onBack={() => {}} />} />
-              <Route path="/home" element={<HomeScreen />} />
-              <Route path="/stops" element={<StopsScreen />} />
-              <Route path="/report" element={<ReportScreen />} />
-              <Route path="/community" element={<CommunityScreen />} />
-              <Route path="/profile" element={<ProfileScreen />} />
-              <Route path="/place/:id" element={<PlaceDetailScreen />} />
-              <Route path="/company-review/:id" element={<CompanyReviewScreen />} />
-              <Route path="/chat/:id" element={<ChatRoomScreen />} />
-              <Route path="/bypass-history" element={<BypassHistory />} />
-              <Route path="/settings" element={<Settings />} />
-              <Route path="/navigation" element={<NavigationScreen />} />
-              <Route path="*" element={<NotFound />} />
-            </Routes>
+            <ActiveNavigationProvider>
+              <Routes>
+                <Route path="/" element={<WelcomeScreen onComplete={() => {}} />} />
+                <Route path="/auth" element={<AuthScreen onComplete={() => {}} onBack={() => {}} />} />
+                <Route path="/onboarding" element={<OnboardingScreen onComplete={() => {}} onBack={() => {}} />} />
+                <Route path="/home" element={<HomeScreen />} />
+                <Route path="/stops" element={<StopsScreen />} />
+                <Route path="/report" element={<ReportScreen />} />
+                <Route path="/community" element={<CommunityScreen />} />
+                <Route path="/profile" element={<ProfileScreen />} />
+                <Route path="/place/:id" element={<PlaceDetailScreen />} />
+                <Route path="/company-review/:id" element={<CompanyReviewScreen />} />
+                <Route path="/chat/:id" element={<ChatRoomScreen />} />
+                <Route path="/bypass-history" element={<BypassHistory />} />
+                <Route path="/settings" element={<Settings />} />
+                <Route path="/navigation" element={<NavigationScreen />} />
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+            </ActiveNavigationProvider>
           </GeofenceProvider>
         </BrowserRouter>
       </TooltipProvider>

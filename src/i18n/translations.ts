@@ -389,6 +389,10 @@ export const translations = {
       locationError: 'Could not get current location',
       searchAddress: 'Search address...',
       noResults: 'No results found',
+      startNavigation: 'Start Navigation',
+      endNavigation: 'End Navigation',
+      arrived: 'You have arrived!',
+      continueOn: 'Continue',
     },
   },
   
@@ -780,6 +784,10 @@ export const translations = {
       locationError: 'No se pudo obtener la ubicación actual',
       searchAddress: 'Buscar dirección...',
       noResults: 'Sin resultados',
+      startNavigation: 'Iniciar Navegación',
+      endNavigation: 'Terminar Navegación',
+      arrived: '¡Has llegado!',
+      continueOn: 'Continuar',
     },
   },
   
@@ -1171,6 +1179,10 @@ export const translations = {
       locationError: 'Não foi possível obter a localização atual',
       searchAddress: 'Buscar endereço...',
       noResults: 'Nenhum resultado encontrado',
+      startNavigation: 'Iniciar Navegação',
+      endNavigation: 'Encerrar Navegação',
+      arrived: 'Você chegou!',
+      continueOn: 'Continue',
     },
   },
 } as const;
