@@ -33,6 +33,41 @@ const SNAP_MAX_DISTANCE_M = 80;
 // NOTE: REROUTE_COOLDOWN_MS remains conservative to avoid loops.
 const REROUTE_COOLDOWN_MS = 45000; // 45 seconds minimum between reroutes
 
+// --- Course-over-ground (COG) navigation model ---
+// IMPORTANT: We intentionally ignore any native heading/compass values and derive heading
+// exclusively from displacement between consecutive GPS fixes.
+const MIN_COG_SPEED_MPS = 0.8; // ~3 km/h
+const MIN_COG_DISTANCE_M = 3; // meters between fixes to compute bearing
+const MAX_REASONABLE_SPEED_MPS = 60; // ~216 km/h (spike rejection)
+const HEADING_SMOOTH_FACTOR = 0.22; // 0..1
+const SPEED_SMOOTH_FACTOR = 0.3; // 0..1
+
+function calculateBearingBetweenPoints(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+  const toDeg = (rad: number) => (rad * 180) / Math.PI;
+
+  const φ1 = toRad(lat1);
+  const φ2 = toRad(lat2);
+  const Δλ = toRad(lng2 - lng1);
+
+  const y = Math.sin(Δλ) * Math.cos(φ2);
+  const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
+
+  return (toDeg(Math.atan2(y, x)) + 360) % 360;
+}
+
+function angularDifference(a: number, b: number): number {
+  let diff = b - a;
+  while (diff > 180) diff -= 360;
+  while (diff < -180) diff += 360;
+  return diff;
+}
+
+function smoothAngle(current: number, target: number, factor: number): number {
+  const diff = angularDifference(current, target);
+  return (current + diff * factor + 360) % 360;
+}
+
 interface NavigationState {
   route: RouteResponse;
   origin: GeocodeResult;
@@ -78,7 +113,14 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
   const [userPosition, setUserPosition] = useState<UserPosition | null>(null);
   const [simulatedPosition, setSimulatedPosition] = useState<UserPosition | null>(null);
   const [isSimulating, setIsSimulating] = useState(false);
-  const lastPositionRef = useRef<{ lat: number; lng: number; time: number } | null>(null);
+
+  // Raw fix history (for COG) + filtered fix (for stable nav)
+  const lastRawFixRef = useRef<{ lat: number; lng: number; time: number } | null>(null);
+  const filteredFixRef = useRef<{ lat: number; lng: number; time: number } | null>(null);
+  const lastValidHeadingRef = useRef<number | null>(null);
+  const smoothedHeadingRef = useRef<number | null>(null);
+  const smoothedSpeedRef = useRef<number>(0);
+
   const [progress, setProgress] = useState<NavigationProgress | null>(null);
   const [positionError, setPositionError] = useState<string | null>(null);
   const [truckProfile, setTruckProfile] = useState<TruckProfile>(DEFAULT_TRUCK_PROFILE);
@@ -350,7 +392,6 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
 
   // Update progress when position changes (throttled)
   const lastProgressUpdate = useRef<number>(0);
-  const filteredPosRef = useRef<{ lat: number; lng: number; time: number } | null>(null);
 
   useEffect(() => {
     if (!effectivePosition || !route || routeCoords.length < 2) {
@@ -363,34 +404,10 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
     if (now - lastProgressUpdate.current < 1000) return;
     lastProgressUpdate.current = now;
 
-    // --- Position smoothing (EMA) + outlier rejection (anti-jitter) ---
-    const raw = effectivePosition;
-    const prev = filteredPosRef.current;
-
-    let filteredLat = raw.lat;
-    let filteredLng = raw.lng;
-
-    if (prev) {
-      const dt = Math.max(0.001, (now - prev.time) / 1000);
-      const jumpM = haversineDistance(prev.lat, prev.lng, raw.lat, raw.lng);
-
-      // Reject impossible jumps (helps iOS GPS spikes)
-      const maxReasonableSpeed = 60; // m/s (~216 km/h)
-      const impliedSpeed = jumpM / dt;
-      const accuracy = raw.accuracy ?? null;
-
-      if (impliedSpeed <= maxReasonableSpeed || (accuracy !== null && accuracy > 80)) {
-        const alpha = accuracy !== null && accuracy > 30 ? 0.18 : 0.35;
-        filteredLat = prev.lat + (raw.lat - prev.lat) * alpha;
-        filteredLng = prev.lng + (raw.lng - prev.lng) * alpha;
-      } else {
-        // Keep previous filtered (ignore spike)
-        filteredLat = prev.lat;
-        filteredLng = prev.lng;
-      }
-    }
-
-    filteredPosRef.current = { lat: filteredLat, lng: filteredLng, time: now };
+    // IMPORTANT: effectivePosition is already filtered/stabilized in the core.
+    // Use it consistently for map-matching, progress, and off-route validation.
+    const filteredLat = effectivePosition.lat;
+    const filteredLng = effectivePosition.lng;
 
     // --- Map-matching (soft snap) ---
     const baseMatch = matchPositionToRoute(filteredLng, filteredLat, routeCoords, {
@@ -436,7 +453,7 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
     // Check if off route (only for real navigation, not simulation)
     if (!isSimulating) {
       checkAndReroute(
-        { lat: raw.lat, lng: raw.lng, accuracy: raw.accuracy ?? null },
+        { lat: filteredLat, lng: filteredLng, accuracy: effectivePosition.accuracy ?? null },
         match,
         isProgressing
       );
