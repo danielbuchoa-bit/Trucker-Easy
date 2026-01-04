@@ -14,13 +14,98 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      bypass_events: {
+        Row: {
+          confidence_score: number
+          created_at: string
+          id: string
+          lat: number
+          lng: number
+          occurred_at: string
+          result: string
+          source: string
+          user_id: string
+          vehicle_id: string | null
+          weigh_station_id: string
+        }
+        Insert: {
+          confidence_score?: number
+          created_at?: string
+          id?: string
+          lat: number
+          lng: number
+          occurred_at: string
+          result: string
+          source?: string
+          user_id: string
+          vehicle_id?: string | null
+          weigh_station_id: string
+        }
+        Update: {
+          confidence_score?: number
+          created_at?: string
+          id?: string
+          lat?: number
+          lng?: number
+          occurred_at?: string
+          result?: string
+          source?: string
+          user_id?: string
+          vehicle_id?: string | null
+          weigh_station_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bypass_events_weigh_station_id_fkey"
+            columns: ["weigh_station_id"]
+            isOneToOne: false
+            referencedRelation: "weigh_stations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      weigh_stations: {
+        Row: {
+          active: boolean | null
+          created_at: string
+          id: string
+          lat: number
+          lng: number
+          name: string
+          radius_m: number | null
+          state: string | null
+        }
+        Insert: {
+          active?: boolean | null
+          created_at?: string
+          id?: string
+          lat: number
+          lng: number
+          name: string
+          radius_m?: number | null
+          state?: string | null
+        }
+        Update: {
+          active?: boolean | null
+          created_at?: string
+          id?: string
+          lat?: number
+          lng?: number
+          name?: string
+          radius_m?: number | null
+          state?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      can_insert_bypass_event: {
+        Args: { p_user_id: string; p_weigh_station_id: string }
+        Returns: boolean
+      }
     }
     Enums: {
       [_ in never]: never

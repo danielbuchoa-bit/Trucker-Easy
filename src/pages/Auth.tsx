@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { useLanguage } from '@/i18n/LanguageContext';
 import { Mail, Lock, Eye, EyeOff, ArrowLeft } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { supabase } from '@/integrations/supabase/client';
+import { useToast } from '@/hooks/use-toast';
 
 interface AuthScreenProps {
   onComplete: () => void;
@@ -11,16 +13,55 @@ interface AuthScreenProps {
 const AuthScreen = ({ onComplete, onBack }: AuthScreenProps) => {
   const { t } = useLanguage();
   const navigate = useNavigate();
+  const { toast } = useToast();
   const [isLogin, setIsLogin] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // TODO: Integrate with Supabase auth
-    onComplete();
-    navigate('/onboarding');
+    setLoading(true);
+
+    try {
+      if (isLogin) {
+        const { error } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+
+        if (error) throw error;
+        
+        toast({
+          title: t.common.success,
+          description: t.auth.login,
+        });
+        navigate('/home');
+      } else {
+        const { error } = await supabase.auth.signUp({
+          email,
+          password,
+        });
+
+        if (error) throw error;
+
+        toast({
+          title: t.common.success,
+          description: t.auth.signup,
+        });
+        navigate('/onboarding');
+      }
+      onComplete();
+    } catch (error: any) {
+      toast({
+        title: t.common.error,
+        description: error.message,
+        variant: 'destructive',
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleBack = () => {
@@ -61,6 +102,7 @@ const AuthScreen = ({ onComplete, onBack }: AuthScreenProps) => {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder={t.auth.email}
+              required
               className="w-full h-14 pl-12 pr-4 bg-card border border-border rounded-xl text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
             />
           </div>
@@ -73,6 +115,8 @@ const AuthScreen = ({ onComplete, onBack }: AuthScreenProps) => {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder={t.auth.password}
+              required
+              minLength={6}
               className="w-full h-14 pl-12 pr-12 bg-card border border-border rounded-xl text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
             />
             <button
@@ -97,9 +141,10 @@ const AuthScreen = ({ onComplete, onBack }: AuthScreenProps) => {
           {/* Submit Button */}
           <button
             type="submit"
-            className="w-full py-4 bg-primary text-primary-foreground rounded-xl font-semibold text-lg transition-all duration-200 hover:opacity-90 active:scale-[0.98] glow-primary"
+            disabled={loading}
+            className="w-full py-4 bg-primary text-primary-foreground rounded-xl font-semibold text-lg transition-all duration-200 hover:opacity-90 active:scale-[0.98] glow-primary disabled:opacity-50"
           >
-            {isLogin ? t.auth.login : t.auth.signup}
+            {loading ? t.common.loading : (isLogin ? t.auth.login : t.auth.signup)}
           </button>
         </form>
 
@@ -119,4 +164,3 @@ const AuthScreen = ({ onComplete, onBack }: AuthScreenProps) => {
 };
 
 export default AuthScreen;
-
