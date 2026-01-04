@@ -102,19 +102,23 @@ serve(async (req) => {
       const heightMeters = feetToMeters(profile.heightFt);
       const grossWeightTons = poundsToTons(profile.weightLbs);
 
-      // HERE API truck parameters
+      // HERE API truck parameters (values must be integers in cm for height/length/width)
+      const heightCm = Math.round(heightMeters * 100);
+      const lengthCm = Math.round(totalLengthMeters * 100);
+      const widthCm = 260; // Standard truck width ~8.5ft = 2.6m = 260cm
+      
       params.append('truck[grossWeight]', Math.round(grossWeightTons * 1000).toString()); // kg
-      params.append('truck[height]', heightMeters.toFixed(2)); // meters
-      params.append('truck[length]', totalLengthMeters.toFixed(2)); // meters
-      params.append('truck[width]', '2.6'); // Standard truck width ~8.5ft = 2.6m
+      params.append('truck[height]', heightCm.toString()); // centimeters
+      params.append('truck[length]', lengthCm.toString()); // centimeters
+      params.append('truck[width]', widthCm.toString()); // centimeters
       params.append('truck[axleCount]', profile.axles.toString());
       params.append('truck[type]', 'tractorTruck');
       params.append('truck[trailerCount]', '1');
 
       console.log('Truck profile applied:', {
         grossWeight: `${Math.round(grossWeightTons * 1000)} kg`,
-        height: `${heightMeters.toFixed(2)} m`,
-        length: `${totalLengthMeters.toFixed(2)} m`,
+        height: `${heightCm} cm`,
+        length: `${lengthCm} cm`,
         axles: profile.axles,
       });
     }
