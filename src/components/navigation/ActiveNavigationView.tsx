@@ -380,8 +380,10 @@ const ActiveNavigationView = () => {
       {/* Voice Controls */}
       <VoiceControls
         settings={voice.settings}
+        voiceState={voice.voiceState}
         onToggle={voice.toggleVoice}
         onUpdateSettings={voice.updateSettings}
+        onUnlockVoice={voice.unlockVoice}
       />
 
       {/* Simulation Controls */}
