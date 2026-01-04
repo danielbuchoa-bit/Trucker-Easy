@@ -1,21 +1,40 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Navigation, Truck, AlertTriangle, Clock, Route as RouteIcon, Ship, DollarSign, MapPin } from 'lucide-react';
+import {
+  ArrowLeft,
+  Navigation,
+  Truck,
+  AlertTriangle,
+  Clock,
+  Route as RouteIcon,
+  Ship,
+  DollarSign,
+  MapPin,
+  Play,
+} from 'lucide-react';
 import { useLanguage } from '@/i18n/LanguageContext';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
-import { HereService, RouteResponse, WeatherAlertsResponse, GeocodeResult } from '@/services/HereService';
+import {
+  HereService,
+  RouteResponse,
+  WeatherAlertsResponse,
+  GeocodeResult,
+} from '@/services/HereService';
 import WeatherAlertsList from '@/components/navigation/WeatherAlertsList';
 import RouteMap from '@/components/navigation/RouteMap';
 import AddressSearch from '@/components/navigation/AddressSearch';
+import ActiveNavigationView from '@/components/navigation/ActiveNavigationView';
 import BottomNav from '@/components/navigation/BottomNav';
 import { useToast } from '@/hooks/use-toast';
+import { useActiveNavigation } from '@/contexts/ActiveNavigationContext';
 
 const NavigationScreen = () => {
   const { t } = useLanguage();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { isNavigating, startNavigation } = useActiveNavigation();
 
   // Location state
   const [origin, setOrigin] = useState<GeocodeResult | null>(null);
@@ -73,7 +92,11 @@ const NavigationScreen = () => {
           setWeatherAlerts(alerts);
         } catch (alertError) {
           console.error('Weather alerts error:', alertError);
-          setWeatherAlerts({ alerts: [], available: false, message: t.navigation?.weatherUnavailable });
+          setWeatherAlerts({
+            alerts: [],
+            available: false,
+            message: t.navigation?.weatherUnavailable,
+          });
         } finally {
           setAlertsLoading(false);
         }
@@ -82,7 +105,8 @@ const NavigationScreen = () => {
       console.error('Route calculation error:', error);
       toast({
         title: t.navigation?.error || 'Error',
-        description: error.message || t.navigation?.routeError || 'Failed to calculate route',
+        description:
+          error.message || t.navigation?.routeError || 'Failed to calculate route',
         variant: 'destructive',
       });
     } finally {
@@ -110,13 +134,25 @@ const NavigationScreen = () => {
         () => {
           toast({
             title: t.navigation?.error || 'Error',
-            description: t.navigation?.locationError || 'Could not get current location',
+            description:
+              t.navigation?.locationError || 'Could not get current location',
             variant: 'destructive',
           });
         }
       );
     }
   };
+
+  const handleStartNavigation = () => {
+    if (route && origin && destination) {
+      startNavigation(route, origin, destination);
+    }
+  };
+
+  // If navigation is active, show the active navigation view
+  if (isNavigating) {
+    return <ActiveNavigationView />;
+  }
 
   return (
     <div className="min-h-screen bg-background pb-20">
@@ -154,7 +190,7 @@ const NavigationScreen = () => {
               {t.navigation?.useMyLocation || 'Use my location'}
             </Button>
           </div>
-          
+
           {origin ? (
             <div className="flex items-center gap-3 p-3 bg-card border border-border rounded-lg">
               <MapPin className="w-4 h-4 text-green-500 shrink-0" />
@@ -180,13 +216,15 @@ const NavigationScreen = () => {
             <div className="w-3 h-3 rounded-full bg-red-500" />
             {t.navigation?.destination || 'Destination'}
           </Label>
-          
+
           {destination ? (
             <div className="flex items-center gap-3 p-3 bg-card border border-border rounded-lg">
               <MapPin className="w-4 h-4 text-red-500 shrink-0" />
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium truncate">{destination.title}</p>
-                <p className="text-xs text-muted-foreground truncate">{destination.address}</p>
+                <p className="text-xs text-muted-foreground truncate">
+                  {destination.address}
+                </p>
               </div>
               <Button variant="ghost" size="sm" onClick={() => setDestination(null)}>
                 ✕
@@ -202,8 +240,10 @@ const NavigationScreen = () => {
 
         {/* Options */}
         <div className="space-y-4 bg-card border border-border rounded-xl p-4">
-          <h3 className="font-semibold text-sm">{t.navigation?.options || 'Route Options'}</h3>
-          
+          <h3 className="font-semibold text-sm">
+            {t.navigation?.options || 'Route Options'}
+          </h3>
+
           <div className="flex items-center justify-between">
             <Label className="flex items-center gap-2 text-sm">
               <Truck className="w-4 h-4 text-muted-foreground" />
@@ -239,7 +279,9 @@ const NavigationScreen = () => {
           disabled={loading || !origin || !destination}
         >
           {loading ? (
-            <span className="animate-pulse">{t.navigation?.calculating || 'Calculating...'}</span>
+            <span className="animate-pulse">
+              {t.navigation?.calculating || 'Calculating...'}
+            </span>
           ) : (
             <>
               <RouteIcon className="w-5 h-5 mr-2" />
@@ -255,32 +297,42 @@ const NavigationScreen = () => {
               <RouteIcon className="w-5 h-5 text-primary" />
               {t.navigation?.routeInfo || 'Route Information'}
             </h3>
-            
+
             <div className="grid grid-cols-2 gap-4">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
                   <MapPin className="w-5 h-5 text-primary" />
                 </div>
                 <div>
-                  <p className="text-xs text-muted-foreground">{t.navigation?.distance || 'Distance'}</p>
-                  <p className="font-semibold">{HereService.formatDistance(route.distance)}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {t.navigation?.distance || 'Distance'}
+                  </p>
+                  <p className="font-semibold">
+                    {HereService.formatDistance(route.distance)}
+                  </p>
                 </div>
               </div>
-              
+
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
                   <Clock className="w-5 h-5 text-primary" />
                 </div>
                 <div>
-                  <p className="text-xs text-muted-foreground">{t.navigation?.duration || 'Duration'}</p>
-                  <p className="font-semibold">{HereService.formatDuration(route.duration)}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {t.navigation?.duration || 'Duration'}
+                  </p>
+                  <p className="font-semibold">
+                    {HereService.formatDuration(route.duration)}
+                  </p>
                 </div>
               </div>
             </div>
 
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Truck className="w-4 h-4" />
-              <span>{t.navigation?.mode || 'Mode'}: {route.transportMode}</span>
+              <span>
+                {t.navigation?.mode || 'Mode'}: {route.transportMode}
+              </span>
             </div>
           </div>
         )}
@@ -301,6 +353,19 @@ const NavigationScreen = () => {
           </div>
         )}
       </div>
+
+      {/* Start Navigation Button - Fixed at bottom */}
+      {route && origin && destination && (
+        <div className="fixed bottom-20 inset-x-0 px-4 pb-4 z-30 safe-bottom">
+          <Button
+            className="w-full h-14 text-lg font-bold shadow-xl"
+            onClick={handleStartNavigation}
+          >
+            <Play className="w-6 h-6 mr-2" />
+            {t.navigation?.startNavigation || 'Start Navigation'}
+          </Button>
+        </div>
+      )}
 
       <BottomNav
         activeTab="stops"
