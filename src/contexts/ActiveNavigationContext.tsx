@@ -15,13 +15,21 @@ interface NavigationState {
   truckProfile: TruckProfile;
 }
 
+export interface UserPosition {
+  lat: number;
+  lng: number;
+  heading: number | null; // GPS course/bearing in degrees (0-360, 0 = North)
+  speed: number | null; // Speed in m/s
+  accuracy: number | null;
+}
+
 interface ActiveNavigationContextValue {
   isNavigating: boolean;
   route: RouteResponse | null;
   routeCoords: LngLat[];
   origin: GeocodeResult | null;
   destination: GeocodeResult | null;
-  userPosition: { lat: number; lng: number } | null;
+  userPosition: UserPosition | null;
   progress: NavigationProgress | null;
   truckProfile: TruckProfile;
   isRerouting: boolean;
@@ -29,7 +37,7 @@ interface ActiveNavigationContextValue {
   isSimulating: boolean;
   startNavigation: (route: RouteResponse, origin: GeocodeResult, destination: GeocodeResult, profile?: TruckProfile) => void;
   endNavigation: () => void;
-  setSimulatedPosition: (position: { lat: number; lng: number } | null) => void;
+  setSimulatedPosition: (position: UserPosition | null) => void;
   setIsSimulating: (simulating: boolean) => void;
   positionError: string | null;
 }
@@ -41,9 +49,10 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
   const [routeCoords, setRouteCoords] = useState<LngLat[]>([]);
   const [origin, setOrigin] = useState<GeocodeResult | null>(null);
   const [destination, setDestination] = useState<GeocodeResult | null>(null);
-  const [userPosition, setUserPosition] = useState<{ lat: number; lng: number } | null>(null);
-  const [simulatedPosition, setSimulatedPosition] = useState<{ lat: number; lng: number } | null>(null);
+  const [userPosition, setUserPosition] = useState<UserPosition | null>(null);
+  const [simulatedPosition, setSimulatedPosition] = useState<UserPosition | null>(null);
   const [isSimulating, setIsSimulating] = useState(false);
+  const lastPositionRef = useRef<{ lat: number; lng: number; time: number } | null>(null);
   const [progress, setProgress] = useState<NavigationProgress | null>(null);
   const [positionError, setPositionError] = useState<string | null>(null);
   const [truckProfile, setTruckProfile] = useState<TruckProfile>(DEFAULT_TRUCK_PROFILE);
@@ -99,7 +108,39 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
 
     watchIdRef.current = navigator.geolocation.watchPosition(
       (pos) => {
-        setUserPosition({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        const { latitude, longitude, heading: gpsHeading, speed: gpsSpeed, accuracy } = pos.coords;
+        
+        // Calculate heading from movement if GPS heading is not available
+        let calculatedHeading = gpsHeading;
+        const now = Date.now();
+        
+        if (lastPositionRef.current && (gpsHeading === null || gpsHeading === undefined)) {
+          const timeDelta = (now - lastPositionRef.current.time) / 1000; // seconds
+          if (timeDelta > 0 && timeDelta < 5) { // Only calculate if reasonable time gap
+            const deltaLat = latitude - lastPositionRef.current.lat;
+            const deltaLng = longitude - lastPositionRef.current.lng;
+            
+            // Only calculate if there's meaningful movement
+            const distance = Math.sqrt(deltaLat * deltaLat + deltaLng * deltaLng) * 111000; // rough meters
+            if (distance > 2) { // Moved at least 2 meters
+              // Calculate bearing from movement
+              const y = Math.sin((deltaLng * Math.PI) / 180) * Math.cos((latitude * Math.PI) / 180);
+              const x = Math.cos((lastPositionRef.current.lat * Math.PI) / 180) * Math.sin((latitude * Math.PI) / 180) -
+                Math.sin((lastPositionRef.current.lat * Math.PI) / 180) * Math.cos((latitude * Math.PI) / 180) * Math.cos((deltaLng * Math.PI) / 180);
+              calculatedHeading = ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
+            }
+          }
+        }
+        
+        lastPositionRef.current = { lat: latitude, lng: longitude, time: now };
+        
+        setUserPosition({
+          lat: latitude,
+          lng: longitude,
+          heading: calculatedHeading ?? null,
+          speed: gpsSpeed ?? null,
+          accuracy: accuracy ?? null,
+        });
         setPositionError(null);
       },
       (err) => {
@@ -108,7 +149,7 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
       },
       {
         enableHighAccuracy: true,
-        maximumAge: 3000,
+        maximumAge: 2000,
         timeout: 10000,
       }
     );
