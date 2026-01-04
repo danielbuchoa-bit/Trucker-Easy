@@ -8,6 +8,9 @@ import { useRouteSimulation } from '@/hooks/useRouteSimulation';
 import NavigationHUD from './NavigationHUD';
 import VoiceControls from './VoiceControls';
 import SimulationControls from './SimulationControls';
+import LocationContextBar from './LocationContextBar';
+import NearbyPoisOverlay from './NearbyPoisOverlay';
+import { createTruckCursorElement } from './TruckCursor';
 import { MapPin, Navigation as NavIcon, RotateCcw, Layers, Bug } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useLanguage } from '@/i18n/LanguageContext';
@@ -354,16 +357,9 @@ const ActiveNavigationView = () => {
       // The map rotates instead, making the vehicle appear to go "forward"
       userMarker.current.setRotation(0);
     } else {
-      // Create a simple direction arrow pointing UP
-      const el = document.createElement('div');
-      el.className = 'relative';
-      el.innerHTML = `
-        <div class="w-10 h-10 flex items-center justify-center">
-          <svg viewBox="0 0 24 24" class="w-10 h-10 drop-shadow-lg" fill="#3b82f6" stroke="#ffffff" stroke-width="0.5">
-            <path d="M12 2L4.5 20.29l.71.71L12 18l6.79 3 .71-.71z"/>
-          </svg>
-        </div>
-      `;
+      // Create truck cursor element (improved design with glow)
+      const el = createTruckCursorElement(52);
+      
       userMarker.current = new mapboxgl.Marker({ 
         element: el, 
         rotationAlignment: 'viewport', // CRITICAL: viewport alignment = icon stays fixed on screen
@@ -490,6 +486,19 @@ const ActiveNavigationView = () => {
           <div className="w-10 h-10 border-4 border-primary border-t-transparent rounded-full animate-spin" />
         </div>
       )}
+
+      {/* Location Context Bar - City & Road */}
+      <LocationContextBar
+        lat={userPosition?.lat ?? null}
+        lng={userPosition?.lng ?? null}
+      />
+
+      {/* Nearby POIs Overlay - Truck stops, fuel, rest areas */}
+      <NearbyPoisOverlay
+        lat={userPosition?.lat ?? null}
+        lng={userPosition?.lng ?? null}
+        heading={debugInfo.calculatedBearing ?? userPosition?.heading ?? null}
+      />
 
       {/* Rerouting indicator */}
       {isRerouting && (
