@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { supabase } from '@/integrations/supabase/client';
+import { decodeHereFlexiblePolyline } from '@/lib/hereFlexiblePolyline';
 
 interface RouteMapProps {
   routePolyline?: string;
@@ -12,73 +13,8 @@ interface RouteMapProps {
   className?: string;
 }
 
-// Decode HERE flexible polyline format
-function decodeFlexiblePolyline(encoded: string): [number, number][] {
-  const coordinates: [number, number][] = [];
-  
-  if (!encoded) return coordinates;
-  
-  // Simple polyline decoding (HERE uses flexible polyline format)
-  // This is a simplified decoder - for production use the official library
-  try {
-    let index = 0;
-    let lat = 0;
-    let lng = 0;
-    
-    // Skip header byte
-    if (encoded.length > 0) {
-      const header = encoded.charCodeAt(0) - 63;
-      const precision = header & 15;
-      const thirdDim = (header >> 4) & 7;
-      const thirdDimPrecision = (header >> 7) & 15;
-      index = 1;
-      
-      const factor = Math.pow(10, precision);
-      
-      while (index < encoded.length) {
-        let result = 0;
-        let shift = 0;
-        let b;
-        
-        do {
-          b = encoded.charCodeAt(index++) - 63;
-          result |= (b & 0x1f) << shift;
-          shift += 5;
-        } while (b >= 0x20 && index < encoded.length);
-        
-        lat += ((result & 1) ? ~(result >> 1) : (result >> 1));
-        
-        result = 0;
-        shift = 0;
-        
-        do {
-          b = encoded.charCodeAt(index++) - 63;
-          result |= (b & 0x1f) << shift;
-          shift += 5;
-        } while (b >= 0x20 && index < encoded.length);
-        
-        lng += ((result & 1) ? ~(result >> 1) : (result >> 1));
-        
-        // Skip third dimension if present
-        if (thirdDim !== 0) {
-          result = 0;
-          shift = 0;
-          do {
-            b = encoded.charCodeAt(index++) - 63;
-            result |= (b & 0x1f) << shift;
-            shift += 5;
-          } while (b >= 0x20 && index < encoded.length);
-        }
-        
-        coordinates.push([lng / factor, lat / factor]);
-      }
-    }
-  } catch (e) {
-    console.error('Error decoding polyline:', e);
-  }
-  
-  return coordinates;
-}
+// Polyline decoding moved to src/lib/hereFlexiblePolyline.ts (official HERE decoder)
+
 
 const RouteMap = ({ routePolyline, originLat, originLng, destLat, destLng, className }: RouteMapProps) => {
   const mapContainer = useRef<HTMLDivElement>(null);
@@ -112,8 +48,8 @@ const RouteMap = ({ routePolyline, originLat, originLng, destLat, destLng, class
 
       mapboxgl.accessToken = data.token;
       
-      const centerLng = originLng || -46.6333;
-      const centerLat = originLat || -23.5505;
+      const centerLng = originLng ?? -46.6333;
+      const centerLat = originLat ?? -23.5505;
       
       map.current = new mapboxgl.Map({
         container: mapContainer.current,
@@ -127,10 +63,20 @@ const RouteMap = ({ routePolyline, originLat, originLng, destLat, destLng, class
         'top-right'
       );
 
-      map.current.on('load', () => {
-        console.log('Map loaded successfully');
+      const markReady = () => {
         setMapReady(true);
         setLoading(false);
+      };
+
+      map.current.once('load', () => {
+        console.log('Map loaded successfully');
+        markReady();
+      });
+
+      // Fallback: some environments emit 'idle' before 'load'
+      map.current.once('idle', () => {
+        console.log('Map idle');
+        markReady();
       });
       
       map.current.on('error', (e) => {
@@ -162,7 +108,7 @@ const RouteMap = ({ routePolyline, originLat, originLng, destLat, destLng, class
     if (!map.current || !mapReady) return;
 
     // Update origin marker
-    if (originLat && originLng) {
+    if (typeof originLat === 'number' && typeof originLng === 'number') {
       if (originMarker.current) {
         originMarker.current.setLngLat([originLng, originLat]);
       } else {
@@ -175,7 +121,7 @@ const RouteMap = ({ routePolyline, originLat, originLng, destLat, destLng, class
     }
 
     // Update destination marker
-    if (destLat && destLng) {
+    if (typeof destLat === 'number' && typeof destLng === 'number') {
       if (destMarker.current) {
         destMarker.current.setLngLat([destLng, destLat]);
       } else {
@@ -189,11 +135,13 @@ const RouteMap = ({ routePolyline, originLat, originLng, destLat, destLng, class
 
     // Update route
     if (routePolyline) {
-      const coordinates = decodeFlexiblePolyline(routePolyline);
-      
-      if (coordinates.length > 0) {
-        const source = map.current.getSource('route') as mapboxgl.GeoJSONSource;
-        
+      try {
+        const coordinates = decodeHereFlexiblePolyline(routePolyline);
+
+        if (coordinates.length === 0) return;
+
+        const source = map.current.getSource('route') as mapboxgl.GeoJSONSource | undefined;
+
         const geojson: GeoJSON.Feature = {
           type: 'Feature',
           properties: {},
@@ -228,11 +176,14 @@ const RouteMap = ({ routePolyline, originLat, originLng, destLat, destLng, class
         }
 
         // Fit bounds to route
-        const bounds = coordinates.reduce((bounds, coord) => {
-          return bounds.extend(coord as mapboxgl.LngLatLike);
+        const bounds = coordinates.reduce((b, coord) => {
+          return b.extend(coord as mapboxgl.LngLatLike);
         }, new mapboxgl.LngLatBounds(coordinates[0], coordinates[0]));
 
         map.current.fitBounds(bounds, { padding: 50 });
+      } catch (e) {
+        console.error('Error rendering route on map:', e);
+        setError('Erro ao desenhar a rota no mapa');
       }
     }
   }, [routePolyline, originLat, originLng, destLat, destLng, mapReady]);

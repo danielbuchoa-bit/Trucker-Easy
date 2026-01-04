@@ -76,27 +76,48 @@ serve(async (req) => {
     console.log('Calling HERE Weather API');
 
     const response = await fetch(hereUrl);
-    const data = await response.json();
+    const contentType = response.headers.get('content-type') || '';
+    const raw = await response.text();
+
+    let data: any = null;
+    try {
+      data = contentType.includes('application/json') ? JSON.parse(raw) : raw;
+    } catch {
+      data = raw;
+    }
 
     if (!response.ok) {
-      console.error('HERE Weather API error:', data);
-      
-      // Check if it's a permission/subscription issue
-      if (response.status === 403 || response.status === 401) {
-        const result = {
-          alerts: [],
-          available: false,
-          message: 'Weather alerts indisponível no plano atual',
-        };
-        return new Response(
-          JSON.stringify(result),
-          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-      
+      console.error('HERE Weather API error:', {
+        status: response.status,
+        bodyPreview: typeof data === 'string' ? data.slice(0, 200) : data,
+      });
+
+      const result = {
+        alerts: [],
+        available: false,
+        message:
+          response.status === 401 || response.status === 403
+            ? 'Weather alerts indisponível no plano atual'
+            : 'Weather alerts indisponível no momento',
+      };
+
+      // Return 200 so route calculation still works even if weather is unavailable
       return new Response(
-        JSON.stringify({ error: 'Weather alerts request failed', details: data }),
-        { status: response.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify(result),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    if (typeof data === 'string') {
+      console.error('Unexpected non-JSON response from HERE Weather API');
+      const result = {
+        alerts: [],
+        available: false,
+        message: 'Weather alerts indisponível no momento',
+      };
+      return new Response(
+        JSON.stringify(result),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
