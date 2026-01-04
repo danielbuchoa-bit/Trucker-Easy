@@ -64,6 +64,195 @@ export type Database = {
           },
         ]
       }
+      driver_food_profiles: {
+        Row: {
+          allergies: string[] | null
+          budget_preference: string | null
+          created_at: string
+          diet_type: string | null
+          health_goals: string[] | null
+          id: string
+          restrictions: string[] | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          allergies?: string[] | null
+          budget_preference?: string | null
+          created_at?: string
+          diet_type?: string | null
+          health_goals?: string[] | null
+          id?: string
+          restrictions?: string[] | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          allergies?: string[] | null
+          budget_preference?: string | null
+          created_at?: string
+          diet_type?: string | null
+          health_goals?: string[] | null
+          id?: string
+          restrictions?: string[] | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      facility_ratings: {
+        Row: {
+          address: string | null
+          avg_wait_minutes: number | null
+          comment: string | null
+          created_at: string
+          dock_access_rating: number | null
+          facility_name: string
+          facility_type: string
+          id: string
+          lat: number | null
+          lng: number | null
+          overall_rating: number
+          restroom_rating: number | null
+          staff_rating: number | null
+          tags: string[] | null
+          user_id: string
+          wait_time_rating: number | null
+        }
+        Insert: {
+          address?: string | null
+          avg_wait_minutes?: number | null
+          comment?: string | null
+          created_at?: string
+          dock_access_rating?: number | null
+          facility_name: string
+          facility_type: string
+          id?: string
+          lat?: number | null
+          lng?: number | null
+          overall_rating: number
+          restroom_rating?: number | null
+          staff_rating?: number | null
+          tags?: string[] | null
+          user_id: string
+          wait_time_rating?: number | null
+        }
+        Update: {
+          address?: string | null
+          avg_wait_minutes?: number | null
+          comment?: string | null
+          created_at?: string
+          dock_access_rating?: number | null
+          facility_name?: string
+          facility_type?: string
+          id?: string
+          lat?: number | null
+          lng?: number | null
+          overall_rating?: number
+          restroom_rating?: number | null
+          staff_rating?: number | null
+          tags?: string[] | null
+          user_id?: string
+          wait_time_rating?: number | null
+        }
+        Relationships: []
+      }
+      stop_menu_items: {
+        Row: {
+          added_by: string
+          available: boolean | null
+          category: string
+          created_at: string
+          id: string
+          item_name: string
+          place_id: string
+          price: number | null
+          updated_at: string
+          upvotes: number | null
+        }
+        Insert: {
+          added_by: string
+          available?: boolean | null
+          category: string
+          created_at?: string
+          id?: string
+          item_name: string
+          place_id: string
+          price?: number | null
+          updated_at?: string
+          upvotes?: number | null
+        }
+        Update: {
+          added_by?: string
+          available?: boolean | null
+          category?: string
+          created_at?: string
+          id?: string
+          item_name?: string
+          place_id?: string
+          price?: number | null
+          updated_at?: string
+          upvotes?: number | null
+        }
+        Relationships: []
+      }
+      stop_ratings: {
+        Row: {
+          bathroom_rating: number | null
+          comment: string | null
+          created_at: string
+          food_rating: number | null
+          id: string
+          lat: number
+          lng: number
+          overall_rating: number
+          parking_rating: number | null
+          place_id: string
+          place_name: string
+          place_type: string
+          price_rating: number | null
+          safety_rating: number | null
+          tags: string[] | null
+          user_id: string
+        }
+        Insert: {
+          bathroom_rating?: number | null
+          comment?: string | null
+          created_at?: string
+          food_rating?: number | null
+          id?: string
+          lat: number
+          lng: number
+          overall_rating: number
+          parking_rating?: number | null
+          place_id: string
+          place_name: string
+          place_type: string
+          price_rating?: number | null
+          safety_rating?: number | null
+          tags?: string[] | null
+          user_id: string
+        }
+        Update: {
+          bathroom_rating?: number | null
+          comment?: string | null
+          created_at?: string
+          food_rating?: number | null
+          id?: string
+          lat?: number
+          lng?: number
+          overall_rating?: number
+          parking_rating?: number | null
+          place_id?: string
+          place_name?: string
+          place_type?: string
+          price_rating?: number | null
+          safety_rating?: number | null
+          tags?: string[] | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       weigh_stations: {
         Row: {
           active: boolean | null

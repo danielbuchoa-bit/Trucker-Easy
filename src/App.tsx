@@ -20,6 +20,9 @@ import ChatRoomScreen from "./pages/ChatRoom";
 import BypassHistory from "./pages/BypassHistory";
 import Settings from "./pages/Settings";
 import NavigationScreen from "./pages/Navigation";
+import StopAdvisorScreen from "./pages/StopAdvisor";
+import FacilityRatingScreen from "./pages/FacilityRating";
+import FoodPreferencesScreen from "./pages/FoodPreferences";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -48,6 +51,9 @@ const App = () => (
                 <Route path="/bypass-history" element={<BypassHistory />} />
                 <Route path="/settings" element={<Settings />} />
                 <Route path="/navigation" element={<NavigationScreen />} />
+                <Route path="/stop-advisor" element={<StopAdvisorScreen />} />
+                <Route path="/facility-rating" element={<FacilityRatingScreen />} />
+                <Route path="/food-preferences" element={<FoodPreferencesScreen />} />
                 <Route path="*" element={<NotFound />} />
               </Routes>
             </ActiveNavigationProvider>

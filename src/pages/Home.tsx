@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react';
 import { useLanguage } from '@/i18n/LanguageContext';
-import { Search, Filter, MapPin, Navigation, Route } from 'lucide-react';
+import { Search, Filter, MapPin, Navigation, Route, Utensils, Building2 } from 'lucide-react';
 import BottomNav from '@/components/navigation/BottomNav';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
 
 const HomeScreen = () => {
   const { t } = useLanguage();
@@ -161,14 +162,21 @@ const HomeScreen = () => {
           <p className="text-muted-foreground text-sm">{t.common.loading}</p>
           <p className="text-xs text-muted-foreground mt-1">Map integration coming soon</p>
           
-          {/* Navigate Button */}
-          <Button
-            className="mt-4"
-            onClick={() => navigate('/navigation')}
-          >
-            <Route className="w-4 h-4 mr-2" />
-            {t.navigation?.calculateRoute || 'Calculate Route'}
-          </Button>
+          {/* Action Buttons */}
+          <div className="flex flex-wrap gap-2 mt-4 justify-center">
+            <Button onClick={() => navigate('/navigation')}>
+              <Route className="w-4 h-4 mr-2" />
+              {t.navigation?.calculateRoute || 'Calculate Route'}
+            </Button>
+            <Button variant="outline" onClick={() => navigate('/stop-advisor')}>
+              <Utensils className="w-4 h-4 mr-2" />
+              Stop Advisor
+            </Button>
+            <Button variant="outline" onClick={() => navigate('/facility-rating')}>
+              <Building2 className="w-4 h-4 mr-2" />
+              Rate Facility
+            </Button>
+          </div>
         </div>
 
         {/* Floating Current Location Button */}
