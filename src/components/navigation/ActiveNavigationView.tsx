@@ -466,6 +466,8 @@ const ActiveNavigationView = () => {
         <NavigationHUD
           currentInstruction={currentInstruction}
           distanceToNextManeuver={progress.distanceToNextManeuver}
+          instructions={route.instructions}
+          currentInstructionIndex={progress.currentInstructionIndex}
           onRepeat={voice.repeatLastInstruction}
         />
       )}
