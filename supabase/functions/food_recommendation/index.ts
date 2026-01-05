@@ -25,16 +25,20 @@ serve(async (req) => {
   }
 
   try {
-    const { profile, menuItems, placeType } = await req.json() as {
+    const { profile, menuItems, placeType, stopName, restaurantNames } = await req.json() as {
       profile: FoodProfile | null;
       menuItems: MenuItem[];
       placeType: string;
+      stopName?: string;
+      restaurantNames?: string[];
     };
 
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) {
       throw new Error("LOVABLE_API_KEY is not configured");
     }
+
+    console.log("Request received:", { stopName, restaurantNames, menuItemsCount: menuItems.length, hasProfile: !!profile });
 
     // Build the prompt based on driver profile
     const profileDescription = profile ? `
@@ -46,9 +50,17 @@ Driver Profile:
 - Budget: ${profile.budget_preference || 'moderate'}
 ` : 'No profile available - give general healthy recommendations for truck drivers.';
 
-    const menuDescription = menuItems.length > 0 
-      ? `Available menu items:\n${menuItems.map(m => `- ${m.item_name} (${m.category})${m.price ? ` $${m.price}` : ''}`).join('\n')}`
-      : `This is a ${placeType}. Generate typical menu items for this type of location.`;
+    // Build context about the location and available restaurants
+    let locationContext = `Stop: ${stopName || placeType}`;
+    
+    if (restaurantNames && restaurantNames.length > 0) {
+      locationContext += `\n\nRestaurants/Food Options at this location:\n${restaurantNames.map(r => `- ${r}`).join('\n')}`;
+      locationContext += `\n\nBased on these SPECIFIC restaurants available, recommend items that would typically be on their menus.`;
+    } else if (menuItems.length > 0) {
+      locationContext += `\n\nAvailable menu items:\n${menuItems.map(m => `- ${m.item_name} (${m.category})${m.price ? ` $${m.price}` : ''}`).join('\n')}`;
+    } else {
+      locationContext += `\n\nThis is a ${placeType}. Suggest typical healthy options for this type of location.`;
+    }
 
     const systemPrompt = `You are a nutrition advisor for truck drivers. Your job is to recommend the best food choices at truck stops and rest areas.
 
@@ -72,10 +84,10 @@ RESPONSE FORMAT (JSON only, no markdown):
 
     const userPrompt = `${profileDescription}
 
-${menuDescription}
+${locationContext}
 
 Based on this information, recommend:
-1. Best choice - the healthiest option that fits the profile
+1. Best choice - the healthiest option that fits the profile from the restaurants/food options available
 2. Alternative - a decent backup option
 3. Emergency option - the "least bad" choice if nothing else is available
 4. Avoid list - 2-3 items this driver should avoid based on their profile`;
