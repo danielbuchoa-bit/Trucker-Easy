@@ -220,7 +220,9 @@ export const PoiFeedbackProvider: React.FC<{ children: React.ReactNode }> = ({ c
   const handleSubmitFeedback = async (ratings: {
     friendliness_rating: number;
     cleanliness_rating: number;
+    structure_rating: number;
     recommendation_rating: number;
+    would_return: boolean;
   }) => {
     if (!pendingFeedbackPoi || !userId) return;
 
@@ -232,7 +234,9 @@ export const PoiFeedbackProvider: React.FC<{ children: React.ReactNode }> = ({ c
         poi_type: pendingFeedbackPoi.type,
         friendliness_rating: ratings.friendliness_rating,
         cleanliness_rating: ratings.cleanliness_rating,
+        structure_rating: ratings.structure_rating,
         recommendation_rating: ratings.recommendation_rating,
+        would_return: ratings.would_return,
       });
 
       if (error) {
@@ -240,7 +244,7 @@ export const PoiFeedbackProvider: React.FC<{ children: React.ReactNode }> = ({ c
         toast.error('Erro ao enviar avaliação');
       } else {
         recentlyRatedPois.current.add(pendingFeedbackPoi.id);
-        toast.success('Avaliação enviada!');
+        toast.success('Avaliação enviada! Obrigado pelo feedback.');
       }
     } catch (err) {
       console.error('[PoiFeedback] Submit failed:', err);
