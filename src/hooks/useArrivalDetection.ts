@@ -37,10 +37,10 @@ interface UseArrivalDetectionProps {
   enabled?: boolean;
 }
 
-// Constants
-const ARRIVAL_RADIUS_M = 200; // 200 meters to trigger arrival
-const SPEED_THRESHOLD_MPS = 2.2; // ~5 mph = 2.2 m/s
-const DWELL_TIME_MS = 25000; // 25 seconds of slow/stopped
+// Constants - INCREASED for truck stop detection
+const ARRIVAL_RADIUS_M = 300; // 300 meters to trigger arrival (truck stops are large)
+const SPEED_THRESHOLD_MPS = 3.5; // ~8 mph = 3.5 m/s (parking speed)
+const DWELL_TIME_MS = 15000; // 15 seconds of slow/stopped
 const COOLDOWN_MS = 30 * 60 * 1000; // 30 minutes cooldown per POI
 
 const COOLDOWN_STORAGE_KEY = 'arrival_cooldowns';
