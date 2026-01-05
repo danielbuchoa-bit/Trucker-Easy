@@ -1,8 +1,8 @@
-import React, { useMemo, useState, useEffect } from 'react';
-import { X, Check } from 'lucide-react';
+import { useMemo, useState, useEffect } from 'react';
+import { X } from 'lucide-react';
 import { WeighStation } from '@/types/bypass';
-import { HereService } from '@/services/HereService';
 import { LngLat } from '@/lib/hereFlexiblePolyline';
+import { haversineDistance, matchPositionToRoute } from '@/lib/navigationUtils';
 
 interface WeighStationBadgesProps {
   userLat: number | null;
@@ -12,58 +12,57 @@ interface WeighStationBadgesProps {
   maxVisible?: number;
 }
 
-// Calculate distance between two points in meters
-function calculateDistanceMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
-  const R = 6371000; // Earth's radius in meters
-  const φ1 = (lat1 * Math.PI) / 180;
-  const φ2 = (lat2 * Math.PI) / 180;
-  const Δφ = ((lat2 - lat1) * Math.PI) / 180;
-  const Δλ = ((lng2 - lng1) * Math.PI) / 180;
-
-  const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
-    Math.cos(φ1) * Math.cos(φ2) *
-    Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-  return R * c;
+function formatDistanceBadge(meters: number): string {
+  const miles = meters * 0.000621371;
+  if (miles >= 1) return `${Math.round(miles)} mi`;
+  if (miles >= 0.1) return `${miles.toFixed(1)} mi`;
+  const feet = meters * 3.28084;
+  return `${Math.round(feet)} ft`;
 }
 
-// Find minimum distance from a point to any segment of a polyline
-function distanceToRoute(lat: number, lng: number, routeCoords: LngLat[]): { distance: number; closestIndex: number } {
-  let minDistance = Infinity;
-  let closestIndex = 0;
+function routeDistanceMeters(routeCoords: LngLat[], fromSegIndex: number, toSegIndex: number): number {
+  if (routeCoords.length < 2) return 0;
+  if (toSegIndex <= fromSegIndex) return 0;
 
-  for (let i = 0; i < routeCoords.length; i++) {
-    const [routeLng, routeLat] = routeCoords[i];
-    const dist = calculateDistanceMeters(lat, lng, routeLat, routeLng);
-    if (dist < minDistance) {
-      minDistance = dist;
-      closestIndex = i;
-    }
+  const from = Math.max(0, Math.min(fromSegIndex, routeCoords.length - 2));
+  const to = Math.max(0, Math.min(toSegIndex, routeCoords.length - 2));
+
+  let dist = 0;
+  for (let i = from; i <= to; i++) {
+    const a = routeCoords[i];
+    const b = routeCoords[i + 1];
+    if (!a || !b) break;
+    dist += haversineDistance(a[1], a[0], b[1], b[0]);
   }
-
-  return { distance: minDistance, closestIndex };
+  return dist;
 }
 
-// Find user's current position index on the route
+function distanceToRoute(
+  lat: number,
+  lng: number,
+  routeCoords: LngLat[]
+): { distance: number; closestIndex: number } {
+  if (routeCoords.length < 2) return { distance: Infinity, closestIndex: 0 };
+  const match = matchPositionToRoute(lng, lat, routeCoords);
+  return { distance: match.distanceToRouteM, closestIndex: match.closestSegmentIndex };
+}
+
 function findUserPositionIndex(userLat: number, userLng: number, routeCoords: LngLat[]): number {
-  let minDistance = Infinity;
-  let closestIndex = 0;
-
-  for (let i = 0; i < routeCoords.length; i++) {
-    const [routeLng, routeLat] = routeCoords[i];
-    const dist = calculateDistanceMeters(userLat, userLng, routeLat, routeLng);
-    if (dist < minDistance) {
-      minDistance = dist;
-      closestIndex = i;
-    }
-  }
-
-  return closestIndex;
+  if (routeCoords.length < 2) return 0;
+  return matchPositionToRoute(userLng, userLat, routeCoords).closestSegmentIndex;
 }
 
-// Maximum distance from route to consider a station "on route" (in meters)
-const MAX_DISTANCE_FROM_ROUTE_M = 500; // 500 meters from the route line
+// More tolerant: some stations are slightly off the centerline.
+const MAX_DISTANCE_FROM_ROUTE_M = 5000; // ~3.1 miles
+
+// Mark as "passed" once the driver is clearly beyond it on the route.
+const PASSED_BEHIND_DISTANCE_M = 1600; // ~1 mile
+
+type StationMeta = WeighStation & {
+  distanceFromRoute: number;
+  routeIndex: number;
+  distanceAheadM: number;
+};
 
 const WeighStationBadges = ({
   userLat,
@@ -72,89 +71,79 @@ const WeighStationBadges = ({
   routeCoords,
   maxVisible = 2,
 }: WeighStationBadgesProps) => {
-  // Track stations that have been passed
   const [passedStationIds, setPassedStationIds] = useState<Set<string>>(new Set());
 
-  // Find user's current position on route
   const userRouteIndex = useMemo(() => {
-    if (userLat === null || userLng === null || routeCoords.length === 0) {
-      return 0;
-    }
+    if (userLat === null || userLng === null || routeCoords.length === 0) return 0;
     return findUserPositionIndex(userLat, userLng, routeCoords);
   }, [userLat, userLng, routeCoords]);
 
-  // Filter stations that are on the route and ahead of the user
-  const stationsOnRoute = useMemo(() => {
-    if (userLat === null || userLng === null || routeCoords.length === 0 || stations.length === 0) {
-      return [];
-    }
+  const stationsOnRoute = useMemo<StationMeta[]>(() => {
+    if (userLat === null || userLng === null || routeCoords.length === 0 || stations.length === 0) return [];
 
     return stations
-      .map(station => {
+      .map((station) => {
         const routeInfo = distanceToRoute(station.lat, station.lng, routeCoords);
+        const distanceAheadM =
+          routeInfo.closestIndex > userRouteIndex
+            ? routeDistanceMeters(routeCoords, userRouteIndex, routeInfo.closestIndex)
+            : 0;
+
         return {
           ...station,
           distanceFromRoute: routeInfo.distance,
           routeIndex: routeInfo.closestIndex,
-          distanceFromUser: calculateDistanceMeters(userLat, userLng, station.lat, station.lng),
+          distanceAheadM,
         };
       })
-      // Only include stations that are close to the route (within 500m)
-      .filter(s => s.distanceFromRoute <= MAX_DISTANCE_FROM_ROUTE_M)
-      // Only include stations that are ahead of the user on the route
-      .filter(s => s.routeIndex > userRouteIndex)
-      // Exclude passed stations
-      .filter(s => !passedStationIds.has(s.id))
-      // Sort by position along the route (closest along route first)
-      .sort((a, b) => a.routeIndex - b.routeIndex)
+      .filter((s) => s.distanceFromRoute <= MAX_DISTANCE_FROM_ROUTE_M)
+      .filter((s) => s.routeIndex > userRouteIndex)
+      .filter((s) => !passedStationIds.has(s.id))
+      .sort((a, b) => a.distanceAheadM - b.distanceAheadM)
       .slice(0, maxVisible);
   }, [userLat, userLng, stations, routeCoords, userRouteIndex, passedStationIds, maxVisible]);
 
-  // Detect when user passes a station
   useEffect(() => {
     if (userLat === null || userLng === null || routeCoords.length === 0) return;
 
-    stations.forEach(station => {
+    stations.forEach((station) => {
       if (passedStationIds.has(station.id)) return;
 
       const routeInfo = distanceToRoute(station.lat, station.lng, routeCoords);
-      
-      // If station is on route and user has passed it
-      if (routeInfo.distance <= MAX_DISTANCE_FROM_ROUTE_M && routeInfo.closestIndex <= userRouteIndex) {
-        setPassedStationIds(prev => new Set([...prev, station.id]));
+      if (routeInfo.distance > MAX_DISTANCE_FROM_ROUTE_M) return;
+      if (routeInfo.closestIndex > userRouteIndex) return;
+
+      const behindDistanceM = routeDistanceMeters(routeCoords, routeInfo.closestIndex, userRouteIndex);
+      if (behindDistanceM >= PASSED_BEHIND_DISTANCE_M) {
+        setPassedStationIds((prev) => new Set([...prev, station.id]));
       }
     });
   }, [userLat, userLng, routeCoords, stations, userRouteIndex, passedStationIds]);
 
-  // Reset passed stations when route changes
   useEffect(() => {
     setPassedStationIds(new Set());
   }, [routeCoords]);
 
-  if (stationsOnRoute.length === 0) {
-    return null;
-  }
+  if (stationsOnRoute.length === 0) return null;
 
   return (
     <div className="flex flex-col gap-2">
       {stationsOnRoute.map((station) => (
         <div
           key={station.id}
-          className="flex items-center bg-teal-500/90 text-white rounded-lg shadow-lg overflow-hidden"
+          className="w-[78px] rounded-2xl bg-card/90 backdrop-blur border border-border shadow-lg px-2 py-2 flex flex-col items-center"
         >
-          {/* W icon */}
-          <div className="bg-white text-teal-600 font-bold text-lg px-2.5 py-2 flex items-center justify-center">
-            W
+          <div className="relative">
+            <div className="h-10 w-10 rounded-full bg-success text-success-foreground font-black text-base flex items-center justify-center">
+              W
+            </div>
+            <div className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center ring-2 ring-card">
+              <X className="h-3.5 w-3.5" strokeWidth={3} />
+            </div>
           </div>
-          
-          {/* Status indicator - for now show X as closed by default */}
-          <div className="bg-red-500 p-1">
-            <X className="w-4 h-4 text-white" strokeWidth={3} />
-          </div>
-          
-          {/* Distance from user */}
-          <div className="px-2.5 py-1.5 font-bold text-sm">
-            {HereService.formatDistance(station.distanceFromUser)}
+
+          <div className="mt-1 text-base font-extrabold tabular-nums text-info leading-none">
+            {formatDistanceBadge(station.distanceAheadM)}
           </div>
         </div>
       ))}
