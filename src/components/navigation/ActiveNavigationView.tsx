@@ -506,6 +506,7 @@ const ActiveNavigationView = () => {
           userLat={userPosition?.lat ?? null}
           userLng={userPosition?.lng ?? null}
           stations={nearbyStations}
+          routeCoords={routeCoords}
           maxVisible={2}
         />
         
