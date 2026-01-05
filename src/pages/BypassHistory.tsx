@@ -10,10 +10,13 @@ import BottomNav from '@/components/navigation/BottomNav';
 const mapLegacyResult = (result: string): BypassResult => {
   switch (result) {
     case 'bypass':
-      return 'bypass_received';
+    case 'bypass_received':
+      return 'open_bypass';
     case 'pull_in':
-      return 'no_bypass';
+    case 'no_bypass':
+      return 'actively_monitored';
     case 'unknown':
+    case 'closed':
       return 'station_closed';
     default:
       return result as BypassResult;
@@ -124,12 +127,12 @@ const BypassHistory = () => {
 
   const getResultIcon = (result: BypassResult) => {
     switch (result) {
-      case 'bypass_received':
+      case 'open_bypass':
         return <CheckCircle className="w-5 h-5 text-green-500" />;
-      case 'no_bypass':
-        return <XCircle className="w-5 h-5 text-red-500" />;
+      case 'actively_monitored':
+        return <XCircle className="w-5 h-5 text-yellow-500" />;
       case 'station_closed':
-        return <DoorClosed className="w-5 h-5 text-muted-foreground" />;
+        return <DoorClosed className="w-5 h-5 text-red-400" />;
       default:
         return <DoorClosed className="w-5 h-5 text-muted-foreground" />;
     }
@@ -137,14 +140,14 @@ const BypassHistory = () => {
 
   const getResultLabel = (result: BypassResult) => {
     switch (result) {
-      case 'bypass_received':
-        return t.bypass.gotBypass;
-      case 'no_bypass':
-        return t.bypass.pulledIn;
+      case 'open_bypass':
+        return t.bypass?.open || 'Open';
+      case 'actively_monitored':
+        return t.bypass?.activelyMonitored || 'Actively Monitored';
       case 'station_closed':
-        return t.bypass.stationClosed || t.bypass.closed || 'Closed';
+        return t.bypass?.closed || 'Closed';
       default:
-        return t.bypass.dontKnow;
+        return t.bypass?.dontKnow || 'Unknown';
     }
   };
 
@@ -227,8 +230,9 @@ const BypassHistory = () => {
                   </p>
                 </div>
                 <span className={`text-sm font-medium ${
-                  event.result === 'bypass_received' ? 'text-green-500' :
-                  event.result === 'no_bypass' ? 'text-red-500' :
+                  event.result === 'open_bypass' ? 'text-green-500' :
+                  event.result === 'actively_monitored' ? 'text-yellow-500' :
+                  event.result === 'station_closed' ? 'text-red-400' :
                   'text-muted-foreground'
                 }`}>
                   {getResultLabel(event.result)}
