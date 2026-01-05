@@ -15,7 +15,7 @@ export interface BypassEvent {
   vehicle_id: string | null;
   weigh_station_id: string;
   occurred_at: string;
-  result: 'bypass' | 'pull_in' | 'unknown';
+  result: BypassResult;
   lat: number;
   lng: number;
   source: string;
@@ -27,4 +27,16 @@ export interface BypassEvent {
   };
 }
 
-export type BypassResult = 'bypass' | 'pull_in' | 'unknown';
+// Station closed, bypass received, or no bypass (had to pull in)
+export type BypassResult = 'station_closed' | 'bypass_received' | 'no_bypass';
+
+export interface PendingBypassReport {
+  id: string;
+  weigh_station_id: string;
+  station_name: string;
+  result: BypassResult;
+  lat: number;
+  lng: number;
+  occurred_at: string;
+  synced: boolean;
+}
