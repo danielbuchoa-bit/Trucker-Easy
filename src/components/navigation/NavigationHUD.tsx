@@ -1,5 +1,5 @@
-import React from 'react';
-import { ArrowUp, Volume2 } from 'lucide-react';
+import React, { useMemo } from 'react';
+import { ArrowUp, Volume2, LogOut } from 'lucide-react';
 import ManeuverIcon from './ManeuverIcon';
 import { getManeuverIcon } from '@/lib/navigationUtils';
 import { HereService, type RouteInstruction } from '@/services/HereService';
@@ -7,12 +7,61 @@ import { HereService, type RouteInstruction } from '@/services/HereService';
 interface NavigationHUDProps {
   currentInstruction: RouteInstruction | null;
   distanceToNextManeuver: number;
+  instructions?: RouteInstruction[];
+  currentInstructionIndex?: number;
   onRepeat?: () => void;
+}
+
+// Extract exit number from instruction text
+function extractExitNumber(instruction: string): string | null {
+  // Match patterns like "exit 126A", "Exit 27", "exit onto 45B"
+  const exitMatch = instruction.match(/exit\s*(?:onto\s*)?(\d+[A-Za-z]?)/i);
+  return exitMatch ? exitMatch[1] : null;
+}
+
+// Find the next exit in the route
+function findNextExit(
+  instructions: RouteInstruction[],
+  currentIndex: number
+): { exitNumber: string; distanceToExit: number } | null {
+  if (!instructions || currentIndex < 0) return null;
+
+  let accumulatedDistance = 0;
+
+  for (let i = currentIndex; i < instructions.length; i++) {
+    const inst = instructions[i];
+    
+    // Check exitInfo field first (more reliable)
+    if (inst.exitInfo) {
+      return {
+        exitNumber: inst.exitInfo,
+        distanceToExit: accumulatedDistance,
+      };
+    }
+    
+    // Fallback: check instruction text for exit patterns
+    const exitNum = extractExitNumber(inst.instruction || '');
+    if (exitNum) {
+      return {
+        exitNumber: exitNum,
+        distanceToExit: accumulatedDistance,
+      };
+    }
+
+    // Accumulate distance for subsequent instructions
+    if (i > currentIndex) {
+      accumulatedDistance += inst.length || 0;
+    }
+  }
+
+  return null;
 }
 
 const NavigationHUD = ({
   currentInstruction,
   distanceToNextManeuver,
+  instructions,
+  currentInstructionIndex,
   onRepeat,
 }: NavigationHUDProps) => {
   const maneuverType = currentInstruction
@@ -22,9 +71,15 @@ const NavigationHUD = ({
   // Get road name for display
   const roadName = currentInstruction?.roadName || '';
   
-  // Extract exit number if present (e.g., "126A", "Exit 27")
-  const exitMatch = currentInstruction?.instruction?.match(/exit\s*(\d+[A-Za-z]?)/i);
-  const exitNumber = exitMatch ? exitMatch[1] : null;
+  // Find next exit info
+  const nextExit = useMemo(() => {
+    if (!instructions || currentInstructionIndex === undefined) return null;
+    return findNextExit(instructions, currentInstructionIndex);
+  }, [instructions, currentInstructionIndex]);
+  
+  // Check if current instruction IS the exit
+  const isCurrentExit = currentInstruction?.exitInfo || 
+    extractExitNumber(currentInstruction?.instruction || '');
   
   // Format instruction - extract key action
   const instructionText = currentInstruction?.instruction || 'Continue';
@@ -62,12 +117,18 @@ const NavigationHUD = ({
           </p>
         </div>
         
-        {/* Exit badge (if applicable) */}
-        {exitNumber && (
+        {/* Next Exit badge - always visible if there's an upcoming exit */}
+        {nextExit && (
           <div className="px-3 pb-3">
             <div className="inline-flex items-center gap-1.5 bg-success text-success-foreground px-3 py-1.5 rounded-lg">
-              <ArrowUp className="w-4 h-4" />
-              <span className="text-sm font-bold">{exitNumber}</span>
+              <LogOut className="w-4 h-4" />
+              <span className="text-sm font-bold">Exit {nextExit.exitNumber}</span>
+              {/* Show distance to exit if it's not the current maneuver */}
+              {!isCurrentExit && nextExit.distanceToExit > 0 && (
+                <span className="text-xs opacity-80 ml-1">
+                  • {HereService.formatDistance(distanceToNextManeuver + nextExit.distanceToExit)}
+                </span>
+              )}
             </div>
           </div>
         )}
