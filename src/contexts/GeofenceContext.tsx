@@ -265,10 +265,10 @@ export const GeofenceProvider = ({ children }: GeofenceProviderProps) => {
     const checkGeofence = async () => {
       const stations = await fetchNearbyStations();
       
-      // Filter stations within reasonable distance (50km)
+      // Filter stations within reasonable distance (200km / ~125 miles)
       const nearby = stations.filter(station => {
         const distance = calculateDistance(latitude, longitude, station.lat, station.lng);
-        return distance < 50000;
+        return distance < 200000;
       });
       
       setNearbyStations(nearby);
