@@ -260,24 +260,25 @@ export const GeofenceProvider = ({ children }: GeofenceProviderProps) => {
 
   // Monitor geofence
   useEffect(() => {
-    if (!latitude || !longitude || !settings.enableReminder) return;
+    // Always keep nearbyStations updated for UI (badges), even if reminders are disabled.
+    if (!latitude || !longitude) return;
 
     const checkGeofence = async () => {
       const stations = await fetchNearbyStations();
-      
+
       // Filter stations within reasonable distance (200km / ~125 miles)
       const nearby = stations.filter(station => {
         const distance = calculateDistance(latitude, longitude, station.lat, station.lng);
         return distance < 200000;
       });
-      
+
       setNearbyStations(nearby);
 
       // Check if inside any station
       for (const station of nearby) {
         const distance = calculateDistance(latitude, longitude, station.lat, station.lng);
         const enterRadius = station.radius_m || DEFAULT_ENTER_RADIUS_M;
-        
+
         if (distance <= enterRadius) {
           // Entered a station
           if (!insideStationId) {
@@ -296,24 +297,29 @@ export const GeofenceProvider = ({ children }: GeofenceProviderProps) => {
         if (station) {
           const distance = calculateDistance(latitude, longitude, station.lat, station.lng);
           const exitRadius = (station.radius_m || DEFAULT_ENTER_RADIUS_M) + EXIT_BUFFER_M;
-          
+
           if (distance > exitRadius) {
             console.log('[GEOFENCE] Exited weigh station:', station.name, 'distance:', distance);
-            
+
             // Check minimum stay time
             const stayTime = entryTimeRef.current ? Date.now() - entryTimeRef.current : 0;
-            
-            // Check cooldown and not in critical maneuver
-            if (canPromptForStation(station.id) && stayTime >= MIN_STAY_TIME_MS && !isInCriticalManeuver()) {
+
+            // Only prompt if reminders are enabled
+            if (
+              settings.enableReminder &&
+              canPromptForStation(station.id) &&
+              stayTime >= MIN_STAY_TIME_MS &&
+              !isInCriticalManeuver()
+            ) {
               console.log('[GEOFENCE] Showing bypass prompt for:', station.name);
               setPromptStation(station);
               setShowPrompt(true);
-              
+
               // Update last prompted
               lastPromptedRef.current[station.id] = Date.now();
               saveLastPrompted(lastPromptedRef.current);
             }
-            
+
             setInsideStationId(null);
             setCurrentStation(null);
             entryTimeRef.current = null;
@@ -328,7 +334,15 @@ export const GeofenceProvider = ({ children }: GeofenceProviderProps) => {
     };
 
     checkGeofence();
-  }, [latitude, longitude, settings.enableReminder, insideStationId, fetchNearbyStations, canPromptForStation, isInCriticalManeuver]);
+  }, [
+    latitude,
+    longitude,
+    settings.enableReminder,
+    insideStationId,
+    fetchNearbyStations,
+    canPromptForStation,
+    isInCriticalManeuver,
+  ]);
 
   const handlePromptClose = () => {
     setShowPrompt(false);
