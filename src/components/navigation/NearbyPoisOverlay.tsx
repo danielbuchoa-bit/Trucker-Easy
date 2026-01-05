@@ -17,7 +17,7 @@ interface Poi {
   lng: number;
   distance: number;
   distanceMiles: number;
-  category: 'fuel' | 'truck_stop' | 'rest_area' | 'truck_service';
+  category: 'fuel' | 'truck_stop' | 'restaurant';
   address: string;
   chainName: string | null;
   openingHours: string | null;
@@ -37,9 +37,9 @@ interface NearbyPoisOverlayProps {
 
 // HERE category IDs for truck-related POIs
 const TRUCK_CATEGORIES = [
-  '700-7600-0000',   // Fuel/Gas station
-  '700-7600-0116',   // Truck stop
-  '550-5510-0000',   // Rest area
+  '700-7600-0116',   // Fuel / Gas Station
+  '700-7850-0000',   // Truck Stop / Service Area
+  '100-1000-0000',   // Restaurant
 ];
 
 /**
