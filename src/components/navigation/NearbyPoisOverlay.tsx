@@ -165,7 +165,7 @@ const NearbyPoisOverlay: React.FC<NearbyPoisOverlayProps> = ({
             lat, 
             lng,
             heading: heading ?? undefined,
-            radiusMeters: 80000, // 50 miles
+            radiusMeters: 48280, // 30 miles
             categories: TRUCK_CATEGORIES,
             limit: 10,
           },
