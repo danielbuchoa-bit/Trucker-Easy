@@ -27,8 +27,8 @@ export interface BypassEvent {
   };
 }
 
-// Station closed, bypass received, or no bypass (had to pull in)
-export type BypassResult = 'station_closed' | 'bypass_received' | 'no_bypass';
+// Station closed, actively monitored (no bypass), or open with bypass
+export type BypassResult = 'station_closed' | 'actively_monitored' | 'open_bypass';
 
 export interface PendingBypassReport {
   id: string;

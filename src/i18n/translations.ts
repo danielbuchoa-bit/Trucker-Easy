@@ -334,9 +334,12 @@ export const translations = {
     
     bypass: {
       weighStation: 'Weigh Station',
+      whatIsStationLike: "What's the Weigh Station like?",
       wasStationOpen: 'Was the weigh station open or closed?',
       open: 'Open',
       closed: 'Closed',
+      activelyMonitored: 'Actively\nMonitored',
+      tapToReport: 'Tap to report status',
       didYouReceiveBypass: 'Did you receive bypass?',
       didYouBypass: 'Did you get bypass at this station?',
       gotBypass: 'Bypass',
@@ -735,9 +738,12 @@ export const translations = {
     
     bypass: {
       weighStation: 'Estación de Pesaje',
+      whatIsStationLike: '¿Cómo está la Estación de Pesaje?',
       wasStationOpen: '¿La estación estaba abierta o cerrada?',
       open: 'Abierta',
       closed: 'Cerrada',
+      activelyMonitored: 'Activamente\nMonitoreada',
+      tapToReport: 'Toca para reportar estado',
       didYouReceiveBypass: '¿Recibiste bypass?',
       didYouBypass: '¿Recibiste bypass en esta estación?',
       gotBypass: 'Bypass',
@@ -1136,9 +1142,12 @@ export const translations = {
     
     bypass: {
       weighStation: 'Balança',
+      whatIsStationLike: 'Como está a Balança?',
       wasStationOpen: 'A balança estava aberta ou fechada?',
       open: 'Aberta',
       closed: 'Fechada',
+      activelyMonitored: 'Ativamente\nMonitorada',
+      tapToReport: 'Toque para reportar status',
       didYouReceiveBypass: 'Você recebeu bypass?',
       didYouBypass: 'Você recebeu bypass nesta balança?',
       gotBypass: 'Bypass',
