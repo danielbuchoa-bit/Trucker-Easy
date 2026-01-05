@@ -56,7 +56,8 @@ serve(async (req) => {
     console.log('Browse POIs request:', { lat, lng, heading, radiusMeters, categories });
 
     // Build categories query - HERE uses comma-separated category IDs
-    const categoryIds = categories.join(',');
+    // Handle both array and string formats
+    const categoryIds = Array.isArray(categories) ? categories.join(',') : categories;
 
     const params = new URLSearchParams({
       apiKey: HERE_API_KEY,
