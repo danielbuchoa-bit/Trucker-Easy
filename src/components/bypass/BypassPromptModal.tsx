@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useLanguage } from '@/i18n/LanguageContext';
-import { CheckCircle, XCircle, HelpCircle, X, Scale } from 'lucide-react';
+import { X, Scale, DoorOpen, DoorClosed, CheckCircle, XCircle } from 'lucide-react';
 import { BypassResult, WeighStation } from '@/types/bypass';
 
 interface BypassPromptModalProps {
@@ -11,14 +11,19 @@ interface BypassPromptModalProps {
 
 const BypassPromptModal = ({ station, onSubmit, onClose }: BypassPromptModalProps) => {
   const { t } = useLanguage();
-  const [timeLeft, setTimeLeft] = useState(12);
+  const [timeLeft, setTimeLeft] = useState(15);
+  const [step, setStep] = useState<'status' | 'bypass'>('status');
+
+  const handleClose = useCallback(() => {
+    onClose();
+  }, [onClose]);
 
   useEffect(() => {
     const timer = setInterval(() => {
       setTimeLeft(prev => {
         if (prev <= 1) {
           clearInterval(timer);
-          onClose();
+          handleClose();
           return 0;
         }
         return prev - 1;
@@ -26,29 +31,41 @@ const BypassPromptModal = ({ station, onSubmit, onClose }: BypassPromptModalProp
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [onClose]);
+  }, [handleClose]);
 
-  const handleSelect = (result: BypassResult) => {
-    onSubmit(result);
+  const handleStatusSelect = (isOpen: boolean) => {
+    if (!isOpen) {
+      // Station was closed - submit directly
+      onSubmit('station_closed');
+    } else {
+      // Station open - ask about bypass
+      setStep('bypass');
+      setTimeLeft(12); // Reset timer for next step
+    }
+  };
+
+  const handleBypassSelect = (receivedBypass: boolean) => {
+    onSubmit(receivedBypass ? 'bypass_received' : 'no_bypass');
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fade-in">
-      <div className="w-full max-w-sm bg-card rounded-2xl shadow-2xl border border-border overflow-hidden animate-scale-in">
+    <div className="fixed inset-x-0 bottom-24 z-50 flex justify-center p-4 pointer-events-none">
+      <div className="w-full max-w-sm bg-card rounded-2xl shadow-2xl border border-border overflow-hidden pointer-events-auto animate-in slide-in-from-bottom-4 duration-300">
         {/* Header */}
         <div className="bg-primary/10 p-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center">
-              <Scale className="w-6 h-6 text-primary" />
+            <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
+              <Scale className="w-5 h-5 text-primary" />
             </div>
             <div>
-              <h2 className="font-bold text-foreground">{t.bypass.weighStation}</h2>
-              <p className="text-sm text-muted-foreground">{station.name}</p>
+              <h2 className="font-bold text-foreground text-sm">{t.bypass?.weighStation || 'Weigh Station'}</h2>
+              <p className="text-xs text-muted-foreground">{station.name}</p>
             </div>
           </div>
           <button
-            onClick={onClose}
+            onClick={handleClose}
             className="w-8 h-8 rounded-full bg-muted flex items-center justify-center hover:bg-muted/80 transition-colors"
+            aria-label="Close"
           >
             <X className="w-4 h-4" />
           </button>
@@ -58,49 +75,79 @@ const BypassPromptModal = ({ station, onSubmit, onClose }: BypassPromptModalProp
         <div className="h-1 bg-muted">
           <div
             className="h-full bg-primary transition-all duration-1000 ease-linear"
-            style={{ width: `${(timeLeft / 12) * 100}%` }}
+            style={{ width: `${(timeLeft / (step === 'status' ? 15 : 12)) * 100}%` }}
           />
         </div>
 
         {/* Content */}
-        <div className="p-6">
-          <p className="text-center text-foreground font-medium mb-6">
-            {t.bypass.didYouBypass}
-          </p>
+        <div className="p-5">
+          {step === 'status' ? (
+            <>
+              <p className="text-center text-foreground font-medium mb-5 text-sm">
+                {t.bypass?.wasStationOpen || 'Was the weigh station open or closed?'}
+              </p>
 
-          {/* Buttons */}
-          <div className="space-y-3">
-            <button
-              onClick={() => handleSelect('bypass')}
-              className="w-full py-4 px-6 bg-green-500/10 hover:bg-green-500/20 border-2 border-green-500 rounded-xl flex items-center justify-center gap-3 transition-all active:scale-[0.98]"
-            >
-              <CheckCircle className="w-6 h-6 text-green-500" />
-              <span className="text-lg font-semibold text-green-500">{t.bypass.gotBypass}</span>
-            </button>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => handleStatusSelect(true)}
+                  className="flex-1 py-4 px-4 bg-green-500/10 hover:bg-green-500/20 border-2 border-green-500 rounded-xl flex flex-col items-center justify-center gap-2 transition-all active:scale-[0.98]"
+                >
+                  <DoorOpen className="w-6 h-6 text-green-500" />
+                  <span className="text-sm font-semibold text-green-500">
+                    {t.bypass?.open || 'Open'}
+                  </span>
+                </button>
 
-            <button
-              onClick={() => handleSelect('pull_in')}
-              className="w-full py-4 px-6 bg-red-500/10 hover:bg-red-500/20 border-2 border-red-500 rounded-xl flex items-center justify-center gap-3 transition-all active:scale-[0.98]"
-            >
-              <XCircle className="w-6 h-6 text-red-500" />
-              <span className="text-lg font-semibold text-red-500">{t.bypass.pulledIn}</span>
-            </button>
+                <button
+                  onClick={() => handleStatusSelect(false)}
+                  className="flex-1 py-4 px-4 bg-red-500/10 hover:bg-red-500/20 border-2 border-red-500 rounded-xl flex flex-col items-center justify-center gap-2 transition-all active:scale-[0.98]"
+                >
+                  <DoorClosed className="w-6 h-6 text-red-500" />
+                  <span className="text-sm font-semibold text-red-500">
+                    {t.bypass?.closed || 'Closed'}
+                  </span>
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="text-center text-foreground font-medium mb-5 text-sm">
+                {t.bypass?.didYouReceiveBypass || 'Did you receive bypass?'}
+              </p>
 
-            <button
-              onClick={() => handleSelect('unknown')}
-              className="w-full py-3 px-6 bg-muted hover:bg-muted/80 rounded-xl flex items-center justify-center gap-3 transition-all active:scale-[0.98]"
-            >
-              <HelpCircle className="w-5 h-5 text-muted-foreground" />
-              <span className="text-muted-foreground">{t.bypass.dontKnow}</span>
-            </button>
-          </div>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => handleBypassSelect(true)}
+                  className="flex-1 py-4 px-4 bg-green-500/10 hover:bg-green-500/20 border-2 border-green-500 rounded-xl flex flex-col items-center justify-center gap-2 transition-all active:scale-[0.98]"
+                >
+                  <CheckCircle className="w-6 h-6 text-green-500" />
+                  <span className="text-sm font-semibold text-green-500">
+                    {t.bypass?.gotBypass || 'Yes, Bypass'}
+                  </span>
+                </button>
+
+                <button
+                  onClick={() => handleBypassSelect(false)}
+                  className="flex-1 py-4 px-4 bg-orange-500/10 hover:bg-orange-500/20 border-2 border-orange-500 rounded-xl flex flex-col items-center justify-center gap-2 transition-all active:scale-[0.98]"
+                >
+                  <XCircle className="w-6 h-6 text-orange-500" />
+                  <span className="text-sm font-semibold text-orange-500">
+                    {t.bypass?.pulledIn || 'No, Pulled In'}
+                  </span>
+                </button>
+              </div>
+            </>
+          )}
         </div>
 
-        {/* Disclaimer */}
-        <div className="px-6 pb-4">
-          <p className="text-xs text-muted-foreground text-center">
-            {t.bypass.disclaimer}
-          </p>
+        {/* Skip */}
+        <div className="px-5 pb-4">
+          <button
+            onClick={handleClose}
+            className="w-full py-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
+          >
+            {t.common?.skip || 'Skip'}
+          </button>
         </div>
       </div>
     </div>

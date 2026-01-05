@@ -1,10 +1,24 @@
 import { useState, useEffect } from 'react';
 import { useLanguage } from '@/i18n/LanguageContext';
 import { supabase } from '@/integrations/supabase/client';
-import { ArrowLeft, Scale, CheckCircle, XCircle, HelpCircle, TrendingUp, MapPin } from 'lucide-react';
+import { ArrowLeft, Scale, CheckCircle, XCircle, DoorClosed, TrendingUp, MapPin } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { BypassEvent } from '@/types/bypass';
+import { BypassEvent, BypassResult } from '@/types/bypass';
 import BottomNav from '@/components/navigation/BottomNav';
+
+// Map legacy result values to new ones
+const mapLegacyResult = (result: string): BypassResult => {
+  switch (result) {
+    case 'bypass':
+      return 'bypass_received';
+    case 'pull_in':
+      return 'no_bypass';
+    case 'unknown':
+      return 'station_closed';
+    default:
+      return result as BypassResult;
+  }
+};
 
 interface BypassStats {
   total: number;
@@ -47,11 +61,11 @@ const BypassHistory = () => {
           .limit(50);
 
         if (eventsError) throw eventsError;
-        // Cast events to proper type
+        // Cast events to proper type - map old values to new ones
         const typedEvents = (eventsData || []).map(e => ({
           ...e,
-          result: e.result as 'bypass' | 'pull_in' | 'unknown'
-        }));
+          result: mapLegacyResult(e.result)
+        })) as BypassEvent[];
         setEvents(typedEvents);
 
         // Fetch stats for last 30 days
@@ -108,23 +122,27 @@ const BypassHistory = () => {
     fetchData();
   }, [navigate]);
 
-  const getResultIcon = (result: string) => {
+  const getResultIcon = (result: BypassResult) => {
     switch (result) {
-      case 'bypass':
+      case 'bypass_received':
         return <CheckCircle className="w-5 h-5 text-green-500" />;
-      case 'pull_in':
+      case 'no_bypass':
         return <XCircle className="w-5 h-5 text-red-500" />;
+      case 'station_closed':
+        return <DoorClosed className="w-5 h-5 text-muted-foreground" />;
       default:
-        return <HelpCircle className="w-5 h-5 text-muted-foreground" />;
+        return <DoorClosed className="w-5 h-5 text-muted-foreground" />;
     }
   };
 
-  const getResultLabel = (result: string) => {
+  const getResultLabel = (result: BypassResult) => {
     switch (result) {
-      case 'bypass':
+      case 'bypass_received':
         return t.bypass.gotBypass;
-      case 'pull_in':
+      case 'no_bypass':
         return t.bypass.pulledIn;
+      case 'station_closed':
+        return t.bypass.stationClosed || t.bypass.closed || 'Closed';
       default:
         return t.bypass.dontKnow;
     }
@@ -209,8 +227,8 @@ const BypassHistory = () => {
                   </p>
                 </div>
                 <span className={`text-sm font-medium ${
-                  event.result === 'bypass' ? 'text-green-500' :
-                  event.result === 'pull_in' ? 'text-red-500' :
+                  event.result === 'bypass_received' ? 'text-green-500' :
+                  event.result === 'no_bypass' ? 'text-red-500' :
                   'text-muted-foreground'
                 }`}>
                   {getResultLabel(event.result)}
