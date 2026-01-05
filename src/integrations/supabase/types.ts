@@ -314,6 +314,42 @@ export type Database = {
           },
         ]
       }
+      poi_feedback: {
+        Row: {
+          cleanliness_rating: number
+          created_at: string
+          friendliness_rating: number
+          id: string
+          poi_id: string
+          poi_name: string
+          poi_type: string
+          recommendation_rating: number
+          user_id: string
+        }
+        Insert: {
+          cleanliness_rating: number
+          created_at?: string
+          friendliness_rating: number
+          id?: string
+          poi_id: string
+          poi_name: string
+          poi_type: string
+          recommendation_rating: number
+          user_id: string
+        }
+        Update: {
+          cleanliness_rating?: number
+          created_at?: string
+          friendliness_rating?: number
+          id?: string
+          poi_id?: string
+          poi_name?: string
+          poi_type?: string
+          recommendation_rating?: number
+          user_id?: string
+        }
+        Relationships: []
+      }
       report_votes: {
         Row: {
           created_at: string
@@ -532,6 +568,10 @@ export type Database = {
       }
       can_review_facility: {
         Args: { p_facility_id: string; p_user_id: string }
+        Returns: boolean
+      }
+      can_submit_poi_feedback: {
+        Args: { p_poi_id: string; p_user_id: string }
         Returns: boolean
       }
     }
