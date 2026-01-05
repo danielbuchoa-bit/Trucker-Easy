@@ -9,16 +9,26 @@ const corsHeaders = {
 interface BrowsePoisRequest {
   lat: number;
   lng: number;
-  heading?: number; // Optional heading to filter POIs ahead
+  heading?: number;
   radiusMeters?: number;
-  categories: string[]; // HERE category IDs
+  categories?: string[];
+  type?: 'FUEL' | 'TRUCK_STOP' | 'RESTAURANT';
   limit?: number;
 }
 
-// HERE Places categories for truck-related POIs
-// 700-7600-0116: Fuel / Gas Station
-// 700-7850-0000: Truck Stop / Service Area
-// 100-1000-0000: Restaurant
+// HERE category IDs
+const HERE_CATEGORIES = {
+  FUEL: ['700-7600-0116'],           // Fuel / Gas Station
+  TRUCK_STOP: ['700-7850-0000'],     // Truck Stop / Service Area
+  RESTAURANT: ['100-1000-0000'],     // Restaurant
+};
+
+// Fallback query terms
+const QUERY_MAP = {
+  FUEL: 'fuel',
+  TRUCK_STOP: 'truck stop',
+  RESTAURANT: 'restaurant',
+};
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -30,8 +40,8 @@ serve(async (req) => {
     if (!HERE_API_KEY) {
       console.error('HERE_API_KEY not configured');
       return new Response(
-        JSON.stringify({ error: 'HERE API not configured' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ error: 'HERE API not configured', pois: [] }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
@@ -40,65 +50,83 @@ serve(async (req) => {
       lat, 
       lng, 
       heading, 
-      radiusMeters = 50000, // 50km default
+      radiusMeters = 50000,
       categories,
+      type,
       limit = 20 
     } = body;
 
     if (lat === undefined || lng === undefined) {
       return new Response(
-        JSON.stringify({ error: 'lat and lng are required' }),
+        JSON.stringify({ error: 'lat and lng are required', pois: [] }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    console.log('Browse POIs request:', { lat, lng, heading, radiusMeters, categories });
+    console.log('Browse POIs request:', { lat, lng, heading, radiusMeters, categories, type });
 
-    // Build categories query - HERE uses comma-separated category IDs
-    // Handle both array and string formats
-    const categoryIds = Array.isArray(categories) ? categories.join(',') : categories;
+    // Determine categories to use
+    let categoryIds: string[];
+    let poiType: 'FUEL' | 'TRUCK_STOP' | 'RESTAURANT' | null = null;
 
-    const params = new URLSearchParams({
-      apiKey: HERE_API_KEY,
-      at: `${lat},${lng}`,
-      categories: categoryIds,
-      limit: limit.toString(),
-      in: `circle:${lat},${lng};r=${radiusMeters}`,
-    });
+    if (type && HERE_CATEGORIES[type]) {
+      categoryIds = HERE_CATEGORIES[type];
+      poiType = type;
+    } else if (categories) {
+      categoryIds = Array.isArray(categories) ? categories : [categories];
+    } else {
+      // Default: all truck-related categories
+      categoryIds = [...HERE_CATEGORIES.FUEL, ...HERE_CATEGORIES.TRUCK_STOP];
+    }
 
-    const hereUrl = `https://browse.search.hereapi.com/v1/browse?${params.toString()}`;
-    console.log('[HERE_BROWSE_POIS] Service: Places API (Browse/Discover)');
-    console.log('[HERE_BROWSE_POIS] Endpoint:', hereUrl.replace(HERE_API_KEY, '***'));
+    let items: any[] = [];
 
-    const response = await fetch(hereUrl);
-    const data = await response.json();
+    // 1️⃣ Primary search – CATEGORY MODE (HERE-compliant)
+    try {
+      const primaryUrl = new URL('https://discover.search.hereapi.com/v1/discover');
+      primaryUrl.searchParams.set('at', `${lat},${lng}`);
+      primaryUrl.searchParams.set('limit', limit.toString());
+      primaryUrl.searchParams.set('in', `circle:${lat},${lng};r=${radiusMeters}`);
+      primaryUrl.searchParams.set('categories', categoryIds.join(','));
+      primaryUrl.searchParams.set('apiKey', HERE_API_KEY);
 
-    // Diagnostic logging for errors
-    if (!response.ok) {
-      console.error('[HERE_BROWSE_POIS] ❌ API Error:', {
-        status: response.status,
-        statusText: response.statusText,
-        endpoint: 'browse.search.hereapi.com/v1/browse',
-        service: 'Places/Discover',
-        error: data?.error || data?.message || data?.title || 'Unknown error',
-        cause: data?.cause || null,
-      });
-      
-      // Check for auth/permission issues
-      if (response.status === 401 || response.status === 403) {
-        console.error('[HERE_BROWSE_POIS] 🔐 AUTH ISSUE: HERE Places/Discover service may not be enabled');
-        console.error('[HERE_BROWSE_POIS] Verify in HERE Developer Portal that "Search & Geocoding" is enabled');
+      console.log('[HERE_BROWSE_POIS] Primary URL:', primaryUrl.toString().replace(HERE_API_KEY, '***'));
+
+      const primaryRes = await fetch(primaryUrl.toString());
+      const primaryData = await primaryRes.json();
+
+      if (primaryRes.ok && primaryData?.items?.length > 0) {
+        console.log('[HERE_BROWSE_POIS] Primary search returned:', primaryData.items.length, 'results');
+        items = primaryData.items;
+      } else {
+        console.log('[HERE_BROWSE_POIS] Primary search returned no results, trying fallback');
       }
-      
-      return new Response(
-        JSON.stringify({ 
-          error: 'POI browse failed', 
-          status: response.status,
-          service: 'Places/Discover',
-          details: data 
-        }),
-        { status: response.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+    } catch (primaryErr) {
+      console.error('[HERE_BROWSE_POIS] Primary search failed:', primaryErr);
+    }
+
+    // 2️⃣ FALLBACK – QUERY MODE (never fails)
+    if (items.length === 0 && poiType && QUERY_MAP[poiType]) {
+      try {
+        const fallbackUrl = new URL('https://discover.search.hereapi.com/v1/discover');
+        fallbackUrl.searchParams.set('at', `${lat},${lng}`);
+        fallbackUrl.searchParams.set('limit', limit.toString());
+        fallbackUrl.searchParams.set('in', `circle:${lat},${lng};r=${radiusMeters}`);
+        fallbackUrl.searchParams.set('q', QUERY_MAP[poiType]);
+        fallbackUrl.searchParams.set('apiKey', HERE_API_KEY);
+
+        console.log('[HERE_BROWSE_POIS] Fallback URL:', fallbackUrl.toString().replace(HERE_API_KEY, '***'));
+
+        const fallbackRes = await fetch(fallbackUrl.toString());
+        const fallbackData = await fallbackRes.json();
+
+        if (fallbackRes.ok && fallbackData?.items) {
+          console.log('[HERE_BROWSE_POIS] Fallback search returned:', fallbackData.items.length, 'results');
+          items = fallbackData.items;
+        }
+      } catch (fallbackErr) {
+        console.error('[HERE_BROWSE_POIS] Fallback search failed:', fallbackErr);
+      }
     }
 
     // Calculate bearing between two points
@@ -140,14 +168,14 @@ serve(async (req) => {
     function getCategoryType(categories: any[]): string {
       for (const cat of categories || []) {
         const id = cat.id || '';
-        if (id.includes('7850')) return 'truck_stop';     // Truck Stop / Service Area
-        if (id.includes('7600-0116')) return 'fuel';      // Fuel / Gas Station
-        if (id.includes('1000')) return 'restaurant';     // Restaurant
+        if (id.includes('7850')) return 'truck_stop';
+        if (id.includes('7600')) return 'fuel';
+        if (id.includes('1000')) return 'restaurant';
       }
       return 'fuel';
     }
 
-    let results = data.items?.map((item: any) => {
+    let results = items.map((item: any) => {
       const poiLat = item.position?.lat;
       const poiLng = item.position?.lng;
       const distance = haversineDistance(lat, lng, poiLat, poiLng);
@@ -158,7 +186,7 @@ serve(async (req) => {
         name: item.title,
         lat: poiLat,
         lng: poiLng,
-        distance, // meters
+        distance,
         distanceMiles: distance / 1609.34,
         bearing: bearingToPoi,
         category: getCategoryType(item.categories),
@@ -167,7 +195,7 @@ serve(async (req) => {
         openingHours: item.openingHours?.[0]?.text || null,
         contacts: item.contacts?.[0]?.phone?.[0]?.value || null,
       };
-    }) || [];
+    });
 
     // Filter by heading cone if heading is provided
     if (heading !== undefined && heading !== null) {
@@ -180,18 +208,19 @@ serve(async (req) => {
     // Limit results
     results = results.slice(0, limit);
 
-    console.log('POI results:', results.length);
+    console.log('[HERE_BROWSE_POIS] Final results:', results.length);
 
     return new Response(
       JSON.stringify({ pois: results }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (error: unknown) {
+    // 3️⃣ HARD FAIL SAFE MODE – NEVER BREAK UI
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    console.error('Error in here_browse_pois:', error);
+    console.error('[HERE_BROWSE_POIS] Critical error:', error);
     return new Response(
-      JSON.stringify({ error: errorMessage }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      JSON.stringify({ error: errorMessage, pois: [] }),
+      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
 });
