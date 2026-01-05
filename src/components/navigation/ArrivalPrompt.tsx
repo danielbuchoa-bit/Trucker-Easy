@@ -100,16 +100,29 @@ export default function ArrivalPrompt({
     setIsFallbackMode(false);
 
     try {
-      // Build menu items from fallback if no restaurants found
-      const menuItems = nearbyRestaurantsData?.source === 'fallback' && nearbyRestaurantsData.fallback
-        ? buildMenuItemsFromFallback(nearbyRestaurantsData.fallback)
-        : [];
+      // Build menu items based on what we found
+      let menuItems: { item_name: string; category: string }[] = [];
+      let restaurantNames: string[] = [];
+      
+      if (nearbyRestaurantsData?.restaurants && nearbyRestaurantsData.restaurants.length > 0) {
+        // We have real restaurant data - send the names
+        restaurantNames = nearbyRestaurantsData.restaurants.map(r => r.name);
+      } else if (nearbyRestaurantsData?.source === 'fallback' && nearbyRestaurantsData.fallback) {
+        // Fallback mode - send typical offerings
+        const offerings = nearbyRestaurantsData.fallback.offerings;
+        offerings.breakfast.forEach(item => menuItems.push({ item_name: item, category: 'breakfast' }));
+        offerings.lunch_dinner.forEach(item => menuItems.push({ item_name: item, category: 'lunch_dinner' }));
+        offerings.snacks.forEach(item => menuItems.push({ item_name: item, category: 'snacks' }));
+        offerings.drinks.forEach(item => menuItems.push({ item_name: item, category: 'drinks' }));
+      }
 
       const { data, error: fnError } = await supabase.functions.invoke('food_recommendation', {
         body: {
           profile: userProfile,
           menuItems,
           placeType: poi.category === 'truck_stop' ? 'truck stop' : 'gas station',
+          stopName: poi.name,
+          restaurantNames, // NEW: Send restaurant names for context
         },
       });
 
