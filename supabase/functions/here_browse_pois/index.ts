@@ -179,15 +179,16 @@ serve(async (req) => {
 
     if (uniqueHereIds.length > 0) {
       try {
-        const categoryUrl = new URL('https://discover.search.hereapi.com/v1/discover');
+        // Use HERE Browse endpoint for category-based search (not Discover)
+        const categoryUrl = new URL('https://browse.search.hereapi.com/v1/browse');
         categoryUrl.searchParams.set('at', `${lat},${lng}`);
         categoryUrl.searchParams.set('limit', limit.toString());
-        categoryUrl.searchParams.set('in', `circle:${lat},${lng};r=${radiusMeters}`);
+        categoryUrl.searchParams.set('circle', `${lat},${lng};r=${radiusMeters}`);
         categoryUrl.searchParams.set('categories', uniqueHereIds.join(','));
         categoryUrl.searchParams.set('apiKey', HERE_API_KEY);
 
         const safeUrl = categoryUrl.toString().replace(HERE_API_KEY, '***');
-        console.log('[HERE_BROWSE_POIS] 🔍 Category search:', safeUrl);
+        console.log('[HERE_BROWSE_POIS] 🔍 Category search (Browse API):', safeUrl);
 
         const res = await fetch(categoryUrl.toString());
         const data = await res.json();
@@ -240,15 +241,15 @@ serve(async (req) => {
       }
 
       try {
+        // Use HERE Discover endpoint for text search (requires q parameter)
         const queryUrl = new URL('https://discover.search.hereapi.com/v1/discover');
         queryUrl.searchParams.set('at', `${lat},${lng}`);
         queryUrl.searchParams.set('limit', limit.toString());
-        queryUrl.searchParams.set('in', `circle:${lat},${lng};r=${radiusMeters}`);
         queryUrl.searchParams.set('q', queryTerm);
         queryUrl.searchParams.set('apiKey', HERE_API_KEY);
 
         const safeUrl = queryUrl.toString().replace(HERE_API_KEY, '***');
-        console.log('[HERE_BROWSE_POIS] 🔍 Query fallback:', safeUrl);
+        console.log('[HERE_BROWSE_POIS] 🔍 Query fallback (Discover API):', safeUrl);
 
         const res = await fetch(queryUrl.toString());
         const data = await res.json();
