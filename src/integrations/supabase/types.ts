@@ -324,7 +324,9 @@ export type Database = {
           poi_name: string
           poi_type: string
           recommendation_rating: number
+          structure_rating: number | null
           user_id: string
+          would_return: boolean | null
         }
         Insert: {
           cleanliness_rating: number
@@ -335,7 +337,9 @@ export type Database = {
           poi_name: string
           poi_type: string
           recommendation_rating: number
+          structure_rating?: number | null
           user_id: string
+          would_return?: boolean | null
         }
         Update: {
           cleanliness_rating?: number
@@ -346,7 +350,9 @@ export type Database = {
           poi_name?: string
           poi_type?: string
           recommendation_rating?: number
+          structure_rating?: number | null
           user_id?: string
+          would_return?: boolean | null
         }
         Relationships: []
       }
