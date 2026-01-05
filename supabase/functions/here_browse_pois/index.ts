@@ -16,10 +16,9 @@ interface BrowsePoisRequest {
 }
 
 // HERE Places categories for truck-related POIs
-// 700-7600-0000: Fuel/Gas station
-// 700-7600-0116: Truck stop
-// 550-5510-0000: Rest area
-// 700-7850-0000: Truck dealership/services
+// 700-7600-0116: Fuel / Gas Station
+// 700-7850-0000: Truck Stop / Service Area
+// 100-1000-0000: Restaurant
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -141,10 +140,9 @@ serve(async (req) => {
     function getCategoryType(categories: any[]): string {
       for (const cat of categories || []) {
         const id = cat.id || '';
-        if (id.includes('7600-0116') || id.includes('truck-stop')) return 'truck_stop';
-        if (id.includes('7600')) return 'fuel';
-        if (id.includes('5510')) return 'rest_area';
-        if (id.includes('7850')) return 'truck_service';
+        if (id.includes('7850')) return 'truck_stop';     // Truck Stop / Service Area
+        if (id.includes('7600-0116')) return 'fuel';      // Fuel / Gas Station
+        if (id.includes('1000')) return 'restaurant';     // Restaurant
       }
       return 'fuel';
     }
