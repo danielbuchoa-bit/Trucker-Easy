@@ -30,11 +30,14 @@ export const usePoiFeedback = () => {
 };
 
 // POI types that trigger feedback
-const FEEDBACK_POI_TYPES = ['fuel-station', 'petrol-station', 'truck-stop', 'rest-area', 'fueling-station'];
+const FEEDBACK_POI_TYPES = ['fuel', 'truck_stop', 'rest_area'];
 
-// Distance thresholds
-const ENTER_RADIUS_M = 100; // Enter when within 100m
-const EXIT_RADIUS_M = 150; // Exit when beyond 150m
+// HERE category IDs for truck-related POIs (same as NearbyPoisOverlay)
+const TRUCK_CATEGORIES = ['700-7600-0116', '700-7850-0000', '100-1000-0000'];
+
+// Distance thresholds - INCREASED for truck stop detection
+const ENTER_RADIUS_M = 150; // Enter when within 150m
+const EXIT_RADIUS_M = 250; // Exit when beyond 250m
 const MIN_STAY_TIME_MS = 60000; // Minimum 1 minute stay to trigger feedback
 
 export const PoiFeedbackProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -65,7 +68,7 @@ export const PoiFeedbackProvider: React.FC<{ children: React.ReactNode }> = ({ c
     return () => subscription.unsubscribe();
   }, []);
 
-  // Fetch nearby fuel POIs
+  // Fetch nearby POIs using correct HERE category IDs
   const fetchNearbyPois = useCallback(async (lat: number, lng: number) => {
     const now = Date.now();
     if (now - lastPoisFetch.current < 30000) return; // Cache for 30s
@@ -76,8 +79,8 @@ export const PoiFeedbackProvider: React.FC<{ children: React.ReactNode }> = ({ c
         body: {
           lat,
           lng,
-          radius: 500,
-          categories: 'fuel-station,petrol-station',
+          radiusMeters: 500,
+          categories: TRUCK_CATEGORIES, // Use HERE category IDs
           limit: 20,
         },
       });
@@ -87,11 +90,18 @@ export const PoiFeedbackProvider: React.FC<{ children: React.ReactNode }> = ({ c
         return;
       }
 
-      if (data?.items) {
+      // Response now uses 'pois' key from the updated edge function
+      if (data?.pois) {
         nearbyPoisCache.current.clear();
-        data.items.forEach((poi: any) => {
-          nearbyPoisCache.current.set(poi.id, poi);
+        data.pois.forEach((poi: any) => {
+          nearbyPoisCache.current.set(poi.id, {
+            ...poi,
+            position: { lat: poi.lat, lng: poi.lng },
+            title: poi.name,
+            categories: [{ id: poi.category }],
+          });
         });
+        console.log('[PoiFeedback] Cached POIs:', data.pois.length);
       }
     } catch (err) {
       console.error('[PoiFeedback] Failed to fetch POIs:', err);

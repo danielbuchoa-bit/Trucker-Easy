@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X } from 'lucide-react';
+import { X, ThumbsUp, ThumbsDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import StarRating from '@/components/stops/StarRating';
 
@@ -9,7 +9,9 @@ interface PoiFeedbackModalProps {
   onSubmit: (ratings: {
     friendliness_rating: number;
     cleanliness_rating: number;
+    structure_rating: number;
     recommendation_rating: number;
+    would_return: boolean;
   }) => void;
   onSkip: () => void;
 }
@@ -22,18 +24,27 @@ const PoiFeedbackModal: React.FC<PoiFeedbackModalProps> = ({
 }) => {
   const [friendlinessRating, setFriendlinessRating] = useState(0);
   const [cleanlinessRating, setCleanlinessRating] = useState(0);
+  const [structureRating, setStructureRating] = useState(0);
   const [recommendationRating, setRecommendationRating] = useState(0);
+  const [wouldReturn, setWouldReturn] = useState<boolean | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const canSubmit = friendlinessRating > 0 && cleanlinessRating > 0 && recommendationRating > 0;
+  const canSubmit = 
+    friendlinessRating > 0 && 
+    cleanlinessRating > 0 && 
+    structureRating > 0 &&
+    recommendationRating > 0 &&
+    wouldReturn !== null;
 
   const handleSubmit = async () => {
-    if (!canSubmit) return;
+    if (!canSubmit || wouldReturn === null) return;
     setIsSubmitting(true);
     await onSubmit({
       friendliness_rating: friendlinessRating,
       cleanliness_rating: cleanlinessRating,
+      structure_rating: structureRating,
       recommendation_rating: recommendationRating,
+      would_return: wouldReturn,
     });
     setIsSubmitting(false);
   };
@@ -54,10 +65,10 @@ const PoiFeedbackModal: React.FC<PoiFeedbackModalProps> = ({
         <div className="flex items-start justify-between mb-3">
           <div className="flex-1 pr-2">
             <p className="text-xs text-muted-foreground uppercase tracking-wide">
-              {getPoiTypeLabel()}
+              Como foi sua visita?
             </p>
             <h3 className="text-sm font-semibold text-foreground truncate">
-              {poiName}
+              {poiName} ({getPoiTypeLabel()})
             </h3>
           </div>
           <button
@@ -74,7 +85,7 @@ const PoiFeedbackModal: React.FC<PoiFeedbackModalProps> = ({
           {/* Friendliness */}
           <div className="space-y-1">
             <p className="text-xs text-muted-foreground">
-              As pessoas neste local foram amigáveis?
+              Atendimento (funcionários foram atenciosos?)
             </p>
             <StarRating
               rating={friendlinessRating}
@@ -87,7 +98,7 @@ const PoiFeedbackModal: React.FC<PoiFeedbackModalProps> = ({
           {/* Cleanliness */}
           <div className="space-y-1">
             <p className="text-xs text-muted-foreground">
-              O local estava limpo e bem cuidado?
+              Limpeza (banheiros, área comum)
             </p>
             <StarRating
               rating={cleanlinessRating}
@@ -97,10 +108,23 @@ const PoiFeedbackModal: React.FC<PoiFeedbackModalProps> = ({
             />
           </div>
 
+          {/* Structure */}
+          <div className="space-y-1">
+            <p className="text-xs text-muted-foreground">
+              Estrutura (estacionamento, comodidades)
+            </p>
+            <StarRating
+              rating={structureRating}
+              size="md"
+              interactive
+              onChange={setStructureRating}
+            />
+          </div>
+
           {/* Recommendation */}
           <div className="space-y-1">
             <p className="text-xs text-muted-foreground">
-              Você voltaria ou recomendaria este local?
+              Nota geral
             </p>
             <StarRating
               rating={recommendationRating}
@@ -108,6 +132,33 @@ const PoiFeedbackModal: React.FC<PoiFeedbackModalProps> = ({
               interactive
               onChange={setRecommendationRating}
             />
+          </div>
+
+          {/* Would Return */}
+          <div className="space-y-2">
+            <p className="text-xs text-muted-foreground">
+              Voltaria aqui?
+            </p>
+            <div className="flex gap-2">
+              <Button
+                variant={wouldReturn === true ? "default" : "outline"}
+                size="sm"
+                className="flex-1 gap-1"
+                onClick={() => setWouldReturn(true)}
+              >
+                <ThumbsUp className="w-4 h-4" />
+                Sim
+              </Button>
+              <Button
+                variant={wouldReturn === false ? "destructive" : "outline"}
+                size="sm"
+                className="flex-1 gap-1"
+                onClick={() => setWouldReturn(false)}
+              >
+                <ThumbsDown className="w-4 h-4" />
+                Não
+              </Button>
+            </div>
           </div>
         </div>
 
