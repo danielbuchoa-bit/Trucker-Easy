@@ -18,6 +18,8 @@ import ArrivalPrompt from './ArrivalPrompt';
 import ArrivalDebugPanel from './ArrivalDebugPanel';
 import { createTruckCursorElement } from './TruckCursor';
 import { MapPin, Navigation as NavIcon, RotateCcw, Layers, Bug, Plus, Route } from 'lucide-react';
+import WeighStationBadges from './WeighStationBadges';
+import { useGeofence } from '@/contexts/GeofenceContext';
 import { Button } from '@/components/ui/button';
 import { useLanguage } from '@/i18n/LanguageContext';
 
@@ -96,6 +98,7 @@ function bearingDifference(a: number, b: number): number {
 
 const ActiveNavigationView = () => {
   const { t } = useLanguage();
+  const { nearbyStations } = useGeofence();
   const {
     route,
     routeCoords,
@@ -498,6 +501,14 @@ const ActiveNavigationView = () => {
 
       {/* Right side buttons */}
       <div className="absolute top-4 right-4 z-30 flex flex-col gap-2 safe-top">
+        {/* Weigh Station Badges */}
+        <WeighStationBadges
+          userLat={userPosition?.lat ?? null}
+          userLng={userPosition?.lng ?? null}
+          stations={nearbyStations}
+          maxVisible={2}
+        />
+        
         {/* Map style toggle */}
         <Button
           variant="secondary"
@@ -547,15 +558,6 @@ const ActiveNavigationView = () => {
           className="rounded-full shadow-lg w-12 h-12"
         >
           <Plus className="w-5 h-5" />
-        </Button>
-        
-        {/* Route overview button */}
-        <Button
-          variant="secondary"
-          size="icon"
-          className="rounded-full shadow-lg w-12 h-12"
-        >
-          <Route className="w-5 h-5" />
         </Button>
         
         {/* Debug toggle button */}
