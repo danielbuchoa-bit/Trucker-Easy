@@ -131,8 +131,11 @@ serve(async (req) => {
 
     for (const cat of inputCategories) {
       const normalized = cat.toLowerCase().trim();
-      
-      if (CATEGORY_MAP[normalized]) {
+
+      // Pass-through for valid HERE category IDs (e.g. 100-1000-0006)
+      if (/^\d{3}-\d{4}-\d{4}$/.test(normalized)) {
+        validHereIds.push(normalized);
+      } else if (CATEGORY_MAP[normalized]) {
         validHereIds.push(...CATEGORY_MAP[normalized]);
       } else if (QUERY_FALLBACK_MAP[normalized]) {
         queryFallbacks.push(QUERY_FALLBACK_MAP[normalized]);

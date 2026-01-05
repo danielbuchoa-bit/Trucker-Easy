@@ -33,6 +33,7 @@ interface NearbyRestaurantsResult {
 // ============ CONSTANTS ============
 const SEARCH_RADII = [150, 300, 500]; // meters
 const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+const CACHE_VERSION = 'v2'; // bump to invalidate old cached results
 
 // Known food brands for detection
 const KNOWN_FOOD_BRANDS = [
@@ -107,7 +108,10 @@ function dedupeByName(restaurants: Restaurant[]): Restaurant[] {
 }
 
 function isFoodPlace(item: any): boolean {
-  // Check categories
+  // Our backend already classifies results; trust it.
+  if (item?.category === 'restaurant') return true;
+
+  // Check categories (when present)
   const categories = item.categories || [];
   for (const cat of categories) {
     const catId = cat.id || '';
@@ -116,10 +120,10 @@ function isFoodPlace(item: any): boolean {
       return true;
     }
   }
-  
+
   // Check name against known food brands
   const nameNormalized = normalizeName(item.name || item.title || '');
-  return KNOWN_FOOD_BRANDS.some(brand => nameNormalized.includes(normalizeName(brand)));
+  return KNOWN_FOOD_BRANDS.some((brand) => nameNormalized.includes(normalizeName(brand)));
 }
 
 function detectTruckStopBrand(stopName: string): string {
@@ -135,7 +139,7 @@ function getCacheKey(lat: number, lng: number): string {
   // Round to ~100m precision for caching
   const roundedLat = Math.round(lat * 1000) / 1000;
   const roundedLng = Math.round(lng * 1000) / 1000;
-  return `restaurants_${roundedLat}_${roundedLng}`;
+  return `restaurants_${CACHE_VERSION}_${roundedLat}_${roundedLng}`;
 }
 
 // ============ CACHE ============
