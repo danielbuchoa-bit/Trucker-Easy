@@ -10,6 +10,11 @@ const corsHeaders = {
 // HERE Category ID Map (slug -> HERE IDs)
 // ============================================
 const CATEGORY_MAP: Record<string, string[]> = {
+  // Truck Stop - PRIMARY category for this app
+  'truck_stop': ['700-7850-0000'],
+  'truck-stop': ['700-7850-0000'],
+  'truckstop': ['700-7850-0000'],
+  
   // Fuel / Gas Station variations
   'gas_station': ['700-7600-0116'],
   'fuel_station': ['700-7600-0116'],
@@ -32,18 +37,34 @@ const CATEGORY_MAP: Record<string, string[]> = {
   '550-5510-0000': ['550-5510-0000'],
 };
 
-// Query fallback map (for categories without confirmed IDs)
+// Query fallback map - what to search for when using text query
 const QUERY_FALLBACK_MAP: Record<string, string> = {
+  '700-7850-0000': 'truck stop',
   'truck_stop': 'truck stop',
   'truck-stop': 'truck stop',
   'truckstop': 'truck stop',
+  '700-7600-0116': 'gas station',
+  '700-7600-0000': 'fuel station',
   'restaurant': 'restaurant',
   'food': 'restaurant',
+  '100-1000-0000': 'restaurant',
   'rest_area': 'rest area',
   'rest-area': 'rest area',
+  '550-5510-0000': 'rest area',
   'weigh_station': 'weigh station',
   'weigh-station': 'weigh station',
 };
+
+// Known truck stop brand names for filtering
+const TRUCK_STOP_BRANDS = [
+  'pilot', 'flying j', 'loves', "love's", 'ta ', 'travel centers', 'petro',
+  'sapp bros', 'ambest', 'big cat', 'road ranger', 'buckys', "buc-ee's",
+  'buc-ees', 'bucees', 'kenly 95', 'truck stops of america', 'cefco',
+  'quik trip', 'quick trip', 'qt ', 'sheetz', 'wawa', 'maverick',
+  'caseys', "casey's", 'town pump', 'kwik trip', 'kwiktrip', 'speedway',
+  'circle k', 'husky', 'flying hook', 'saddleman', 'truck stop',
+  'travel plaza', 'travel center', 'truck plaza', 'truckstop',
+];
 
 interface BrowsePoisRequest {
   lat: number;
@@ -124,9 +145,14 @@ serve(async (req) => {
       }
     }
 
-    // Map slugs to HERE IDs
+    // Track what was originally requested for proper fallback
+    const isTruckStopSearch = inputCategories.some(cat => 
+      cat === '700-7850-0000' || 
+      cat.toLowerCase().includes('truck')
+    ) || type === 'TRUCK_STOP';
+
+    // Map ONLY the requested categories to HERE IDs - NO ADDITIONS
     const validHereIds: string[] = [];
-    const queryFallbacks: string[] = [];
     const invalidCategories: string[] = [];
 
     for (const cat of inputCategories) {
@@ -137,41 +163,34 @@ serve(async (req) => {
         validHereIds.push(normalized);
       } else if (CATEGORY_MAP[normalized]) {
         validHereIds.push(...CATEGORY_MAP[normalized]);
-      } else if (QUERY_FALLBACK_MAP[normalized]) {
-        queryFallbacks.push(QUERY_FALLBACK_MAP[normalized]);
       } else {
         invalidCategories.push(cat);
       }
     }
 
-    // Handle type parameter as shortcut
-    if (type) {
+    // Handle type parameter ONLY if no categories specified
+    if (type && validHereIds.length === 0) {
       switch (type) {
         case 'FUEL':
-          if (!validHereIds.includes('700-7600-0116')) {
-            validHereIds.push('700-7600-0116');
-          }
+          validHereIds.push('700-7600-0116');
           break;
         case 'TRUCK_STOP':
-          if (!queryFallbacks.includes('truck stop')) {
-            queryFallbacks.push('truck stop');
-          }
+          validHereIds.push('700-7850-0000');
           break;
         case 'RESTAURANT':
-          if (!queryFallbacks.includes('restaurant')) {
-            queryFallbacks.push('restaurant');
-          }
+          validHereIds.push('100-1000-0000');
           break;
       }
     }
 
-    // Deduplicate
+    // Deduplicate - ONLY use what was requested
     const uniqueHereIds = [...new Set(validHereIds)];
-    const uniqueQueryFallbacks = [...new Set(queryFallbacks)];
 
     if (invalidCategories.length > 0) {
       console.log('[HERE_BROWSE_POIS] ⚠️ Invalid categories ignored:', invalidCategories);
     }
+
+    console.log('[HERE_BROWSE_POIS] Searching with categories:', uniqueHereIds, 'isTruckStopSearch:', isTruckStopSearch);
 
     // ============================================
     // 2️⃣ Attempt A: Category-based search
@@ -182,10 +201,10 @@ serve(async (req) => {
 
     if (uniqueHereIds.length > 0) {
       try {
-        // Use HERE Browse endpoint for category-based search (not Discover)
+        // Use HERE Browse endpoint for category-based search
         const categoryUrl = new URL('https://browse.search.hereapi.com/v1/browse');
         categoryUrl.searchParams.set('at', `${lat},${lng}`);
-        categoryUrl.searchParams.set('limit', limit.toString());
+        categoryUrl.searchParams.set('limit', Math.min(limit * 2, 50).toString()); // Fetch extra for filtering
         categoryUrl.searchParams.set('circle', `${lat},${lng};r=${radiusMeters}`);
         categoryUrl.searchParams.set('categories', uniqueHereIds.join(','));
         categoryUrl.searchParams.set('apiKey', HERE_API_KEY);
@@ -210,49 +229,38 @@ serve(async (req) => {
         console.error('[HERE_BROWSE_POIS] ❌ Category search error:', err);
         warnings.push('Category search threw exception');
       }
-    } else {
-      console.log('[HERE_BROWSE_POIS] ℹ️ No valid category IDs, skipping category search');
-      if (invalidCategories.length > 0) {
-        console.log('[HERE_BROWSE_POIS] categories_invalid_fallback_to_query');
-      }
     }
 
     // ============================================
-    // 3️⃣ Attempt B: Query fallback
+    // 3️⃣ Attempt B: Query fallback - MATCH the original request
     // ============================================
     if (items.length === 0) {
-      // Determine query term
-      let queryTerm = uniqueQueryFallbacks[0] || null;
+      // Determine query term based on what was ORIGINALLY requested
+      let queryTerm: string;
       
-      // If no explicit fallback, infer from original input
-      if (!queryTerm && inputCategories.length > 0) {
+      if (isTruckStopSearch) {
+        queryTerm = 'truck stop';
+      } else if (uniqueHereIds.length > 0) {
+        // Use fallback map for the first requested category
+        queryTerm = QUERY_FALLBACK_MAP[uniqueHereIds[0]] || 'truck stop';
+      } else if (inputCategories.length > 0) {
         const firstCat = inputCategories[0].toLowerCase();
-        if (firstCat.includes('fuel') || firstCat.includes('gas') || firstCat.includes('petrol')) {
-          queryTerm = 'gas station';
-        } else if (firstCat.includes('truck') || firstCat.includes('stop')) {
-          queryTerm = 'truck stop';
-        } else if (firstCat.includes('restaurant') || firstCat.includes('food')) {
-          queryTerm = 'restaurant';
-        } else if (firstCat.includes('rest')) {
-          queryTerm = 'rest area';
-        }
-      }
-
-      // Default fallback
-      if (!queryTerm) {
-        queryTerm = 'gas station';
+        queryTerm = QUERY_FALLBACK_MAP[firstCat] || 'truck stop';
+      } else {
+        // Default to truck stop for this app
+        queryTerm = 'truck stop';
       }
 
       try {
-        // Use HERE Discover endpoint for text search (requires q parameter)
+        // Use HERE Discover endpoint for text search
         const queryUrl = new URL('https://discover.search.hereapi.com/v1/discover');
         queryUrl.searchParams.set('at', `${lat},${lng}`);
-        queryUrl.searchParams.set('limit', limit.toString());
+        queryUrl.searchParams.set('limit', Math.min(limit * 2, 50).toString());
         queryUrl.searchParams.set('q', queryTerm);
         queryUrl.searchParams.set('apiKey', HERE_API_KEY);
 
         const safeUrl = queryUrl.toString().replace(HERE_API_KEY, '***');
-        console.log('[HERE_BROWSE_POIS] 🔍 Query fallback (Discover API):', safeUrl);
+        console.log('[HERE_BROWSE_POIS] 🔍 Query fallback (Discover API):', safeUrl, 'query:', queryTerm);
 
         const res = await fetch(queryUrl.toString());
         const data = await res.json();
@@ -272,7 +280,7 @@ serve(async (req) => {
     }
 
     // ============================================
-    // 4️⃣ Process results
+    // 4️⃣ Process and filter results
     // ============================================
     function calculateBearing(lat1: number, lng1: number, lat2: number, lng2: number): number {
       const toRad = (deg: number) => (deg * Math.PI) / 180;
@@ -301,15 +309,47 @@ serve(async (req) => {
       return diff <= coneAngle;
     }
 
-    function getCategoryType(categories: any[]): string {
+    function getCategoryType(categories: any[], name: string, chainName: string | null): string {
+      // First check by HERE category ID
       for (const cat of categories || []) {
         const id = cat.id || '';
         if (id.includes('7850')) return 'truck_stop';
-        if (id.includes('7600')) return 'fuel';
-        if (id.includes('1000')) return 'restaurant';
         if (id.includes('5510')) return 'rest_area';
       }
+      
+      // Then check by name/chain for truck stops
+      const searchText = `${name} ${chainName || ''}`.toLowerCase();
+      for (const brand of TRUCK_STOP_BRANDS) {
+        if (searchText.includes(brand)) return 'truck_stop';
+      }
+      
+      // Check remaining categories
+      for (const cat of categories || []) {
+        const id = cat.id || '';
+        if (id.includes('7600')) return 'fuel';
+        if (id.includes('1000')) return 'restaurant';
+      }
+      
       return 'fuel';
+    }
+
+    function isTruckStopPoi(item: any): boolean {
+      // Check category IDs
+      for (const cat of item.categories || []) {
+        const id = cat.id || '';
+        if (id.includes('7850')) return true;
+      }
+      
+      // Check name/chain for known truck stop brands
+      const name = (item.title || '').toLowerCase();
+      const chainName = (item.chains?.[0]?.name || '').toLowerCase();
+      const searchText = `${name} ${chainName}`;
+      
+      for (const brand of TRUCK_STOP_BRANDS) {
+        if (searchText.includes(brand)) return true;
+      }
+      
+      return false;
     }
 
     let results = items.map((item: any) => {
@@ -317,6 +357,7 @@ serve(async (req) => {
       const poiLng = item.position?.lng;
       const distance = haversineDistance(lat, lng, poiLat, poiLng);
       const bearingToPoi = calculateBearing(lat, lng, poiLat, poiLng);
+      const chainName = item.chains?.[0]?.name || null;
 
       return {
         id: item.id,
@@ -326,13 +367,26 @@ serve(async (req) => {
         distance,
         distanceMiles: distance / 1609.34,
         bearing: bearingToPoi,
-        category: getCategoryType(item.categories),
+        category: getCategoryType(item.categories, item.title, chainName),
         address: item.address?.label || '',
-        chainName: item.chains?.[0]?.name || null,
+        chainName,
         openingHours: item.openingHours?.[0]?.text || null,
         contacts: item.contacts?.[0]?.phone?.[0]?.value || null,
+        _isTruckStop: isTruckStopPoi(item), // Internal flag for filtering
       };
     });
+
+    // ============================================
+    // 5️⃣ CRITICAL: Filter results based on what was requested
+    // ============================================
+    if (isTruckStopSearch) {
+      const beforeCount = results.length;
+      results = results.filter((poi: any) => poi._isTruckStop || poi.category === 'truck_stop');
+      console.log('[HERE_BROWSE_POIS] 🚛 Truck stop filter: kept', results.length, 'of', beforeCount);
+    }
+
+    // Remove internal flag
+    results = results.map(({ _isTruckStop, ...poi }: any) => poi);
 
     // Filter by heading cone if provided
     if (heading !== undefined && heading !== null) {
@@ -355,7 +409,7 @@ serve(async (req) => {
 
   } catch (error: unknown) {
     // ============================================
-    // 5️⃣ HARD FAIL SAFE – NEVER BREAK UI
+    // 6️⃣ HARD FAIL SAFE – NEVER BREAK UI
     // ============================================
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     console.error('[HERE_BROWSE_POIS] ❌ Critical error:', error);
