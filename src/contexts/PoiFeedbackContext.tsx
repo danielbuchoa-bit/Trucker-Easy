@@ -32,8 +32,8 @@ export const usePoiFeedback = () => {
 // POI types that trigger feedback
 const FEEDBACK_POI_TYPES = ['fuel', 'truck_stop', 'rest_area'];
 
-// HERE category IDs for truck-related POIs (same as NearbyPoisOverlay)
-const TRUCK_CATEGORIES = ['700-7600-0116', '700-7850-0000', '100-1000-0000'];
+// HERE category IDs for truck-related POIs - ONLY truck stops
+const TRUCK_CATEGORIES = ['700-7850-0000'];
 
 // Distance thresholds - INCREASED for truck stop detection
 const ENTER_RADIUS_M = 150; // Enter when within 150m
