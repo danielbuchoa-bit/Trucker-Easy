@@ -11,6 +11,7 @@ import { useWakeLock } from '@/hooks/useWakeLock';
 import { HereService, type RouteResponse, type GeocodeResult, DEFAULT_TRUCK_PROFILE, type TruckProfile } from '@/services/HereService';
 
 const NAVIGATION_STATE_KEY = 'activeNavigation';
+const DETOUR_STATE_KEY = 'detourStop';
 
 // Off-route detection thresholds (meters) with hysteresis to prevent ping-pong.
 const OFF_ROUTE_THRESHOLD_M = 55;
@@ -33,9 +34,12 @@ const SNAP_MAX_DISTANCE_M = 80;
 // NOTE: REROUTE_COOLDOWN_MS remains conservative to avoid loops.
 const REROUTE_COOLDOWN_MS = 45000; // 45 seconds minimum between reroutes
 
+// Detour arrival detection
+const DETOUR_ARRIVAL_DISTANCE_M = 200; // Consider arrived when within 200m
+const DETOUR_ARRIVAL_DWELL_TIME_MS = 10000; // Must stay for 10 seconds
+const DETOUR_COOLDOWN_MS = 120000; // 2 minutes cooldown after completing detour
+
 // --- Course-over-ground (COG) navigation model ---
-// IMPORTANT: We intentionally ignore any native heading/compass values and derive heading
-// exclusively from displacement between consecutive GPS fixes.
 const MIN_COG_SPEED_MPS = 0.8; // ~3 km/h
 const MIN_COG_DISTANCE_M = 3; // meters between fixes to compute bearing
 const MAX_REASONABLE_SPEED_MPS = 60; // ~216 km/h (spike rejection)
@@ -76,11 +80,30 @@ interface NavigationState {
   truckProfile: TruckProfile;
 }
 
+// Detour stop - temporary waypoint
+export interface DetourStop {
+  id: string;
+  name: string;
+  address: string;
+  lat: number;
+  lng: number;
+  addedAt: number;
+  completed: boolean;
+}
+
+// Original trip saved while on detour
+interface OriginalTrip {
+  route: RouteResponse;
+  origin: GeocodeResult;
+  destination: GeocodeResult;
+  truckProfile: TruckProfile;
+}
+
 export interface UserPosition {
   lat: number;
   lng: number;
-  heading: number | null; // GPS course/bearing in degrees (0-360, 0 = North)
-  speed: number | null; // Speed in m/s
+  heading: number | null;
+  speed: number | null;
   accuracy: number | null;
 }
 
@@ -96,6 +119,13 @@ interface ActiveNavigationContextValue {
   isRerouting: boolean;
   isOffRoute: boolean;
   isSimulating: boolean;
+  // Detour functionality
+  detourStop: DetourStop | null;
+  hasActiveTrip: boolean;
+  isOnDetour: boolean;
+  addDetourStop: (poi: { lat: number; lng: number; name: string; address?: string }) => Promise<void>;
+  cancelDetour: () => Promise<void>;
+  // Original methods
   startNavigation: (route: RouteResponse, origin: GeocodeResult, destination: GeocodeResult, profile?: TruckProfile) => void;
   endNavigation: () => void;
   navigateToPoi: (poi: { lat: number; lng: number; name: string; address?: string }) => Promise<void>;
@@ -115,6 +145,12 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
   const [simulatedPosition, setSimulatedPosition] = useState<UserPosition | null>(null);
   const [isSimulating, setIsSimulating] = useState(false);
 
+  // Detour state
+  const [detourStop, setDetourStop] = useState<DetourStop | null>(null);
+  const [originalTrip, setOriginalTrip] = useState<OriginalTrip | null>(null);
+  const detourArrivalStartRef = useRef<number | null>(null);
+  const lastDetourCompletedRef = useRef<number>(0);
+
   // Raw fix history (for COG) + filtered fix (for stable nav)
   const lastRawFixRef = useRef<{ lat: number; lng: number; time: number } | null>(null);
   const filteredFixRef = useRef<{ lat: number; lng: number; time: number } | null>(null);
@@ -130,10 +166,12 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
 
   const watchIdRef = useRef<number | null>(null);
   const lastRerouteTime = useRef<number>(0);
-  const offRouteCountRef = useRef<number>(0); // Consecutive off-route detections
-  const offRouteStartTimeRef = useRef<number | null>(null); // When off-route started
-  const isReroutingRef = useRef<boolean>(false); // Prevent concurrent reroutes
+  const offRouteCountRef = useRef<number>(0);
+  const offRouteStartTimeRef = useRef<number | null>(null);
+  const isReroutingRef = useRef<boolean>(false);
   const isNavigating = route !== null;
+  const hasActiveTrip = originalTrip !== null || (isNavigating && !detourStop);
+  const isOnDetour = detourStop !== null && !detourStop.completed;
 
   // Use simulated position if simulating, otherwise real position
   const effectivePosition = isSimulating ? simulatedPosition : userPosition;
@@ -147,7 +185,6 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
       const saved = localStorage.getItem(NAVIGATION_STATE_KEY);
       if (saved) {
         const state: NavigationState = JSON.parse(saved);
-        // Only restore if less than 8 hours old
         if (Date.now() - state.startedAt < 8 * 60 * 60 * 1000) {
           setRoute(state.route);
           setRouteCoords(decodeHereFlexiblePolyline(state.route.polyline));
@@ -158,8 +195,23 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
           localStorage.removeItem(NAVIGATION_STATE_KEY);
         }
       }
+
+      // Restore detour state
+      const savedDetour = localStorage.getItem(DETOUR_STATE_KEY);
+      if (savedDetour) {
+        const detourData = JSON.parse(savedDetour);
+        if (detourData.detourStop && !detourData.detourStop.completed) {
+          setDetourStop(detourData.detourStop);
+          if (detourData.originalTrip) {
+            setOriginalTrip(detourData.originalTrip);
+          }
+        } else {
+          localStorage.removeItem(DETOUR_STATE_KEY);
+        }
+      }
     } catch {
       localStorage.removeItem(NAVIGATION_STATE_KEY);
+      localStorage.removeItem(DETOUR_STATE_KEY);
     }
   }, []);
 
@@ -182,13 +234,12 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
       (pos) => {
         const { latitude, longitude, heading: gpsHeading, speed: gpsSpeed, accuracy } = pos.coords;
         
-        // Calculate heading from movement if GPS heading is not available
         let calculatedHeading = gpsHeading;
         const now = Date.now();
         
         if (lastRawFixRef.current && (gpsHeading === null || gpsHeading === undefined)) {
-          const timeDelta = (now - lastRawFixRef.current.time) / 1000; // seconds
-          if (timeDelta > 0 && timeDelta < 5) { // Only calculate if reasonable time gap
+          const timeDelta = (now - lastRawFixRef.current.time) / 1000;
+          if (timeDelta > 0 && timeDelta < 5) {
             const distance = haversineDistance(
               lastRawFixRef.current.lat,
               lastRawFixRef.current.lng,
@@ -196,9 +247,7 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
               longitude
             );
             
-            // Only calculate if there's meaningful movement
             if (distance > MIN_COG_DISTANCE_M) {
-              // Calculate bearing from movement using helper
               calculatedHeading = calculateBearingBetweenPoints(
                 lastRawFixRef.current.lat,
                 lastRawFixRef.current.lng,
@@ -207,7 +256,6 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
               );
               lastValidHeadingRef.current = calculatedHeading;
             } else if (lastValidHeadingRef.current !== null) {
-              // Keep last valid heading if not moving enough
               calculatedHeading = lastValidHeadingRef.current;
             }
           }
@@ -215,7 +263,6 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
           calculatedHeading = lastValidHeadingRef.current;
         }
         
-        // Smooth heading
         if (typeof calculatedHeading === 'number' && smoothedHeadingRef.current !== null) {
           calculatedHeading = smoothAngle(smoothedHeadingRef.current, calculatedHeading, HEADING_SMOOTH_FACTOR);
         }
@@ -223,7 +270,6 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
           smoothedHeadingRef.current = calculatedHeading;
         }
         
-        // Smooth speed
         const rawSpeed = gpsSpeed ?? 0;
         smoothedSpeedRef.current = smoothedSpeedRef.current * (1 - SPEED_SMOOTH_FACTOR) + rawSpeed * SPEED_SMOOTH_FACTOR;
         
@@ -244,7 +290,7 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
       },
       {
         enableHighAccuracy: true,
-        maximumAge: 500, // Reduced from 2000ms for fresher data
+        maximumAge: 500,
         timeout: 10000,
       }
     );
@@ -257,7 +303,105 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
     };
   }, [isNavigating, isSimulating]);
 
-  // Route matching + off-route detection + reroute (robust, with hysteresis)
+  // Detour arrival detection
+  useEffect(() => {
+    if (!detourStop || detourStop.completed || !effectivePosition) return;
+
+    const now = Date.now();
+    
+    // Check cooldown
+    if (now - lastDetourCompletedRef.current < DETOUR_COOLDOWN_MS) {
+      return;
+    }
+
+    const distanceToDetour = haversineDistance(
+      effectivePosition.lat,
+      effectivePosition.lng,
+      detourStop.lat,
+      detourStop.lng
+    );
+
+    if (distanceToDetour <= DETOUR_ARRIVAL_DISTANCE_M) {
+      // Within arrival zone
+      if (detourArrivalStartRef.current === null) {
+        detourArrivalStartRef.current = now;
+        console.log('[DETOUR] Entered arrival zone for:', detourStop.name);
+      } else {
+        const dwellTime = now - detourArrivalStartRef.current;
+        if (dwellTime >= DETOUR_ARRIVAL_DWELL_TIME_MS) {
+          console.log('[DETOUR] Arrival confirmed at:', detourStop.name);
+          handleDetourArrival();
+        }
+      }
+    } else {
+      // Left arrival zone, reset timer
+      if (detourArrivalStartRef.current !== null) {
+        detourArrivalStartRef.current = null;
+      }
+    }
+  }, [effectivePosition, detourStop]);
+
+  const handleDetourArrival = useCallback(async () => {
+    if (!detourStop || !originalTrip) return;
+
+    console.log('[DETOUR] Completing detour and resuming original trip');
+    lastDetourCompletedRef.current = Date.now();
+    
+    // Mark detour as completed
+    setDetourStop(prev => prev ? { ...prev, completed: true } : null);
+
+    // Calculate new route from current position to original destination
+    if (effectivePosition) {
+      setIsRerouting(true);
+      try {
+        const newRoute = await HereService.calculateRoute({
+          originLat: effectivePosition.lat,
+          originLng: effectivePosition.lng,
+          destLat: originalTrip.destination.lat,
+          destLng: originalTrip.destination.lng,
+          transportMode: 'truck',
+          truckProfile: originalTrip.truckProfile,
+        });
+
+        const newOrigin: GeocodeResult = {
+          id: 'post-detour-location',
+          title: 'Current Location',
+          address: `${effectivePosition.lat.toFixed(4)}, ${effectivePosition.lng.toFixed(4)}`,
+          lat: effectivePosition.lat,
+          lng: effectivePosition.lng,
+        };
+
+        setRoute(newRoute);
+        setRouteCoords(decodeHereFlexiblePolyline(newRoute.polyline));
+        setOrigin(newOrigin);
+        setDestination(originalTrip.destination);
+        setTruckProfile(originalTrip.truckProfile);
+
+        // Clear detour state
+        setDetourStop(null);
+        setOriginalTrip(null);
+        localStorage.removeItem(DETOUR_STATE_KEY);
+
+        // Save new navigation state
+        const state: NavigationState = {
+          route: newRoute,
+          origin: newOrigin,
+          destination: originalTrip.destination,
+          startedAt: Date.now(),
+          truckProfile: originalTrip.truckProfile,
+        };
+        localStorage.setItem(NAVIGATION_STATE_KEY, JSON.stringify(state));
+
+        console.log('[DETOUR] Resumed navigation to:', originalTrip.destination.title);
+      } catch (error) {
+        console.error('Failed to resume original trip:', error);
+      } finally {
+        setIsRerouting(false);
+      }
+    }
+  }, [detourStop, originalTrip, effectivePosition]);
+
+  // Route matching + off-route detection
   const lastMatchRef = useRef<RouteMatchResult | null>(null);
   const onRouteCountRef = useRef<number>(0);
   const lastClosestSegRef = useRef<number | null>(null);
@@ -270,21 +414,14 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
       isProgressingAlongRoute: boolean
     ) => {
       if (!destination || !route || routeCoords.length < 2) return;
-
-      // Prevent concurrent reroutes
       if (isReroutingRef.current || isRerouting) return;
 
       const now = Date.now();
-
-      // Don't even consider rerouting during cooldown period
-      if (now - lastRerouteTime.current < REROUTE_COOLDOWN_MS) {
-        return;
-      }
+      if (now - lastRerouteTime.current < REROUTE_COOLDOWN_MS) return;
 
       const accuracy = rawPosition.accuracy;
       const accuracyTooPoor = typeof accuracy === 'number' && accuracy > MAX_ACCURACY_FOR_OFF_ROUTE_M;
 
-      // Dynamic thresholds based on reported accuracy (when available)
       const offThreshold = Math.max(
         OFF_ROUTE_THRESHOLD_M,
         typeof accuracy === 'number' ? accuracy * 1.5 : OFF_ROUTE_THRESHOLD_M
@@ -296,7 +433,6 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
 
       const distToRoute = match.distanceToRouteM;
 
-      // --- Diagnostics (throttled) ---
       if (now - lastDebugLogRef.current > 2000) {
         lastDebugLogRef.current = now;
         console.log('[NAV_DIAG]', {
@@ -312,20 +448,13 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
         });
       }
 
-      // If GPS accuracy is too poor, avoid toggling off-route; keep state stable.
-      if (accuracyTooPoor) {
-        return;
-      }
+      if (accuracyTooPoor) return;
 
-      // Sanity check: if we're steadily progressing along the route, do not mark off-route
-      // unless deviation is very large.
       const progressingGuard = isProgressingAlongRoute && distToRoute < offThreshold * 1.8;
-
       const isClearlyOff = distToRoute > offThreshold;
       const isClearlyOn = distToRoute < onThreshold;
 
       if (!progressingGuard && isClearlyOff) {
-        // Start or continue off-route timer
         if (offRouteStartTimeRef.current === null) {
           offRouteStartTimeRef.current = now;
           offRouteCountRef.current = 1;
@@ -336,16 +465,12 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
         }
 
         const offRouteDuration = now - offRouteStartTimeRef.current;
-
-        // Visually show off-route but don't reroute yet
         setIsOffRoute(true);
 
-        // Confirmed off-route (time + count)
         if (
           offRouteDuration >= OFF_ROUTE_PERSIST_TIME_MS &&
           offRouteCountRef.current >= OFF_ROUTE_CONSECUTIVE_THRESHOLD
         ) {
-          // Lock to prevent concurrent calls
           isReroutingRef.current = true;
           setIsRerouting(true);
           lastRerouteTime.current = now;
@@ -372,7 +497,6 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
             setRoute(newRoute);
             setRouteCoords(decodeHereFlexiblePolyline(newRoute.polyline));
 
-            // Update origin to current position
             const newOrigin: GeocodeResult = {
               id: 'reroute-origin',
               title: 'Current Location',
@@ -382,7 +506,6 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
             };
             setOrigin(newOrigin);
 
-            // Save updated state
             const state: NavigationState = {
               route: newRoute,
               origin: newOrigin,
@@ -401,7 +524,6 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
           }
         }
       } else if (isClearlyOn || progressingGuard) {
-        // Back on route - require a couple confirmations (hysteresis)
         offRouteCountRef.current = 0;
         offRouteStartTimeRef.current = null;
         onRouteCountRef.current += 1;
@@ -414,7 +536,7 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
     [destination, route, routeCoords, isRerouting, truckProfile, isOffRoute]
   );
 
-  // Update progress when position changes (throttled)
+  // Update progress when position changes
   const lastProgressUpdate = useRef<number>(0);
 
   useEffect(() => {
@@ -423,24 +545,19 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
       return;
     }
 
-    // Throttle updates to max once per second
     const now = Date.now();
     if (now - lastProgressUpdate.current < 1000) return;
     lastProgressUpdate.current = now;
 
-    // IMPORTANT: effectivePosition is already filtered/stabilized in the core.
-    // Use it consistently for map-matching, progress, and off-route validation.
     const filteredLat = effectivePosition.lat;
     const filteredLng = effectivePosition.lng;
 
-    // --- Map-matching (soft snap) ---
     const baseMatch = matchPositionToRoute(filteredLng, filteredLat, routeCoords, {
       searchFromIndex: lastMatchRef.current?.closestSegmentIndex,
       searchWindow: ROUTE_MATCH_WINDOW,
       step: 2,
     });
 
-    // Blend toward route to avoid hard snapping
     const blend = Math.min(
       SNAP_MAX_BLEND,
       Math.max(0, (SNAP_MAX_DISTANCE_M - baseMatch.distanceToRouteM) / SNAP_MAX_DISTANCE_M) * SNAP_MAX_BLEND
@@ -457,7 +574,6 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
 
     lastMatchRef.current = match;
 
-    // Progress is computed against matched coordinates (more stable)
     const newProgress = calculateNavigationProgress(
       match.matchedLng,
       match.matchedLat,
@@ -469,32 +585,40 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
 
     setProgress(newProgress);
 
-    // Progress sanity check: closest segment index should generally increase as you move.
     const lastSeg = lastClosestSegRef.current;
     const isProgressing = lastSeg === null ? true : match.closestSegmentIndex >= lastSeg - 2;
     lastClosestSegRef.current = match.closestSegmentIndex;
 
-    // Check if off route (only for real navigation, not simulation)
-    if (!isSimulating) {
-      checkAndReroute(
-        { lat: filteredLat, lng: filteredLng, accuracy: effectivePosition.accuracy ?? null },
-        match,
-        isProgressing
-      );
-    }
-  }, [effectivePosition, route, routeCoords, isSimulating, checkAndReroute]);
+    checkAndReroute(
+      { lat: effectivePosition.lat, lng: effectivePosition.lng, accuracy: effectivePosition.accuracy },
+      match,
+      isProgressing
+    );
+  }, [effectivePosition, route, routeCoords, checkAndReroute]);
 
   const startNavigation = useCallback(
     (newRoute: RouteResponse, newOrigin: GeocodeResult, newDest: GeocodeResult, profile?: TruckProfile) => {
       const usedProfile = profile || DEFAULT_TRUCK_PROFILE;
-      
+
       setRoute(newRoute);
       setRouteCoords(decodeHereFlexiblePolyline(newRoute.polyline));
       setOrigin(newOrigin);
       setDestination(newDest);
       setTruckProfile(usedProfile);
+      setProgress(null);
       setIsOffRoute(false);
       setIsRerouting(false);
+
+      // Clear detour state when starting fresh navigation
+      setDetourStop(null);
+      setOriginalTrip(null);
+      localStorage.removeItem(DETOUR_STATE_KEY);
+
+      lastMatchRef.current = null;
+      lastClosestSegRef.current = null;
+      offRouteCountRef.current = 0;
+      onRouteCountRef.current = 0;
+      offRouteStartTimeRef.current = null;
 
       const state: NavigationState = {
         route: newRoute,
@@ -519,10 +643,180 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
     setProgress(null);
     setIsOffRoute(false);
     setIsRerouting(false);
+    setDetourStop(null);
+    setOriginalTrip(null);
     localStorage.removeItem(NAVIGATION_STATE_KEY);
+    localStorage.removeItem(DETOUR_STATE_KEY);
   }, []);
 
-  // Navigate to a POI (truck stop, gas station, etc.) - recalculates route to POI as new destination
+  // Add a detour stop (temporary waypoint)
+  const addDetourStop = useCallback(
+    async (poi: { lat: number; lng: number; name: string; address?: string }) => {
+      if (!effectivePosition) {
+        console.error('Cannot add detour: no current position');
+        return;
+      }
+
+      // Check cooldown
+      if (Date.now() - lastDetourCompletedRef.current < DETOUR_COOLDOWN_MS) {
+        console.log('[DETOUR] Still in cooldown period');
+        return;
+      }
+
+      setIsRerouting(true);
+
+      try {
+        // Save original trip if we have an active navigation
+        if (route && destination && !originalTrip) {
+          const savedTrip: OriginalTrip = {
+            route,
+            origin: origin!,
+            destination,
+            truckProfile,
+          };
+          setOriginalTrip(savedTrip);
+        }
+
+        // Calculate route to detour stop
+        const detourRoute = await HereService.calculateRoute({
+          originLat: effectivePosition.lat,
+          originLng: effectivePosition.lng,
+          destLat: poi.lat,
+          destLng: poi.lng,
+          transportMode: 'truck',
+          truckProfile,
+        });
+
+        // Create detour stop
+        const newDetour: DetourStop = {
+          id: `detour-${Date.now()}`,
+          name: poi.name,
+          address: poi.address || `${poi.lat.toFixed(4)}, ${poi.lng.toFixed(4)}`,
+          lat: poi.lat,
+          lng: poi.lng,
+          addedAt: Date.now(),
+          completed: false,
+        };
+
+        // Create new origin
+        const newOrigin: GeocodeResult = {
+          id: 'detour-origin',
+          title: 'Current Location',
+          address: `${effectivePosition.lat.toFixed(4)}, ${effectivePosition.lng.toFixed(4)}`,
+          lat: effectivePosition.lat,
+          lng: effectivePosition.lng,
+        };
+
+        // Create detour destination
+        const detourDest: GeocodeResult = {
+          id: newDetour.id,
+          title: poi.name,
+          address: newDetour.address,
+          lat: poi.lat,
+          lng: poi.lng,
+        };
+
+        // Update navigation to detour
+        setRoute(detourRoute);
+        setRouteCoords(decodeHereFlexiblePolyline(detourRoute.polyline));
+        setOrigin(newOrigin);
+        setDestination(detourDest);
+        setDetourStop(newDetour);
+        setIsOffRoute(false);
+
+        // Reset route matching
+        lastMatchRef.current = null;
+        lastClosestSegRef.current = null;
+        offRouteCountRef.current = 0;
+        onRouteCountRef.current = 0;
+        offRouteStartTimeRef.current = null;
+        detourArrivalStartRef.current = null;
+
+        // Save detour state
+        const detourState = {
+          detourStop: newDetour,
+          originalTrip: originalTrip || (route && destination ? {
+            route,
+            origin: origin!,
+            destination,
+            truckProfile,
+          } : null),
+        };
+        localStorage.setItem(DETOUR_STATE_KEY, JSON.stringify(detourState));
+
+        // Save current navigation state
+        const state: NavigationState = {
+          route: detourRoute,
+          origin: newOrigin,
+          destination: detourDest,
+          startedAt: Date.now(),
+          truckProfile,
+        };
+        localStorage.setItem(NAVIGATION_STATE_KEY, JSON.stringify(state));
+
+        console.log('[DETOUR] Added detour stop:', poi.name);
+      } catch (error) {
+        console.error('Failed to add detour stop:', error);
+      } finally {
+        setIsRerouting(false);
+      }
+    },
+    [effectivePosition, route, origin, destination, truckProfile, originalTrip]
+  );
+
+  // Cancel detour and return to original trip
+  const cancelDetour = useCallback(async () => {
+    if (!originalTrip || !effectivePosition) return;
+
+    setIsRerouting(true);
+
+    try {
+      const newRoute = await HereService.calculateRoute({
+        originLat: effectivePosition.lat,
+        originLng: effectivePosition.lng,
+        destLat: originalTrip.destination.lat,
+        destLng: originalTrip.destination.lng,
+        transportMode: 'truck',
+        truckProfile: originalTrip.truckProfile,
+      });
+
+      const newOrigin: GeocodeResult = {
+        id: 'cancel-detour-origin',
+        title: 'Current Location',
+        address: `${effectivePosition.lat.toFixed(4)}, ${effectivePosition.lng.toFixed(4)}`,
+        lat: effectivePosition.lat,
+        lng: effectivePosition.lng,
+      };
+
+      setRoute(newRoute);
+      setRouteCoords(decodeHereFlexiblePolyline(newRoute.polyline));
+      setOrigin(newOrigin);
+      setDestination(originalTrip.destination);
+      setTruckProfile(originalTrip.truckProfile);
+      setDetourStop(null);
+      setOriginalTrip(null);
+      setIsOffRoute(false);
+
+      localStorage.removeItem(DETOUR_STATE_KEY);
+
+      const state: NavigationState = {
+        route: newRoute,
+        origin: newOrigin,
+        destination: originalTrip.destination,
+        startedAt: Date.now(),
+        truckProfile: originalTrip.truckProfile,
+      };
+      localStorage.setItem(NAVIGATION_STATE_KEY, JSON.stringify(state));
+
+      console.log('[DETOUR] Cancelled, returning to:', originalTrip.destination.title);
+    } catch (error) {
+      console.error('Failed to cancel detour:', error);
+    } finally {
+      setIsRerouting(false);
+    }
+  }, [originalTrip, effectivePosition]);
+
+  // Navigate to a POI directly (when no active trip)
   const navigateToPoi = useCallback(
     async (poi: { lat: number; lng: number; name: string; address?: string }) => {
       if (!effectivePosition) {
@@ -533,7 +827,6 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
       setIsRerouting(true);
 
       try {
-        // Calculate new route from current position to POI
         const newRoute = await HereService.calculateRoute({
           originLat: effectivePosition.lat,
           originLng: effectivePosition.lng,
@@ -543,7 +836,6 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
           truckProfile,
         });
 
-        // Create new origin and destination
         const newOrigin: GeocodeResult = {
           id: 'current-location',
           title: 'Current Location',
@@ -560,21 +852,18 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
           lng: poi.lng,
         };
 
-        // Update navigation state
         setRoute(newRoute);
         setRouteCoords(decodeHereFlexiblePolyline(newRoute.polyline));
         setOrigin(newOrigin);
         setDestination(newDest);
         setIsOffRoute(false);
 
-        // Reset route matching refs
         lastMatchRef.current = null;
         lastClosestSegRef.current = null;
         offRouteCountRef.current = 0;
         onRouteCountRef.current = 0;
         offRouteStartTimeRef.current = null;
 
-        // Save to localStorage
         const state: NavigationState = {
           route: newRoute,
           origin: newOrigin,
@@ -608,6 +897,11 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
         isRerouting,
         isOffRoute,
         isSimulating,
+        detourStop,
+        hasActiveTrip,
+        isOnDetour,
+        addDetourStop,
+        cancelDetour,
         startNavigation,
         endNavigation,
         navigateToPoi,
