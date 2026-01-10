@@ -17,6 +17,7 @@ import LocationContextBar from './LocationContextBar';
 import NearbyPoisOverlay from './NearbyPoisOverlay';
 import ArrivalPrompt from './ArrivalPrompt';
 import ArrivalDebugPanel from './ArrivalDebugPanel';
+import LaneGuidancePanel from './LaneGuidancePanel';
 import { createTruckCursorElement } from './TruckCursor';
 import { MapPin, Navigation as NavIcon, RotateCcw, Layers, Bug, Plus, Route } from 'lucide-react';
 import WeighStationBadges from './WeighStationBadges';
@@ -474,8 +475,23 @@ const ActiveNavigationView = () => {
         </div>
       )}
 
-      {/* HUD - Top Left (Trucker Path style) */}
+      {/* Lane Guidance Panel - shows when approaching exit */}
       {route && progress && (
+        <LaneGuidancePanel
+          instruction={currentInstruction}
+          distanceToManeuver={progress.distanceToNextManeuver}
+          instructions={route.instructions}
+          currentInstructionIndex={progress.currentInstructionIndex}
+          visible={true}
+        />
+      )}
+
+      {/* HUD - Top Left (Trucker Path style) - hidden when Lane Guidance is showing */}
+      {route && progress && !(
+        currentInstruction?.instruction?.toLowerCase().includes('exit') ||
+        currentInstruction?.instruction?.toLowerCase().includes('ramp') ||
+        currentInstruction?.exitInfo
+      ) && progress.distanceToNextManeuver > 1609 && (
         <NavigationHUD
           currentInstruction={currentInstruction}
           distanceToNextManeuver={progress.distanceToNextManeuver}
