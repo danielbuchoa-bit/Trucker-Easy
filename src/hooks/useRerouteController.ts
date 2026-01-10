@@ -1,13 +1,20 @@
 import { useRef, useCallback } from 'react';
 
-// === CONFIGURATION ===
-const REROUTE_COOLDOWN_MS = 30000; // 30 seconds between reroutes
-const OFF_ROUTE_THRESHOLD_M = 80; // Distance to consider off-route
-const ON_ROUTE_THRESHOLD_M = 40; // Distance to consider back on route (hysteresis)
-const OFF_ROUTE_CONFIRM_COUNT = 4; // Consecutive readings to confirm off-route
-const OFF_ROUTE_CONFIRM_TIME_MS = 6000; // Time to confirm off-route
-const VOICE_COOLDOWN_MS = 15000; // Don't spam voice announcements
-const MAX_ACCURACY_FOR_REROUTE_M = 100; // Don't reroute with poor accuracy
+// === CONSERVATIVE ANTI-REROUTE CONFIGURATION ===
+// Designed to prevent false reroutes from GPS jitter
+
+const REROUTE_COOLDOWN_MS = 25000; // 25 seconds between reroutes
+const OFF_ROUTE_THRESHOLD_M = 30; // Distance to consider off-route (meters)
+const ON_ROUTE_THRESHOLD_M = 15; // Distance to consider back on route (hysteresis)
+
+// At low speeds (parking, yards), use higher tolerance
+const LOW_SPEED_THRESHOLD_MPS = 4.5; // ~10 mph
+const LOW_SPEED_OFF_ROUTE_M = 50; // More tolerance at low speed
+
+const OFF_ROUTE_CONFIRM_COUNT = 5; // Consecutive readings to confirm off-route
+const OFF_ROUTE_CONFIRM_TIME_MS = 7000; // Must stay off-route for 7 seconds
+const VOICE_COOLDOWN_MS = 20000; // Don't spam voice announcements
+const MAX_ACCURACY_FOR_REROUTE_M = 40; // Don't reroute with poor accuracy
 
 interface RerouteState {
   shouldReroute: boolean;
@@ -37,7 +44,8 @@ export function useRerouteController() {
   const checkReroute = useCallback((
     distanceToRoute: number,
     accuracy: number | null,
-    isProgressing: boolean
+    isProgressing: boolean,
+    speedMps: number = 0
   ): RerouteState => {
     const now = Date.now();
     
@@ -62,16 +70,22 @@ export function useRerouteController() {
       };
     }
 
-    // Hysteresis: use different thresholds for detecting off-route vs on-route
-    const isCurrentlyOff = distanceToRoute > OFF_ROUTE_THRESHOLD_M;
-    const isCurrentlyOn = distanceToRoute < ON_ROUTE_THRESHOLD_M;
-    const canAnnounce = now - lastVoiceTimeRef.current > VOICE_COOLDOWN_MS;
-
+    // Adaptive thresholds based on speed
+    const isLowSpeed = speedMps < LOW_SPEED_THRESHOLD_MPS;
+    const baseOffThreshold = isLowSpeed ? LOW_SPEED_OFF_ROUTE_M : OFF_ROUTE_THRESHOLD_M;
+    
     // If progressing along route, be more lenient
     const effectiveOffThreshold = isProgressing 
-      ? OFF_ROUTE_THRESHOLD_M * 1.5 
-      : OFF_ROUTE_THRESHOLD_M;
-    const isActuallyOff = distanceToRoute > effectiveOffThreshold;
+      ? baseOffThreshold * 1.5 
+      : baseOffThreshold;
+    
+    const effectiveOnThreshold = isLowSpeed ? LOW_SPEED_OFF_ROUTE_M * 0.5 : ON_ROUTE_THRESHOLD_M;
+
+    const isCurrentlyOff = distanceToRoute > effectiveOffThreshold;
+    const isCurrentlyOn = distanceToRoute < effectiveOnThreshold;
+    const canAnnounce = now - lastVoiceTimeRef.current > VOICE_COOLDOWN_MS;
+
+    const isActuallyOff = isCurrentlyOff;
 
     if (isActuallyOff) {
       // Off-route detection
