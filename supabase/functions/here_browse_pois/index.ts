@@ -55,7 +55,7 @@ const QUERY_FALLBACK_MAP: Record<string, string> = {
   'weigh-station': 'weigh station',
 };
 
-// Known truck stop brand names for filtering
+// Known truck stop brand names - ONLY these pass the filter
 const TRUCK_STOP_BRANDS = [
   'pilot', 'flying j', 'loves', "love's", 'ta ', 'travel centers', 'petro',
   'sapp bros', 'ambest', 'big cat', 'road ranger', 'buckys', "buc-ee's",
@@ -64,6 +64,30 @@ const TRUCK_STOP_BRANDS = [
   'caseys', "casey's", 'town pump', 'kwik trip', 'kwiktrip', 'speedway',
   'circle k', 'husky', 'flying hook', 'saddleman', 'truck stop',
   'travel plaza', 'travel center', 'truck plaza', 'truckstop',
+  'gas station', 'fuel stop', 'fuel center', 'service plaza', 'service area',
+  'rest stop', 'rest area', 'welcome center',
+];
+
+// Words that DISQUALIFY a place from being a truck stop
+const EXCLUSION_KEYWORDS = [
+  'auto body', 'body shop', 'collision', 'repair shop', 'mechanic',
+  'storage', 'warehouse', 'moving', 'rental',
+  'dealership', 'car dealer', 'auto dealer', 'sales',
+  'insurance', 'finance', 'bank', 'credit union',
+  'hotel', 'motel', 'inn', 'lodge', 'suites',
+  'hospital', 'clinic', 'medical', 'dental', 'pharmacy',
+  'school', 'college', 'university', 'academy',
+  'church', 'temple', 'mosque', 'synagogue',
+  'office', 'law firm', 'attorney', 'lawyer',
+  'real estate', 'realty', 'property',
+  'salon', 'spa', 'barber', 'beauty',
+  'gym', 'fitness', 'yoga',
+  'veterinary', 'vet ', 'animal',
+  'funeral', 'cemetery', 'mortuary',
+  'towing', 'tow truck', 'wrecker',
+  'tire shop', 'tire center', // tire shops separate from truck stops
+  'auto parts', 'parts store',
+  'car wash only', // car wash without fuel
 ];
 
 interface BrowsePoisRequest {
@@ -204,7 +228,7 @@ serve(async (req) => {
         // Use HERE Browse endpoint for category-based search
         const categoryUrl = new URL('https://browse.search.hereapi.com/v1/browse');
         categoryUrl.searchParams.set('at', `${lat},${lng}`);
-        categoryUrl.searchParams.set('limit', Math.min(limit * 2, 50).toString()); // Fetch extra for filtering
+        categoryUrl.searchParams.set('limit', Math.min(limit * 3, 100).toString()); // Fetch extra for filtering
         categoryUrl.searchParams.set('circle', `${lat},${lng};r=${radiusMeters}`);
         categoryUrl.searchParams.set('categories', uniqueHereIds.join(','));
         categoryUrl.searchParams.set('apiKey', HERE_API_KEY);
@@ -255,7 +279,7 @@ serve(async (req) => {
         // Use HERE Discover endpoint for text search
         const queryUrl = new URL('https://discover.search.hereapi.com/v1/discover');
         queryUrl.searchParams.set('at', `${lat},${lng}`);
-        queryUrl.searchParams.set('limit', Math.min(limit * 2, 50).toString());
+        queryUrl.searchParams.set('limit', Math.min(limit * 3, 100).toString());
         queryUrl.searchParams.set('q', queryTerm);
         queryUrl.searchParams.set('apiKey', HERE_API_KEY);
 
@@ -333,16 +357,36 @@ serve(async (req) => {
       return 'fuel';
     }
 
+    // Check if a place is EXCLUDED (not a valid truck stop)
+    function isExcludedPlace(name: string, chainName: string | null): boolean {
+      const searchText = `${name} ${chainName || ''}`.toLowerCase();
+      
+      for (const keyword of EXCLUSION_KEYWORDS) {
+        if (searchText.includes(keyword)) {
+          console.log(`[HERE_BROWSE_POIS] ❌ Excluded: "${name}" (matched: ${keyword})`);
+          return true;
+        }
+      }
+      return false;
+    }
+
     function isTruckStopPoi(item: any): boolean {
+      const name = (item.title || '').toLowerCase();
+      const chainName = (item.chains?.[0]?.name || '').toLowerCase();
+      
+      // First check exclusions - if excluded, it's NOT a truck stop
+      if (isExcludedPlace(name, chainName)) {
+        return false;
+      }
+      
       // Check category IDs
       for (const cat of item.categories || []) {
         const id = cat.id || '';
+        // Only 7850 is truck stop category
         if (id.includes('7850')) return true;
       }
       
       // Check name/chain for known truck stop brands
-      const name = (item.title || '').toLowerCase();
-      const chainName = (item.chains?.[0]?.name || '').toLowerCase();
       const searchText = `${name} ${chainName}`;
       
       for (const brand of TRUCK_STOP_BRANDS) {
@@ -373,6 +417,7 @@ serve(async (req) => {
         openingHours: item.openingHours?.[0]?.text || null,
         contacts: item.contacts?.[0]?.phone?.[0]?.value || null,
         _isTruckStop: isTruckStopPoi(item), // Internal flag for filtering
+        _isExcluded: isExcludedPlace(item.title, chainName), // Track exclusions
       };
     });
 
@@ -381,16 +426,25 @@ serve(async (req) => {
     // ============================================
     if (isTruckStopSearch) {
       const beforeCount = results.length;
-      results = results.filter((poi: any) => poi._isTruckStop || poi.category === 'truck_stop');
+      // Keep ONLY valid truck stops, exclude everything else
+      results = results.filter((poi: any) => poi._isTruckStop && !poi._isExcluded);
       console.log('[HERE_BROWSE_POIS] 🚛 Truck stop filter: kept', results.length, 'of', beforeCount);
+      
+      // Log what was filtered out
+      if (beforeCount > results.length) {
+        const excluded = beforeCount - results.length;
+        console.log(`[HERE_BROWSE_POIS] 🗑️ Filtered out ${excluded} non-truck-stop places`);
+      }
     }
 
-    // Remove internal flag
-    results = results.map(({ _isTruckStop, ...poi }: any) => poi);
+    // Remove internal flags
+    results = results.map(({ _isTruckStop, _isExcluded, ...poi }: any) => poi);
 
     // Filter by heading cone if provided
     if (heading !== undefined && heading !== null) {
+      const beforeConeFilter = results.length;
       results = results.filter((poi: any) => isWithinCone(poi.bearing, heading, 60));
+      console.log(`[HERE_BROWSE_POIS] 🧭 Heading filter: kept ${results.length} of ${beforeConeFilter}`);
     }
 
     // Sort by distance and limit
