@@ -6,7 +6,7 @@ import { useActiveNavigation, type UserPosition } from '@/contexts/ActiveNavigat
 import { useVoiceGuidance } from '@/hooks/useVoiceGuidance';
 import { useRouteSimulation } from '@/hooks/useRouteSimulation';
 import { useArrivalDetection, type DetectedPoi } from '@/hooks/useArrivalDetection';
-import { useSmoothPosition } from '@/hooks/useSmoothPosition';
+import { usePositionInterpolator } from '@/hooks/usePositionInterpolator';
 import { useMapPerformance } from '@/hooks/useMapPerformance';
 import NavigationHUD from './NavigationHUD';
 import SpeedIndicator from './SpeedIndicator';
@@ -172,11 +172,10 @@ const ActiveNavigationView = () => {
   // Map performance optimization
   const mapPerf = useMapPerformance();
 
-  // Smooth position for marker rendering (continuous interpolation between filtered GPS fixes)
-  const smoothedPosition = useSmoothPosition(userPosition, {
-    alpha: 0.8, // Slightly more responsive
-    minDistanceThreshold: 0.5,
-    maxAge: 5000,
+  // 60fps position interpolator for smooth cursor movement
+  const interpolatedPosition = usePositionInterpolator(userPosition, {
+    enabled: true,
+    adaptiveAlpha: true,
   });
 
   // Arrival detection hook
@@ -223,11 +222,11 @@ const ActiveNavigationView = () => {
     
     const dist = progress.distanceToNextManeuver;
     const idx = progress.currentInstructionIndex;
-    const speedMs = smoothedPosition?.smoothedSpeed ?? userPosition?.speed ?? 0;
+    const speedMs = interpolatedPosition?.speed ?? userPosition?.speed ?? 0;
 
     // Let the speakInstruction handle the logic with look-ahead
     voice.speakInstruction(currentInstruction, dist, idx, speedMs);
-  }, [currentInstruction, progress, voice, smoothedPosition?.smoothedSpeed, userPosition?.speed]);
+  }, [currentInstruction, progress, voice, interpolatedPosition?.speed, userPosition?.speed]);
 
   // Voice for rerouting
   useEffect(() => {
@@ -371,23 +370,22 @@ const ActiveNavigationView = () => {
     }
   }, [routeCoords, mapReady]);
 
-  // Update user marker & camera with FIXED COURSE-UP orientation.
-  // Heading comes exclusively from the navigation core (COG from consecutive GPS fixes).
+  // Update user marker & camera with smooth 60fps interpolated position
   useEffect(() => {
     if (!map.current || !mapReady || !userPosition) return;
 
-    // Use interpolated position for visual smoothness (derived from the SAME filtered fixes)
-    const displayLat = smoothedPosition?.interpolatedLat ?? userPosition.lat;
-    const displayLng = smoothedPosition?.interpolatedLng ?? userPosition.lng;
-    const displaySpeed = smoothedPosition?.smoothedSpeed ?? userPosition.speed ?? 0;
+    // Use interpolated render position for smooth visual (60fps)
+    const displayLat = interpolatedPosition?.renderLat ?? userPosition.lat;
+    const displayLng = interpolatedPosition?.renderLng ?? userPosition.lng;
+    const displayHeading = interpolatedPosition?.renderHeading ?? userPosition.heading ?? 0;
+    const displaySpeed = interpolatedPosition?.speed ?? userPosition.speed ?? 0;
 
     const now = Date.now();
     const speedKmh = displaySpeed * 3.6;
 
-    // Heading is ALWAYS course-over-ground from core.
-    const headingToUse = userPosition.heading;
-    if (headingToUse !== null) {
-      lastAppliedBearingRef.current = headingToUse;
+    // Store heading for fallback
+    if (displayHeading !== null) {
+      lastAppliedBearingRef.current = displayHeading;
     }
 
     // Create or update user marker (marker is fixed pointing UP; map rotates)
@@ -411,25 +409,26 @@ const ActiveNavigationView = () => {
     setDebugInfo({
       speed: speedKmh,
       gpsAccuracy: userPosition.accuracy,
-      calculatedBearing: headingToUse,
+      calculatedBearing: displayHeading,
       routeBearing: null,
       gpsHeading: null,
-      appliedCameraBearing: headingToUse ?? lastAppliedBearingRef.current,
-      headingSource: isSimulating ? 'simulation' : headingToUse !== null ? 'calculated' : 'none',
+      appliedCameraBearing: displayHeading ?? lastAppliedBearingRef.current,
+      headingSource: isSimulating ? 'simulation' : displayHeading !== null ? 'calculated' : 'none',
       lastUpdate: now,
     });
 
-    // COURSE-UP camera: rotate map so that direction of travel is UP.
-    // IMPORTANT: Use jumpTo (not easeTo) because this effect can run frequently due to interpolation.
+    // COURSE-UP camera: rotate map so that direction of travel is UP
+    // Use jumpTo for immediate updates (interpolation is handled by usePositionInterpolator)
     if (followUser) {
       if (bearingAnimationRef.current) {
         cancelAnimationFrame(bearingAnimationRef.current);
         bearingAnimationRef.current = null;
       }
 
+      // Smooth camera follow with interpolated position
       map.current.jumpTo({
         center: [displayLng, displayLat],
-        bearing: headingToUse ?? lastAppliedBearingRef.current,
+        bearing: displayHeading ?? lastAppliedBearingRef.current,
         pitch: 60,
         zoom: 17,
       });
@@ -441,7 +440,7 @@ const ActiveNavigationView = () => {
         bearingAnimationRef.current = null;
       }
     };
-  }, [userPosition, smoothedPosition, mapReady, followUser, isSimulating]);
+  }, [userPosition, interpolatedPosition, mapReady, followUser, isSimulating]);
 
   // Destination marker
   useEffect(() => {

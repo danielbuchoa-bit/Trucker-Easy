@@ -14,18 +14,22 @@ import { HereService, type RouteResponse, type GeocodeResult, DEFAULT_TRUCK_PROF
 const NAVIGATION_STATE_KEY = 'activeNavigation';
 const DETOUR_STATE_KEY = 'detourStop';
 
-// === IMPROVED CONFIGURATION FOR STABILITY ===
+// === ANTI-REROUTE CONFIGURATION (REALISTIC TOLERANCE) ===
 
-// Off-route detection with improved hysteresis
-const OFF_ROUTE_THRESHOLD_M = 80; // Increased for more tolerance
-const ON_ROUTE_THRESHOLD_M = 40; // Hysteresis gap
+// Off-route detection with realistic thresholds
+const OFF_ROUTE_THRESHOLD_M = 30; // Base off-route distance
+const ON_ROUTE_THRESHOLD_M = 15; // Back on route (hysteresis)
 
-// Confirmation requirements - more conservative
-const OFF_ROUTE_CONSECUTIVE_THRESHOLD = 4; // readings
-const OFF_ROUTE_PERSIST_TIME_MS = 6000; // must stay off-route for 6 seconds
+// Low speed tolerance (parking lots, yards, exits)
+const LOW_SPEED_THRESHOLD_MPS = 4.5; // ~10 mph
+const LOW_SPEED_OFF_ROUTE_M = 50; // More tolerance at low speed
 
-// If GPS accuracy is poor, don't reroute
-const MAX_ACCURACY_FOR_OFF_ROUTE_M = 100;
+// Confirmation requirements - VERY conservative to prevent false reroutes
+const OFF_ROUTE_CONSECUTIVE_THRESHOLD = 5; // readings needed
+const OFF_ROUTE_PERSIST_TIME_MS = 7000; // must stay off-route for 7 seconds
+
+// Accuracy filter - don't reroute with poor GPS
+const MAX_ACCURACY_FOR_OFF_ROUTE_M = 40; // Tighter accuracy requirement
 
 // Search window for route matching
 const ROUTE_MATCH_WINDOW = 90;
@@ -35,22 +39,22 @@ const SNAP_MAX_BLEND = 0.7;
 const SNAP_MAX_DISTANCE_M = 50;
 
 // Conservative reroute cooldown to prevent spam
-const REROUTE_COOLDOWN_MS = 30000; // 30 seconds minimum
+const REROUTE_COOLDOWN_MS = 25000; // 25 seconds minimum
 
 // Detour arrival detection
 const DETOUR_ARRIVAL_DISTANCE_M = 200;
 const DETOUR_ARRIVAL_DWELL_TIME_MS = 10000;
 const DETOUR_COOLDOWN_MS = 120000;
 
-// Course-over-ground settings
-const MIN_COG_SPEED_MPS = 0.5; // ~2 km/h - more sensitive
-const MIN_COG_DISTANCE_M = 2; // meters between fixes
-const MAX_REASONABLE_SPEED_MPS = 60; // ~216 km/h
-const HEADING_SMOOTH_FACTOR = 0.2; // Smoother heading
-const SPEED_SMOOTH_FACTOR = 0.25; // Smoother speed
+// Course-over-ground settings - optimized for smooth heading
+const MIN_COG_SPEED_MPS = 1.0; // ~3.6 km/h - higher threshold to avoid jitter
+const MIN_COG_DISTANCE_M = 3; // meters between fixes for COG
+const MAX_REASONABLE_SPEED_MPS = 55; // ~200 km/h (spike rejection)
+const HEADING_SMOOTH_FACTOR = 0.15; // Smoother heading (lower = smoother)
+const SPEED_SMOOTH_FACTOR = 0.2; // Smoother speed
 
 // Position update throttling
-const MIN_POSITION_UPDATE_MS = 200; // Don't process more than 5 updates/second
+const MIN_POSITION_UPDATE_MS = 150; // ~6.6 updates/second max
 
 function calculateBearingBetweenPoints(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const toRad = (deg: number) => (deg * Math.PI) / 180;
@@ -338,8 +342,8 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
       },
       {
         enableHighAccuracy: true,
-        maximumAge: 1000, // Allow slightly older positions to reduce gaps
-        timeout: 15000, // Longer timeout for better accuracy
+        maximumAge: 0, // Always get fresh position for navigation
+        timeout: 10000, // 10 second timeout
       }
     );
 
@@ -457,7 +461,7 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
 
   const checkAndReroute = useCallback(
     async (
-      rawPosition: { lat: number; lng: number; accuracy: number | null },
+      rawPosition: { lat: number; lng: number; accuracy: number | null; speed: number | null },
       match: RouteMatchResult,
       isProgressingAlongRoute: boolean
     ) => {
@@ -468,15 +472,22 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
       if (now - lastRerouteTime.current < REROUTE_COOLDOWN_MS) return;
 
       const accuracy = rawPosition.accuracy;
+      const speed = rawPosition.speed ?? 0;
       const accuracyTooPoor = typeof accuracy === 'number' && accuracy > MAX_ACCURACY_FOR_OFF_ROUTE_M;
 
+      // Adaptive thresholds based on speed (more tolerance at low speed)
+      const isLowSpeed = speed < LOW_SPEED_THRESHOLD_MPS;
+      const baseOffThreshold = isLowSpeed ? LOW_SPEED_OFF_ROUTE_M : OFF_ROUTE_THRESHOLD_M;
+      const baseOnThreshold = isLowSpeed ? LOW_SPEED_OFF_ROUTE_M * 0.4 : ON_ROUTE_THRESHOLD_M;
+
+      // Also factor in GPS accuracy
       const offThreshold = Math.max(
-        OFF_ROUTE_THRESHOLD_M,
-        typeof accuracy === 'number' ? accuracy * 1.5 : OFF_ROUTE_THRESHOLD_M
+        baseOffThreshold,
+        typeof accuracy === 'number' ? accuracy * 1.2 : baseOffThreshold
       );
       const onThreshold = Math.max(
-        ON_ROUTE_THRESHOLD_M,
-        typeof accuracy === 'number' ? accuracy * 1.0 : ON_ROUTE_THRESHOLD_M
+        baseOnThreshold,
+        typeof accuracy === 'number' ? accuracy * 0.8 : baseOnThreshold
       );
 
       const distToRoute = match.distanceToRouteM;
@@ -638,7 +649,12 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
     lastClosestSegRef.current = match.closestSegmentIndex;
 
     checkAndReroute(
-      { lat: effectivePosition.lat, lng: effectivePosition.lng, accuracy: effectivePosition.accuracy },
+      { 
+        lat: effectivePosition.lat, 
+        lng: effectivePosition.lng, 
+        accuracy: effectivePosition.accuracy,
+        speed: effectivePosition.speed,
+      },
       match,
       isProgressing
     );
