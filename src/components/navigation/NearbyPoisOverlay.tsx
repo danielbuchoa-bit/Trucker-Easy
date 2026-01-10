@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { Navigation } from 'lucide-react';
+import { Navigation, MapPin } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Sheet,
@@ -8,6 +8,16 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { detectBrand, getInitial, getColorForInitial, type TruckBrand } from '@/lib/truckBrands';
 
 interface Poi {
@@ -31,7 +41,9 @@ interface NearbyPoisOverlayProps {
   lat: number | null;
   lng: number | null;
   heading: number | null;
+  hasActiveTrip?: boolean;
   onNavigateTo?: (poi: Poi) => void;
+  onAddDetour?: (poi: Poi) => void;
   onPoisUpdate?: (pois: Poi[]) => void;
 }
 
@@ -132,12 +144,15 @@ const NearbyPoisOverlay: React.FC<NearbyPoisOverlayProps> = ({
   lat, 
   lng, 
   heading,
+  hasActiveTrip = false,
   onNavigateTo,
+  onAddDetour,
   onPoisUpdate,
 }) => {
   const [pois, setPois] = useState<Poi[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedPoi, setSelectedPoi] = useState<Poi | null>(null);
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const lastFetchRef = useRef<{ lat: number; lng: number; time: number } | null>(null);
 
   useEffect(() => {
@@ -199,11 +214,29 @@ const NearbyPoisOverlay: React.FC<NearbyPoisOverlayProps> = ({
     fetchPois();
   }, [lat, lng, heading]);
 
-  const handleNavigateTo = () => {
-    if (selectedPoi && onNavigateTo) {
+  const handleNavigateClick = () => {
+    if (!selectedPoi) return;
+
+    // If there's an active trip, show confirmation dialog
+    if (hasActiveTrip && onAddDetour) {
+      setShowConfirmDialog(true);
+    } else if (onNavigateTo) {
+      // No active trip - navigate directly
       onNavigateTo(selectedPoi);
       setSelectedPoi(null);
     }
+  };
+
+  const handleConfirmDetour = () => {
+    if (selectedPoi && onAddDetour) {
+      onAddDetour(selectedPoi);
+      setShowConfirmDialog(false);
+      setSelectedPoi(null);
+    }
+  };
+
+  const handleCancelDetour = () => {
+    setShowConfirmDialog(false);
   };
 
   // Get color based on distance
@@ -239,7 +272,7 @@ const NearbyPoisOverlay: React.FC<NearbyPoisOverlayProps> = ({
       </div>
 
       {/* POI Detail Sheet */}
-      <Sheet open={!!selectedPoi} onOpenChange={(open) => !open && setSelectedPoi(null)}>
+      <Sheet open={!!selectedPoi && !showConfirmDialog} onOpenChange={(open) => !open && setSelectedPoi(null)}>
         <SheetContent side="bottom" className="h-auto max-h-[50vh]">
           {selectedPoi && (
             <>
@@ -287,10 +320,19 @@ const NearbyPoisOverlay: React.FC<NearbyPoisOverlayProps> = ({
                 <div className="flex gap-2 pt-2">
                   <Button 
                     className="flex-1" 
-                    onClick={handleNavigateTo}
+                    onClick={handleNavigateClick}
                   >
-                    <Navigation className="w-4 h-4 mr-2" />
-                    Navigate Here
+                    {hasActiveTrip ? (
+                      <>
+                        <MapPin className="w-4 h-4 mr-2" />
+                        Add as Next Stop
+                      </>
+                    ) : (
+                      <>
+                        <Navigation className="w-4 h-4 mr-2" />
+                        Navigate Here
+                      </>
+                    )}
                   </Button>
                   <Button 
                     variant="outline" 
@@ -304,6 +346,25 @@ const NearbyPoisOverlay: React.FC<NearbyPoisOverlayProps> = ({
           )}
         </SheetContent>
       </Sheet>
+
+      {/* Confirmation Dialog for Adding Detour */}
+      <AlertDialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Add as next stop?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will add <strong>{selectedPoi?.chainName || selectedPoi?.name}</strong> as a temporary stop. 
+              Your original destination will be resumed automatically after you leave this location.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={handleCancelDetour}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmDetour}>
+              Add Stop
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 };

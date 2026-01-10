@@ -107,6 +107,10 @@ const ActiveNavigationView = () => {
     progress,
     endNavigation,
     navigateToPoi,
+    addDetourStop,
+    hasActiveTrip,
+    isOnDetour,
+    detourStop,
     positionError,
     isRerouting,
     isOffRoute,
@@ -481,8 +485,15 @@ const ActiveNavigationView = () => {
         lat={userPosition?.lat ?? null}
         lng={userPosition?.lng ?? null}
         heading={debugInfo.calculatedBearing ?? userPosition?.heading ?? null}
+        hasActiveTrip={hasActiveTrip}
         onPoisUpdate={setNearbyPois}
         onNavigateTo={(poi) => navigateToPoi({
+          lat: poi.lat,
+          lng: poi.lng,
+          name: poi.chainName || poi.name,
+          address: poi.address,
+        })}
+        onAddDetour={(poi) => addDetourStop({
           lat: poi.lat,
           lng: poi.lng,
           name: poi.chainName || poi.name,
