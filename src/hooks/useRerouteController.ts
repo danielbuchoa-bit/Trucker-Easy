@@ -1,20 +1,22 @@
 import { useRef, useCallback } from 'react';
 
-// === CONSERVATIVE ANTI-REROUTE CONFIGURATION ===
-// Designed to prevent false reroutes from GPS jitter
+// === ULTRA-CONSERVATIVE ANTI-REROUTE CONFIGURATION ===
+// Designed to prevent ALL false reroutes - match Trucker Path behavior
 
-const REROUTE_COOLDOWN_MS = 25000; // 25 seconds between reroutes
-const OFF_ROUTE_THRESHOLD_M = 30; // Distance to consider off-route (meters)
-const ON_ROUTE_THRESHOLD_M = 15; // Distance to consider back on route (hysteresis)
+const REROUTE_COOLDOWN_MS = 30000; // 30 seconds between reroutes (INCREASED)
+const OFF_ROUTE_THRESHOLD_M = 50; // Distance to consider off-route (INCREASED from 30)
+const ON_ROUTE_THRESHOLD_M = 25; // Distance to consider back on route (INCREASED)
 
-// At low speeds (parking, yards), use higher tolerance
-const LOW_SPEED_THRESHOLD_MPS = 4.5; // ~10 mph
-const LOW_SPEED_OFF_ROUTE_M = 50; // More tolerance at low speed
+// At low speeds (parking, yards), use MUCH higher tolerance
+const LOW_SPEED_THRESHOLD_MPS = 6.7; // ~15 mph (INCREASED)
+const LOW_SPEED_OFF_ROUTE_M = 80; // Much more tolerance at low speed (INCREASED)
 
-const OFF_ROUTE_CONFIRM_COUNT = 5; // Consecutive readings to confirm off-route
-const OFF_ROUTE_CONFIRM_TIME_MS = 7000; // Must stay off-route for 7 seconds
-const VOICE_COOLDOWN_MS = 20000; // Don't spam voice announcements
-const MAX_ACCURACY_FOR_REROUTE_M = 40; // Don't reroute with poor accuracy
+// Confirmation requires BOTH time AND count AND speed
+const OFF_ROUTE_CONFIRM_COUNT = 8; // Consecutive readings (INCREASED from 5)
+const OFF_ROUTE_CONFIRM_TIME_MS = 8000; // 8 seconds persistence (INCREASED from 7)
+const MIN_SPEED_FOR_REROUTE_MPS = 6.7; // Must be > 15 mph to trigger reroute (NEW)
+const VOICE_COOLDOWN_MS = 30000; // Longer voice cooldown (INCREASED)
+const MAX_ACCURACY_FOR_REROUTE_M = 25; // Tighter accuracy requirement (DECREASED)
 
 interface RerouteState {
   shouldReroute: boolean;
@@ -49,34 +51,41 @@ export function useRerouteController() {
   ): RerouteState => {
     const now = Date.now();
     
-    // Check cooldown
+    // 1. Check cooldown FIRST - absolute block
     const timeSinceLastReroute = now - lastRerouteTimeRef.current;
     if (timeSinceLastReroute < REROUTE_COOLDOWN_MS) {
+      // During cooldown, don't even update off-route state
       return {
         shouldReroute: false,
-        isOffRoute: isOffRouteRef.current,
+        isOffRoute: false, // Force false during cooldown
         reason: `Cooldown: ${Math.round((REROUTE_COOLDOWN_MS - timeSinceLastReroute) / 1000)}s`,
         canAnnounce: false,
       };
     }
 
-    // Check accuracy
+    // 2. Check GPS accuracy - poor accuracy = don't trust
     if (accuracy !== null && accuracy > MAX_ACCURACY_FOR_REROUTE_M) {
+      // Reset off-route counters when accuracy is poor
+      offRouteStartTimeRef.current = null;
+      offRouteCountRef.current = 0;
       return {
         shouldReroute: false,
-        isOffRoute: isOffRouteRef.current,
-        reason: `Poor accuracy: ${Math.round(accuracy)}m`,
+        isOffRoute: false,
+        reason: `Poor accuracy: ${Math.round(accuracy)}m (>${MAX_ACCURACY_FOR_REROUTE_M}m)`,
         canAnnounce: false,
       };
     }
 
-    // Adaptive thresholds based on speed
+    // 3. Check speed - MUST be moving fast enough to reroute
+    const isSpeedTooLow = speedMps < MIN_SPEED_FOR_REROUTE_MPS;
+    
+    // 4. Adaptive thresholds based on speed
     const isLowSpeed = speedMps < LOW_SPEED_THRESHOLD_MPS;
     const baseOffThreshold = isLowSpeed ? LOW_SPEED_OFF_ROUTE_M : OFF_ROUTE_THRESHOLD_M;
     
-    // If progressing along route, be more lenient
+    // If progressing along route, be MUCH more lenient
     const effectiveOffThreshold = isProgressing 
-      ? baseOffThreshold * 1.5 
+      ? baseOffThreshold * 2.0 
       : baseOffThreshold;
     
     const effectiveOnThreshold = isLowSpeed ? LOW_SPEED_OFF_ROUTE_M * 0.5 : ON_ROUTE_THRESHOLD_M;
@@ -85,10 +94,8 @@ export function useRerouteController() {
     const isCurrentlyOn = distanceToRoute < effectiveOnThreshold;
     const canAnnounce = now - lastVoiceTimeRef.current > VOICE_COOLDOWN_MS;
 
-    const isActuallyOff = isCurrentlyOff;
-
-    if (isActuallyOff) {
-      // Off-route detection
+    if (isCurrentlyOff) {
+      // Start or continue off-route detection
       if (offRouteStartTimeRef.current === null) {
         offRouteStartTimeRef.current = now;
         offRouteCountRef.current = 1;
@@ -98,24 +105,28 @@ export function useRerouteController() {
       onRouteCountRef.current = 0;
 
       const offRouteDuration = now - offRouteStartTimeRef.current;
+      
+      // ALL conditions must be true for reroute
       const confirmedOffRoute = 
         offRouteCountRef.current >= OFF_ROUTE_CONFIRM_COUNT &&
-        offRouteDuration >= OFF_ROUTE_CONFIRM_TIME_MS;
+        offRouteDuration >= OFF_ROUTE_CONFIRM_TIME_MS &&
+        !isSpeedTooLow; // Must be moving at highway speed
 
       if (confirmedOffRoute) {
         isOffRouteRef.current = true;
         return {
           shouldReroute: true,
           isOffRoute: true,
-          reason: `Off-route: ${Math.round(distanceToRoute)}m for ${Math.round(offRouteDuration / 1000)}s`,
+          reason: `Off-route: ${Math.round(distanceToRoute)}m for ${Math.round(offRouteDuration / 1000)}s @ ${(speedMps * 2.237).toFixed(1)} mph`,
           canAnnounce,
         };
       }
 
+      // Not confirmed yet - show "warning" but don't trigger
       return {
         shouldReroute: false,
-        isOffRoute: true,
-        reason: `Confirming off-route: ${offRouteCountRef.current}/${OFF_ROUTE_CONFIRM_COUNT}`,
+        isOffRoute: false, // Don't show off-route warning until confirmed
+        reason: `Checking: ${offRouteCountRef.current}/${OFF_ROUTE_CONFIRM_COUNT}, ${Math.round(offRouteDuration / 1000)}s/${OFF_ROUTE_CONFIRM_TIME_MS / 1000}s`,
         canAnnounce: false,
       };
     } else if (isCurrentlyOn) {

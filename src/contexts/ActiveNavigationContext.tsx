@@ -14,22 +14,24 @@ import { HereService, type RouteResponse, type GeocodeResult, DEFAULT_TRUCK_PROF
 const NAVIGATION_STATE_KEY = 'activeNavigation';
 const DETOUR_STATE_KEY = 'detourStop';
 
-// === ANTI-REROUTE CONFIGURATION (REALISTIC TOLERANCE) ===
+// === ULTRA-CONSERVATIVE ANTI-REROUTE CONFIGURATION ===
+// Match Trucker Path behavior - virtually no false reroutes
 
-// Off-route detection with realistic thresholds
-const OFF_ROUTE_THRESHOLD_M = 30; // Base off-route distance
-const ON_ROUTE_THRESHOLD_M = 15; // Back on route (hysteresis)
+// Off-route detection with VERY HIGH thresholds
+const OFF_ROUTE_THRESHOLD_M = 50; // Must be 50+ meters off route
+const ON_ROUTE_THRESHOLD_M = 25; // Back on route threshold
 
-// Low speed tolerance (parking lots, yards, exits)
-const LOW_SPEED_THRESHOLD_MPS = 4.5; // ~10 mph
-const LOW_SPEED_OFF_ROUTE_M = 50; // More tolerance at low speed
+// Low speed tolerance - at parking lots, yards, exits
+const LOW_SPEED_THRESHOLD_MPS = 6.7; // ~15 mph - below this = parking mode
+const LOW_SPEED_OFF_ROUTE_M = 80; // 80m tolerance at low speed
 
-// Confirmation requirements - VERY conservative to prevent false reroutes
-const OFF_ROUTE_CONSECUTIVE_THRESHOLD = 5; // readings needed
-const OFF_ROUTE_PERSIST_TIME_MS = 7000; // must stay off-route for 7 seconds
+// Confirmation requirements - EXTREMELY conservative
+const OFF_ROUTE_CONSECUTIVE_THRESHOLD = 8; // Need 8 readings
+const OFF_ROUTE_PERSIST_TIME_MS = 8000; // Must stay off-route for 8 SECONDS
+const MIN_SPEED_FOR_REROUTE_MPS = 6.7; // Must be going > 15 mph to trigger reroute
 
-// Accuracy filter - don't reroute with poor GPS
-const MAX_ACCURACY_FOR_OFF_ROUTE_M = 40; // Tighter accuracy requirement
+// Accuracy filter - only trust good GPS
+const MAX_ACCURACY_FOR_OFF_ROUTE_M = 25; // Don't trust GPS with >25m accuracy
 
 // Search window for route matching
 const ROUTE_MATCH_WINDOW = 90;
@@ -38,8 +40,8 @@ const ROUTE_MATCH_WINDOW = 90;
 const SNAP_MAX_BLEND = 0.7;
 const SNAP_MAX_DISTANCE_M = 50;
 
-// Conservative reroute cooldown to prevent spam
-const REROUTE_COOLDOWN_MS = 25000; // 25 seconds minimum
+// 30 SECOND cooldown - absolute block
+const REROUTE_COOLDOWN_MS = 30000; // 30 seconds minimum
 
 // Detour arrival detection
 const DETOUR_ARRIVAL_DISTANCE_M = 200;
@@ -47,14 +49,14 @@ const DETOUR_ARRIVAL_DWELL_TIME_MS = 10000;
 const DETOUR_COOLDOWN_MS = 120000;
 
 // Course-over-ground settings - optimized for smooth heading
-const MIN_COG_SPEED_MPS = 1.0; // ~3.6 km/h - higher threshold to avoid jitter
-const MIN_COG_DISTANCE_M = 3; // meters between fixes for COG
+const MIN_COG_SPEED_MPS = 1.0; // ~3.6 km/h
+const MIN_COG_DISTANCE_M = 3;
 const MAX_REASONABLE_SPEED_MPS = 55; // ~200 km/h (spike rejection)
-const HEADING_SMOOTH_FACTOR = 0.15; // Smoother heading (lower = smoother)
-const SPEED_SMOOTH_FACTOR = 0.2; // Smoother speed
+const HEADING_SMOOTH_FACTOR = 0.15;
+const SPEED_SMOOTH_FACTOR = 0.2;
 
-// Position update throttling
-const MIN_POSITION_UPDATE_MS = 150; // ~6.6 updates/second max
+// Position update throttling - 1 update per second max
+const MIN_POSITION_UPDATE_MS = 1000; // REDUCED to 1 update/second
 
 function calculateBearingBetweenPoints(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const toRad = (deg: number) => (deg * Math.PI) / 180;
@@ -469,47 +471,62 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
       if (isReroutingRef.current || isRerouting) return;
 
       const now = Date.now();
-      if (now - lastRerouteTime.current < REROUTE_COOLDOWN_MS) return;
+      
+      // 30 second cooldown - absolute block
+      if (now - lastRerouteTime.current < REROUTE_COOLDOWN_MS) {
+        // During cooldown, always show as ON route
+        if (isOffRoute) setIsOffRoute(false);
+        return;
+      }
 
       const accuracy = rawPosition.accuracy;
       const speed = rawPosition.speed ?? 0;
-      const accuracyTooPoor = typeof accuracy === 'number' && accuracy > MAX_ACCURACY_FOR_OFF_ROUTE_M;
+      
+      // GPS accuracy check - don't trust poor signals
+      if (typeof accuracy === 'number' && accuracy > MAX_ACCURACY_FOR_OFF_ROUTE_M) {
+        // Reset counters with poor GPS
+        offRouteStartTimeRef.current = null;
+        offRouteCountRef.current = 0;
+        onRouteCountRef.current = 0;
+        if (isOffRoute) setIsOffRoute(false);
+        return;
+      }
 
-      // Adaptive thresholds based on speed (more tolerance at low speed)
+      // Speed check - must be moving at highway speed (>15 mph) to trigger reroute
+      const speedTooLow = speed < MIN_SPEED_FOR_REROUTE_MPS;
+
+      // Adaptive thresholds based on speed (MUCH more tolerance at low speed)
       const isLowSpeed = speed < LOW_SPEED_THRESHOLD_MPS;
       const baseOffThreshold = isLowSpeed ? LOW_SPEED_OFF_ROUTE_M : OFF_ROUTE_THRESHOLD_M;
       const baseOnThreshold = isLowSpeed ? LOW_SPEED_OFF_ROUTE_M * 0.4 : ON_ROUTE_THRESHOLD_M;
 
-      // Also factor in GPS accuracy
+      // Also factor in GPS accuracy for thresholds
       const offThreshold = Math.max(
         baseOffThreshold,
-        typeof accuracy === 'number' ? accuracy * 1.2 : baseOffThreshold
+        typeof accuracy === 'number' ? accuracy * 1.5 : baseOffThreshold
       );
       const onThreshold = Math.max(
         baseOnThreshold,
-        typeof accuracy === 'number' ? accuracy * 0.8 : baseOnThreshold
+        typeof accuracy === 'number' ? accuracy * 0.6 : baseOnThreshold
       );
 
       const distToRoute = match.distanceToRouteM;
 
-      if (now - lastDebugLogRef.current > 2000) {
+      // Debug logging - reduced frequency
+      if (now - lastDebugLogRef.current > 4000) {
         lastDebugLogRef.current = now;
         console.log('[NAV_DIAG]', {
-          raw: { lat: rawPosition.lat, lng: rawPosition.lng, acc: rawPosition.accuracy },
-          matched: { lat: match.matchedLat, lng: match.matchedLng },
+          raw: { lat: rawPosition.lat.toFixed(5), lng: rawPosition.lng.toFixed(5), acc: accuracy?.toFixed(1) },
           distToRouteM: Math.round(distToRoute),
           thresholds: { off: Math.round(offThreshold), on: Math.round(onThreshold) },
-          isOffRoute,
+          speed: { mps: speed.toFixed(1), mph: (speed * 2.237).toFixed(1) },
           offRouteCount: offRouteCountRef.current,
-          onRouteCount: onRouteCountRef.current,
-          progressing: isProgressingAlongRoute,
-          closestSeg: match.closestSegmentIndex,
+          cooldownLeft: Math.max(0, Math.round((REROUTE_COOLDOWN_MS - (now - lastRerouteTime.current)) / 1000)),
         });
       }
 
-      if (accuracyTooPoor) return;
-
-      const progressingGuard = isProgressingAlongRoute && distToRoute < offThreshold * 1.8;
+      // If progressing along route, use MUCH higher tolerance
+      const progressingGuard = isProgressingAlongRoute && distToRoute < offThreshold * 2.0;
       const isClearlyOff = distToRoute > offThreshold;
       const isClearlyOn = distToRoute < onThreshold;
 
@@ -524,12 +541,26 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
         }
 
         const offRouteDuration = now - offRouteStartTimeRef.current;
-        setIsOffRoute(true);
+        
+        // DON'T show off-route warning until we're really close to triggering
+        const almostConfirmed = 
+          offRouteCountRef.current >= OFF_ROUTE_CONSECUTIVE_THRESHOLD - 2 &&
+          offRouteDuration >= OFF_ROUTE_PERSIST_TIME_MS - 2000;
+        
+        if (almostConfirmed) {
+          setIsOffRoute(true);
+        }
 
-        if (
+        // ALL conditions must be true:
+        // 1. Enough consecutive off-route readings
+        // 2. Been off-route long enough
+        // 3. Speed is high enough (not parking)
+        const confirmedOffRoute = 
           offRouteDuration >= OFF_ROUTE_PERSIST_TIME_MS &&
-          offRouteCountRef.current >= OFF_ROUTE_CONSECUTIVE_THRESHOLD
-        ) {
+          offRouteCountRef.current >= OFF_ROUTE_CONSECUTIVE_THRESHOLD &&
+          !speedTooLow;
+
+        if (confirmedOffRoute) {
           isReroutingRef.current = true;
           setIsRerouting(true);
           lastRerouteTime.current = now;
@@ -541,7 +572,8 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
             console.log('[NAV_DIAG] reroute_requested', {
               distToRouteM: Math.round(distToRoute),
               accuracy,
-              closestSeg: match.closestSegmentIndex,
+              speed: (speed * 2.237).toFixed(1) + ' mph',
+              offRouteDuration: Math.round(offRouteDuration / 1000) + 's',
             });
 
             const newRoute = await HereService.calculateRoute({
