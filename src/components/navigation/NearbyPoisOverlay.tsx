@@ -47,11 +47,9 @@ interface NearbyPoisOverlayProps {
   onPoisUpdate?: (pois: Poi[]) => void;
 }
 
-// HERE category IDs for truck-related POIs
+// HERE category IDs - ONLY Truck Stops (no regular gas stations)
 const TRUCK_CATEGORIES = [
-  '700-7600-0116',   // Fuel / Gas Station
-  '700-7850-0000',   // Truck Stop / Service Area
-  '100-1000-0000',   // Restaurant
+  '700-7850-0000',   // Truck Stop / Service Area ONLY
 ];
 
 /**
