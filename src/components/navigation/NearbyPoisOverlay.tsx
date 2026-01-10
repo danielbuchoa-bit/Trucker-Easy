@@ -251,15 +251,16 @@ const NearbyPoisOverlay: React.FC<NearbyPoisOverlayProps> = ({
 
   return (
     <>
-      {/* POI Cards Stack - Left side, below HUD with more spacing */}
-      <div className="absolute top-44 left-4 z-20 flex flex-col gap-2">
+      {/* POI Cards Stack - Left side, positioned below NavigationHUD with safe spacing */}
+      <div className="absolute top-56 left-4 z-20 flex flex-col gap-2">
         {loading && pois.length === 0 && (
           <div className="bg-card/90 backdrop-blur-sm rounded-lg px-3 py-2 text-center">
             <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto" />
           </div>
         )}
         
-        {pois.slice(0, 4).map((poi) => (
+        {/* Show max 3 POIs to avoid overflow */}
+        {pois.slice(0, 3).map((poi) => (
           <PoiCard
             key={poi.id}
             poi={poi}
