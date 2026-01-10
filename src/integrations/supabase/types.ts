@@ -529,6 +529,53 @@ export type Database = {
         }
         Relationships: []
       }
+      weigh_station_reports: {
+        Row: {
+          created_at: string
+          device_anon_id_hash: string | null
+          id: string
+          lat: number
+          lng: number
+          outcome: string
+          route_id_hash: string | null
+          station_id: string
+          status_reported: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          device_anon_id_hash?: string | null
+          id?: string
+          lat: number
+          lng: number
+          outcome: string
+          route_id_hash?: string | null
+          station_id: string
+          status_reported: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          device_anon_id_hash?: string | null
+          id?: string
+          lat?: number
+          lng?: number
+          outcome?: string
+          route_id_hash?: string | null
+          station_id?: string
+          status_reported?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "weigh_station_reports_station_id_fkey"
+            columns: ["station_id"]
+            isOneToOne: false
+            referencedRelation: "weigh_stations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       weigh_stations: {
         Row: {
           active: boolean | null
