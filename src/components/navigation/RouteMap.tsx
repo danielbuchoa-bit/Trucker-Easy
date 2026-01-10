@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { supabase } from '@/integrations/supabase/client';
@@ -23,159 +23,161 @@ const RouteMap = ({ routePolyline, originLat, originLng, destLat, destLng, class
   const userLocationMarker = useRef<mapboxgl.Marker | null>(null);
   const [mapReady, setMapReady] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [gettingLocation, setGettingLocation] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const mapInitialized = useRef(false);
+  const initializingRef = useRef(false);
 
   // Diagnostics integration
   const diagnostics = useDiagnosticsSafe();
+  const diagnosticsRef = useRef(diagnostics);
+  diagnosticsRef.current = diagnostics;
+  
   const handleDiagnosticsTap = useDiagnosticsTap();
 
-  // Get user's current location
-  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
+  // Get user's current location - stored in ref to avoid re-renders triggering map reinit
+  const userLocationRef = useRef<{ lat: number; lng: number } | null>(null);
+  const [locationStatus, setLocationStatus] = useState<'getting' | 'ready' | 'error'>('getting');
 
-  // Request user location on mount
+  // Request user location on mount - only once
   useEffect(() => {
     if (!navigator.geolocation) {
-      setGettingLocation(false);
+      setLocationStatus('ready');
       return;
     }
 
     navigator.geolocation.getCurrentPosition(
       (position) => {
-        setUserLocation({
+        userLocationRef.current = {
           lat: position.coords.latitude,
           lng: position.coords.longitude,
-        });
-        setGettingLocation(false);
+        };
+        setLocationStatus('ready');
       },
       (err) => {
         console.warn('[RouteMap] Geolocation error:', err.message);
-        setGettingLocation(false);
+        setLocationStatus('ready'); // Still ready, just without location
       },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
     );
   }, []);
 
-  // Determine initial center: user location > origin > fallback
-  const getInitialCenter = useCallback((): [number, number] => {
-    if (userLocation) {
-      return [userLocation.lng, userLocation.lat];
-    }
-    if (typeof originLng === 'number' && typeof originLat === 'number') {
-      return [originLng, originLat];
-    }
-    return [-46.6333, -23.5505]; // Fallback
-  }, [userLocation, originLat, originLng]);
-
-  const initializeMap = useCallback(async () => {
-    if (!mapContainer.current || mapInitialized.current) return;
-    mapInitialized.current = true;
-
-    console.log('[RouteMap] 🗺️ Architecture: Mapbox for rendering (tiles), HERE for routing/POIs');
-
-    try {
-      console.log('[RouteMap] Fetching Mapbox token...');
-      const { data, error: tokenError } = await supabase.functions.invoke<{ token: string }>(
-        'get_mapbox_token'
-      );
-
-      const token = data?.token;
-
-      if (tokenError || !token) {
-        const errorStatus = (tokenError as any)?.status || 'error';
-        console.error('[RouteMap] ❌ MAPBOX TOKEN ERROR:', {
-          status: errorStatus,
-          message: tokenError?.message || 'Token not returned',
-          endpoint: 'get_mapbox_token',
-          service: 'Mapbox (Tiles/Rendering)',
-        });
-        
-        // Log to diagnostics
-        diagnostics?.logMapboxCall({
-          endpoint: 'get_mapbox_token',
-          status: errorStatus,
-          message: tokenError?.message || 'Token not returned',
-        });
-        
-        if (errorStatus === 401 || errorStatus === 403) {
-          console.error('[RouteMap] 🔐 AUTH ISSUE: Mapbox token retrieval failed - check MAPBOX_PUBLIC_TOKEN secret');
-        }
-        
-        setError('Failed to load map');
-        setLoading(false);
-        return;
-      }
-
-      // Log success to diagnostics
-      diagnostics?.logMapboxCall({
-        endpoint: 'get_mapbox_token',
-        status: 'ok',
-      });
-
-      console.log('[RouteMap] ✅ Mapbox token obtained');
-      mapboxgl.accessToken = token;
-
-      // Ensure container is empty
-      mapContainer.current.innerHTML = '';
-
-      const initialCenter = getInitialCenter();
-      const initialZoom = userLocation ? 15 : 4;
-
-      console.log('[RouteMap] Initializing Mapbox GL map...', { 
-        center: initialCenter, 
-        zoom: initialZoom,
-        style: 'navigation-night-v1',
-      });
-
-      map.current = new mapboxgl.Map({
-        container: mapContainer.current,
-        style: 'mapbox://styles/mapbox/navigation-night-v1',
-        zoom: initialZoom,
-        center: initialCenter,
-      });
-
-      map.current.addControl(
-        new mapboxgl.NavigationControl({ visualizePitch: true }),
-        'top-right'
-      );
-
-      const markReady = () => {
-        console.log('[RouteMap] ✅ Map ready - Mapbox tiles loaded');
-        setMapReady(true);
-        setLoading(false);
-      };
-
-      map.current.once('load', markReady);
-      map.current.once('idle', markReady);
-
-      map.current.on('error', (e: any) => {
-        console.error('[RouteMap] ❌ MAPBOX ERROR:', {
-          message: e.error?.message || e.message || 'Unknown error',
-          status: e.error?.status || 'N/A',
-          service: 'Mapbox (Tiles/Rendering)',
-        });
-        
-        const status = e.error?.status;
-        if (status === 401 || status === 403) {
-          console.error('[RouteMap] 🔐 AUTH ISSUE: Mapbox tiles access denied - verify token permissions');
-        }
-        
-        setError('Map loading error');
-        setLoading(false);
-      });
-    } catch (e) {
-      console.error('[RouteMap] ❌ INIT FAILED:', e);
-      setError('Failed to initialize map');
-      setLoading(false);
-    }
-  }, [getInitialCenter, userLocation, diagnostics]);
-
-  // Initialize map after we have location (or timeout)
+  // Initialize map ONCE when location is ready
   useEffect(() => {
-    if (!gettingLocation) {
-      initializeMap();
-    }
+    // Wait for location status
+    if (locationStatus !== 'ready') return;
+    
+    // Prevent double initialization
+    if (mapInitialized.current || initializingRef.current) return;
+    if (!mapContainer.current) return;
+    
+    initializingRef.current = true;
+
+    const initializeMap = async () => {
+      console.log('[RouteMap] 🗺️ Architecture: Mapbox for rendering (tiles), HERE for routing/POIs');
+
+      try {
+        console.log('[RouteMap] Fetching Mapbox token...');
+        const { data, error: tokenError } = await supabase.functions.invoke<{ token: string }>(
+          'get_mapbox_token'
+        );
+
+        const token = data?.token;
+
+        if (tokenError || !token) {
+          const errorStatus = (tokenError as any)?.status || 'error';
+          console.error('[RouteMap] ❌ MAPBOX TOKEN ERROR:', {
+            status: errorStatus,
+            message: tokenError?.message || 'Token not returned',
+          });
+          
+          diagnosticsRef.current?.logMapboxCall({
+            endpoint: 'get_mapbox_token',
+            status: errorStatus,
+            message: tokenError?.message || 'Token not returned',
+          });
+          
+          setError('Failed to load map');
+          setLoading(false);
+          initializingRef.current = false;
+          return;
+        }
+
+        diagnosticsRef.current?.logMapboxCall({
+          endpoint: 'get_mapbox_token',
+          status: 'ok',
+        });
+
+        console.log('[RouteMap] ✅ Mapbox token obtained');
+        mapboxgl.accessToken = token;
+
+        // Determine initial center
+        const userLoc = userLocationRef.current;
+        let initialCenter: [number, number] = [-46.6333, -23.5505]; // Fallback
+        let initialZoom = 4;
+        
+        if (userLoc) {
+          initialCenter = [userLoc.lng, userLoc.lat];
+          initialZoom = 15;
+        } else if (typeof originLng === 'number' && typeof originLat === 'number') {
+          initialCenter = [originLng, originLat];
+          initialZoom = 10;
+        }
+
+        console.log('[RouteMap] Initializing Mapbox GL map...', { 
+          center: initialCenter, 
+          zoom: initialZoom,
+          hasUserLocation: !!userLoc,
+        });
+
+        // Ensure container is clean
+        if (mapContainer.current) {
+          mapContainer.current.innerHTML = '';
+        }
+
+        map.current = new mapboxgl.Map({
+          container: mapContainer.current!,
+          style: 'mapbox://styles/mapbox/navigation-night-v1',
+          zoom: initialZoom,
+          center: initialCenter,
+        });
+
+        map.current.addControl(
+          new mapboxgl.NavigationControl({ visualizePitch: true }),
+          'top-right'
+        );
+
+        map.current.once('load', () => {
+          console.log('[RouteMap] ✅ Map loaded');
+          mapInitialized.current = true;
+          setMapReady(true);
+          setLoading(false);
+          
+          // Add user location marker if available
+          const loc = userLocationRef.current;
+          if (loc && map.current) {
+            const el = document.createElement('div');
+            el.className = 'w-4 h-4 bg-blue-500 rounded-full border-2 border-white shadow-lg animate-pulse';
+            userLocationMarker.current = new mapboxgl.Marker(el)
+              .setLngLat([loc.lng, loc.lat])
+              .addTo(map.current);
+          }
+        });
+
+        map.current.on('error', (e: any) => {
+          console.error('[RouteMap] ❌ MAPBOX ERROR:', e);
+          setError('Map loading error');
+          setLoading(false);
+        });
+
+      } catch (e) {
+        console.error('[RouteMap] ❌ INIT FAILED:', e);
+        setError('Failed to initialize map');
+        setLoading(false);
+        initializingRef.current = false;
+      }
+    };
+
+    initializeMap();
 
     return () => {
       originMarker.current?.remove();
@@ -184,37 +186,9 @@ const RouteMap = ({ routePolyline, originLat, originLng, destLat, destLng, class
       map.current?.remove();
       map.current = null;
       mapInitialized.current = false;
-      if (mapContainer.current) mapContainer.current.innerHTML = '';
+      initializingRef.current = false;
     };
-  }, [gettingLocation, initializeMap]);
-
-  // Center on user location when it becomes available (after map ready)
-  useEffect(() => {
-    if (!map.current || !mapReady || !userLocation) return;
-    
-    const hasOrigin = typeof originLat === 'number' && typeof originLng === 'number';
-    const hasDest = typeof destLat === 'number' && typeof destLng === 'number';
-    
-    // Update user location marker
-    if (userLocationMarker.current) {
-      userLocationMarker.current.setLngLat([userLocation.lng, userLocation.lat]);
-    } else {
-      const el = document.createElement('div');
-      el.className = 'w-4 h-4 bg-blue-500 rounded-full border-2 border-white shadow-lg animate-pulse';
-      userLocationMarker.current = new mapboxgl.Marker(el)
-        .setLngLat([userLocation.lng, userLocation.lat])
-        .addTo(map.current);
-    }
-    
-    // Center map on user location if no route/origin/dest set
-    if (!hasOrigin && !hasDest && !routePolyline) {
-      map.current.easeTo({
-        center: [userLocation.lng, userLocation.lat],
-        zoom: 15,
-        duration: 800,
-      });
-    }
-  }, [userLocation, mapReady, originLat, originLng, destLat, destLng, routePolyline]);
+  }, [locationStatus]); // Only depend on locationStatus, not on props that change
 
   // Update markers and route when props change
   useEffect(() => {
@@ -332,16 +306,18 @@ const RouteMap = ({ routePolyline, originLat, originLng, destLat, destLng, class
     );
   }
 
+  const isGettingLocation = locationStatus === 'getting';
+
   return (
     <div 
       className={`relative ${className}`}
       onClick={handleDiagnosticsTap}
     >
       <div ref={mapContainer} className="absolute inset-0" />
-      {(loading || gettingLocation) && (
+      {(loading || isGettingLocation) && (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-muted/50 gap-2">
           <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-          {gettingLocation && (
+          {isGettingLocation && (
             <p className="text-sm text-muted-foreground">Obtendo localização atual…</p>
           )}
         </div>
