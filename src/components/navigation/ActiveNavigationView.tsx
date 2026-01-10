@@ -8,6 +8,7 @@ import { useRouteSimulation } from '@/hooks/useRouteSimulation';
 import { useArrivalDetection, type DetectedPoi } from '@/hooks/useArrivalDetection';
 import { usePositionInterpolator } from '@/hooks/usePositionInterpolator';
 import { useMapPerformance } from '@/hooks/useMapPerformance';
+import { useWeighStationAlerts } from '@/hooks/useWeighStationAlerts';
 import NavigationHUD from './NavigationHUD';
 import SpeedIndicator from './SpeedIndicator';
 import BottomETABar from './BottomETABar';
@@ -20,7 +21,10 @@ import ArrivalDebugPanel from './ArrivalDebugPanel';
 import LaneGuidancePanel from './LaneGuidancePanel';
 import { createTruckCursorElement } from './TruckCursor';
 import { MapPin, Navigation as NavIcon, RotateCcw, Layers, Bug, Plus, Route } from 'lucide-react';
-import WeighStationBadges from './WeighStationBadges';
+import WeighStationOverlay from '@/components/weighstation/WeighStationOverlay';
+import WeighStationAlert from '@/components/weighstation/WeighStationAlert';
+import WeighStationBottomSheet from '@/components/weighstation/WeighStationBottomSheet';
+import WeighStationQuestionnaire from '@/components/weighstation/WeighStationQuestionnaire';
 import { useGeofence } from '@/contexts/GeofenceContext';
 import { Button } from '@/components/ui/button';
 import { useLanguage } from '@/i18n/LanguageContext';
@@ -101,7 +105,6 @@ function bearingDifference(a: number, b: number): number {
 
 const ActiveNavigationView = () => {
   const { t } = useLanguage();
-  const { nearbyStations } = useGeofence();
   const {
     route,
     routeCoords,
@@ -176,6 +179,14 @@ const ActiveNavigationView = () => {
   const interpolatedPosition = usePositionInterpolator(userPosition, {
     enabled: true,
     adaptiveAlpha: true,
+  });
+
+  // Weigh station alerts with route-based detection
+  const weighStationAlerts = useWeighStationAlerts({
+    userLat: userPosition?.lat ?? null,
+    userLng: userPosition?.lng ?? null,
+    routeCoords,
+    enabled: true,
   });
 
   // Arrival detection hook
@@ -539,13 +550,10 @@ const ActiveNavigationView = () => {
 
       {/* Right side buttons */}
       <div className="absolute top-4 right-4 z-30 flex flex-col gap-2 safe-top">
-        {/* Weigh Station Badges */}
-        <WeighStationBadges
-          userLat={userPosition?.lat ?? null}
-          userLng={userPosition?.lng ?? null}
-          stations={nearbyStations}
-          routeCoords={routeCoords}
-          maxVisible={2}
+        {/* Weigh Station Overlay - shows next station on route */}
+        <WeighStationOverlay
+          nextStation={weighStationAlerts.nextStation}
+          onPress={() => weighStationAlerts.openStationDetails(weighStationAlerts.nextStation)}
         />
         
         {/* Map style toggle */}
@@ -702,6 +710,35 @@ const ActiveNavigationView = () => {
         <div className="absolute bottom-8 inset-x-4 z-30 bg-destructive text-destructive-foreground p-3 rounded-lg text-center text-sm">
           {positionError}
         </div>
+      )}
+
+      {/* Weigh Station 50-mile Alert */}
+      {weighStationAlerts.pendingAlert && (
+        <WeighStationAlert
+          station={weighStationAlerts.pendingAlert}
+          onDismiss={weighStationAlerts.dismissAlert}
+        />
+      )}
+
+      {/* Weigh Station Bottom Sheet */}
+      {weighStationAlerts.selectedStation && (
+        <WeighStationBottomSheet
+          station={weighStationAlerts.selectedStation}
+          onClose={weighStationAlerts.closeStationDetails}
+          onRefresh={() => weighStationAlerts.refreshStationReports(weighStationAlerts.selectedStation!.station.id)}
+        />
+      )}
+
+      {/* Weigh Station Post-Passage Questionnaire */}
+      {weighStationAlerts.stationToReport && userPosition && (
+        <WeighStationQuestionnaire
+          station={weighStationAlerts.stationToReport}
+          userLat={userPosition.lat}
+          userLng={userPosition.lng}
+          routeHash={weighStationAlerts.routeHash}
+          onComplete={weighStationAlerts.dismissReportPrompt}
+          onSkip={weighStationAlerts.dismissReportPrompt}
+        />
       )}
 
       {/* Arrived overlay */}
