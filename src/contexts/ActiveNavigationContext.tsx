@@ -8,43 +8,49 @@ import {
   type RouteMatchResult,
 } from '@/lib/navigationUtils';
 import { useWakeLock } from '@/hooks/useWakeLock';
+import { useRerouteController } from '@/hooks/useRerouteController';
 import { HereService, type RouteResponse, type GeocodeResult, DEFAULT_TRUCK_PROFILE, type TruckProfile } from '@/services/HereService';
 
 const NAVIGATION_STATE_KEY = 'activeNavigation';
 const DETOUR_STATE_KEY = 'detourStop';
 
-// Off-route detection thresholds (meters) with hysteresis to prevent ping-pong.
-const OFF_ROUTE_THRESHOLD_M = 55;
-const ON_ROUTE_THRESHOLD_M = 35;
+// === IMPROVED CONFIGURATION FOR STABILITY ===
 
-// Confirmation requirements
-const OFF_ROUTE_CONSECUTIVE_THRESHOLD = 3; // readings
-const OFF_ROUTE_PERSIST_TIME_MS = 4000; // must stay off-route for this duration
+// Off-route detection with improved hysteresis
+const OFF_ROUTE_THRESHOLD_M = 80; // Increased for more tolerance
+const ON_ROUTE_THRESHOLD_M = 40; // Hysteresis gap
 
-// If GPS accuracy is very poor, don't trust off-route detection.
-const MAX_ACCURACY_FOR_OFF_ROUTE_M = 120;
+// Confirmation requirements - more conservative
+const OFF_ROUTE_CONSECUTIVE_THRESHOLD = 4; // readings
+const OFF_ROUTE_PERSIST_TIME_MS = 6000; // must stay off-route for 6 seconds
 
-// Search window for route matching (segments around last match)
+// If GPS accuracy is poor, don't reroute
+const MAX_ACCURACY_FOR_OFF_ROUTE_M = 100;
+
+// Search window for route matching
 const ROUTE_MATCH_WINDOW = 90;
 
-// Soft snap strength (0..1). Higher = stronger pull toward route.
-const SNAP_MAX_BLEND = 0.6;
-const SNAP_MAX_DISTANCE_M = 80;
+// Soft snap for visual smoothness
+const SNAP_MAX_BLEND = 0.7;
+const SNAP_MAX_DISTANCE_M = 50;
 
-// NOTE: REROUTE_COOLDOWN_MS remains conservative to avoid loops.
-const REROUTE_COOLDOWN_MS = 45000; // 45 seconds minimum between reroutes
+// Conservative reroute cooldown to prevent spam
+const REROUTE_COOLDOWN_MS = 30000; // 30 seconds minimum
 
 // Detour arrival detection
-const DETOUR_ARRIVAL_DISTANCE_M = 200; // Consider arrived when within 200m
-const DETOUR_ARRIVAL_DWELL_TIME_MS = 10000; // Must stay for 10 seconds
-const DETOUR_COOLDOWN_MS = 120000; // 2 minutes cooldown after completing detour
+const DETOUR_ARRIVAL_DISTANCE_M = 200;
+const DETOUR_ARRIVAL_DWELL_TIME_MS = 10000;
+const DETOUR_COOLDOWN_MS = 120000;
 
-// --- Course-over-ground (COG) navigation model ---
-const MIN_COG_SPEED_MPS = 0.8; // ~3 km/h
-const MIN_COG_DISTANCE_M = 3; // meters between fixes to compute bearing
-const MAX_REASONABLE_SPEED_MPS = 60; // ~216 km/h (spike rejection)
-const HEADING_SMOOTH_FACTOR = 0.22; // 0..1
-const SPEED_SMOOTH_FACTOR = 0.3; // 0..1
+// Course-over-ground settings
+const MIN_COG_SPEED_MPS = 0.5; // ~2 km/h - more sensitive
+const MIN_COG_DISTANCE_M = 2; // meters between fixes
+const MAX_REASONABLE_SPEED_MPS = 60; // ~216 km/h
+const HEADING_SMOOTH_FACTOR = 0.2; // Smoother heading
+const SPEED_SMOOTH_FACTOR = 0.25; // Smoother speed
+
+// Position update throttling
+const MIN_POSITION_UPDATE_MS = 200; // Don't process more than 5 updates/second
 
 function calculateBearingBetweenPoints(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const toRad = (deg: number) => (deg * Math.PI) / 180;
@@ -215,6 +221,12 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
     }
   }, []);
 
+  // Initialize reroute controller
+  const rerouteController = useRerouteController();
+
+  // Last position update time for throttling
+  const lastPositionUpdateRef = useRef<number>(0);
+
   // Start watching position when navigating (only if not simulating)
   useEffect(() => {
     if (!isNavigating || isSimulating) {
@@ -232,10 +244,44 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
 
     watchIdRef.current = navigator.geolocation.watchPosition(
       (pos) => {
+        const now = Date.now();
+        
+        // Throttle updates to prevent excessive processing
+        if (now - lastPositionUpdateRef.current < MIN_POSITION_UPDATE_MS) {
+          return;
+        }
+        
         const { latitude, longitude, heading: gpsHeading, speed: gpsSpeed, accuracy } = pos.coords;
         
+        // === SPIKE REJECTION ===
+        // Reject impossible jumps based on speed
+        if (lastRawFixRef.current) {
+          const timeDelta = (now - lastRawFixRef.current.time) / 1000;
+          if (timeDelta > 0.1 && timeDelta < 30) {
+            const distance = haversineDistance(
+              lastRawFixRef.current.lat,
+              lastRawFixRef.current.lng,
+              latitude,
+              longitude
+            );
+            const impliedSpeed = distance / timeDelta;
+            
+            // Reject if speed exceeds maximum possible
+            if (impliedSpeed > MAX_REASONABLE_SPEED_MPS * 1.5) {
+              console.log('[NAV] Spike rejected:', { 
+                distance: Math.round(distance), 
+                speed: Math.round(impliedSpeed),
+                threshold: MAX_REASONABLE_SPEED_MPS * 1.5 
+              });
+              return;
+            }
+          }
+        }
+        
+        lastPositionUpdateRef.current = now;
+        
+        // === COURSE-OVER-GROUND CALCULATION ===
         let calculatedHeading = gpsHeading;
-        const now = Date.now();
         
         if (lastRawFixRef.current && (gpsHeading === null || gpsHeading === undefined)) {
           const timeDelta = (now - lastRawFixRef.current.time) / 1000;
@@ -263,6 +309,7 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
           calculatedHeading = lastValidHeadingRef.current;
         }
         
+        // === HEADING SMOOTHING ===
         if (typeof calculatedHeading === 'number' && smoothedHeadingRef.current !== null) {
           calculatedHeading = smoothAngle(smoothedHeadingRef.current, calculatedHeading, HEADING_SMOOTH_FACTOR);
         }
@@ -270,6 +317,7 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
           smoothedHeadingRef.current = calculatedHeading;
         }
         
+        // === SPEED SMOOTHING ===
         const rawSpeed = gpsSpeed ?? 0;
         smoothedSpeedRef.current = smoothedSpeedRef.current * (1 - SPEED_SMOOTH_FACTOR) + rawSpeed * SPEED_SMOOTH_FACTOR;
         
@@ -279,7 +327,7 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
           lat: latitude,
           lng: longitude,
           heading: calculatedHeading ?? null,
-          speed: gpsSpeed ?? null,
+          speed: smoothedSpeedRef.current, // Use smoothed speed
           accuracy: accuracy ?? null,
         });
         setPositionError(null);
@@ -290,8 +338,8 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
       },
       {
         enableHighAccuracy: true,
-        maximumAge: 500,
-        timeout: 10000,
+        maximumAge: 1000, // Allow slightly older positions to reduce gaps
+        timeout: 15000, // Longer timeout for better accuracy
       }
     );
 
