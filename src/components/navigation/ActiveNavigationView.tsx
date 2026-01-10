@@ -7,6 +7,7 @@ import { useVoiceGuidance } from '@/hooks/useVoiceGuidance';
 import { useRouteSimulation } from '@/hooks/useRouteSimulation';
 import { useArrivalDetection, type DetectedPoi } from '@/hooks/useArrivalDetection';
 import { useSmoothPosition } from '@/hooks/useSmoothPosition';
+import { useMapPerformance } from '@/hooks/useMapPerformance';
 import NavigationHUD from './NavigationHUD';
 import SpeedIndicator from './SpeedIndicator';
 import BottomETABar from './BottomETABar';
@@ -23,11 +24,12 @@ import { useGeofence } from '@/contexts/GeofenceContext';
 import { Button } from '@/components/ui/button';
 import { useLanguage } from '@/i18n/LanguageContext';
 
-// Minimum speed (m/s) to apply heading rotation - ~3 km/h = 0.83 m/s (lowered for responsiveness)
-const MIN_SPEED_FOR_HEADING = 0.8;
+// === PERFORMANCE CONSTANTS ===
+// Minimum speed (m/s) to apply heading rotation - ~2 km/h
+const MIN_SPEED_FOR_HEADING = 0.5;
 
-// Minimum bearing change to trigger update (degrees) - lowered for smoother following
-const MIN_BEARING_CHANGE = 5;
+// Minimum bearing change to trigger update (degrees)
+const MIN_BEARING_CHANGE = 2;
 
 // Heading smoothing factor (0-1, lower = smoother but more latency)
 const HEADING_SMOOTH_FACTOR = 0.15;
@@ -166,9 +168,12 @@ const ActiveNavigationView = () => {
   // Nearby POIs for arrival detection (populated by NearbyPoisOverlay callback)
   const [nearbyPois, setNearbyPois] = useState<DetectedPoi[]>([]);
 
+  // Map performance optimization
+  const mapPerf = useMapPerformance();
+
   // Smooth position for marker rendering (continuous interpolation between filtered GPS fixes)
   const smoothedPosition = useSmoothPosition(userPosition, {
-    alpha: 1, // no extra low-pass filtering here; only interpolation + dead reckoning
+    alpha: 0.8, // Slightly more responsive
     minDistanceThreshold: 0.5,
     maxAge: 5000,
   });
