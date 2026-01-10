@@ -98,6 +98,7 @@ interface ActiveNavigationContextValue {
   isSimulating: boolean;
   startNavigation: (route: RouteResponse, origin: GeocodeResult, destination: GeocodeResult, profile?: TruckProfile) => void;
   endNavigation: () => void;
+  navigateToPoi: (poi: { lat: number; lng: number; name: string; address?: string }) => Promise<void>;
   setSimulatedPosition: (position: UserPosition | null) => void;
   setIsSimulating: (simulating: boolean) => void;
   positionError: string | null;
@@ -521,6 +522,78 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
     localStorage.removeItem(NAVIGATION_STATE_KEY);
   }, []);
 
+  // Navigate to a POI (truck stop, gas station, etc.) - recalculates route to POI as new destination
+  const navigateToPoi = useCallback(
+    async (poi: { lat: number; lng: number; name: string; address?: string }) => {
+      if (!effectivePosition) {
+        console.error('Cannot navigate to POI: no current position');
+        return;
+      }
+
+      setIsRerouting(true);
+
+      try {
+        // Calculate new route from current position to POI
+        const newRoute = await HereService.calculateRoute({
+          originLat: effectivePosition.lat,
+          originLng: effectivePosition.lng,
+          destLat: poi.lat,
+          destLng: poi.lng,
+          transportMode: 'truck',
+          truckProfile,
+        });
+
+        // Create new origin and destination
+        const newOrigin: GeocodeResult = {
+          id: 'current-location',
+          title: 'Current Location',
+          address: `${effectivePosition.lat.toFixed(4)}, ${effectivePosition.lng.toFixed(4)}`,
+          lat: effectivePosition.lat,
+          lng: effectivePosition.lng,
+        };
+
+        const newDest: GeocodeResult = {
+          id: poi.name.toLowerCase().replace(/\s+/g, '-'),
+          title: poi.name,
+          address: poi.address || `${poi.lat.toFixed(4)}, ${poi.lng.toFixed(4)}`,
+          lat: poi.lat,
+          lng: poi.lng,
+        };
+
+        // Update navigation state
+        setRoute(newRoute);
+        setRouteCoords(decodeHereFlexiblePolyline(newRoute.polyline));
+        setOrigin(newOrigin);
+        setDestination(newDest);
+        setIsOffRoute(false);
+
+        // Reset route matching refs
+        lastMatchRef.current = null;
+        lastClosestSegRef.current = null;
+        offRouteCountRef.current = 0;
+        onRouteCountRef.current = 0;
+        offRouteStartTimeRef.current = null;
+
+        // Save to localStorage
+        const state: NavigationState = {
+          route: newRoute,
+          origin: newOrigin,
+          destination: newDest,
+          startedAt: Date.now(),
+          truckProfile,
+        };
+        localStorage.setItem(NAVIGATION_STATE_KEY, JSON.stringify(state));
+
+        console.log('[NAV] Navigating to POI:', poi.name);
+      } catch (error) {
+        console.error('Failed to calculate route to POI:', error);
+      } finally {
+        setIsRerouting(false);
+      }
+    },
+    [effectivePosition, truckProfile]
+  );
+
   return (
     <ActiveNavigationContext.Provider
       value={{
@@ -537,6 +610,7 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
         isSimulating,
         startNavigation,
         endNavigation,
+        navigateToPoi,
         setSimulatedPosition,
         setIsSimulating,
         positionError,

@@ -106,6 +106,7 @@ const ActiveNavigationView = () => {
     userPosition,
     progress,
     endNavigation,
+    navigateToPoi,
     positionError,
     isRerouting,
     isOffRoute,
@@ -481,6 +482,12 @@ const ActiveNavigationView = () => {
         lng={userPosition?.lng ?? null}
         heading={debugInfo.calculatedBearing ?? userPosition?.heading ?? null}
         onPoisUpdate={setNearbyPois}
+        onNavigateTo={(poi) => navigateToPoi({
+          lat: poi.lat,
+          lng: poi.lng,
+          name: poi.chainName || poi.name,
+          address: poi.address,
+        })}
       />
 
       {/* Speed Indicator - Bottom Left */}
