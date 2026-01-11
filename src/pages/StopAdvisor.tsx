@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, MapPin, Loader2, Star, Navigation2, Hand } from 'lucide-react';
+import { ArrowLeft, MapPin, Loader2, Star, Navigation2, Hand, Utensils, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -12,19 +12,23 @@ import AIFoodRecommendation from '@/components/stops/AIFoodRecommendation';
 import StopRatingForm from '@/components/stops/StopRatingForm';
 import StarRating from '@/components/stops/StarRating';
 import { useGeolocation } from '@/hooks/useGeolocation';
+import { useNearbyRestaurants, type Restaurant } from '@/hooks/useNearbyRestaurants';
 import { supabase } from '@/integrations/supabase/client';
 import type { StopPlace, StopMenuItem, StopRating, DriverFoodProfile } from '@/types/stops';
 
 const StopAdvisorScreen: React.FC = () => {
   const navigate = useNavigate();
   const { latitude, longitude, loading: geoLoading } = useGeolocation({ watchPosition: true });
+  const { fetchNearbyRestaurants, result: restaurantResult, loading: restaurantsLoading } = useNearbyRestaurants();
   
   const [activeTab, setActiveTab] = useState('menu');
   const [currentStop, setCurrentStop] = useState<StopPlace | null>(null);
+  const [nearbyRestaurants, setNearbyRestaurants] = useState<Restaurant[]>([]);
   const [menuItems, setMenuItems] = useState<StopMenuItem[]>([]);
   const [ratings, setRatings] = useState<StopRating[]>([]);
   const [userProfile, setUserProfile] = useState<DriverFoodProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [detectingStop, setDetectingStop] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
 
@@ -54,25 +58,70 @@ const StopAdvisorScreen: React.FC = () => {
     loadProfile();
   }, [userId]);
 
-  // Detect nearby POI (mock for now - would use HERE Places API)
-  useEffect(() => {
+  // Detect nearby POI using HERE API
+  const detectNearbyStop = useCallback(async () => {
     if (!latitude || !longitude) return;
     
-    // Simulate detecting a nearby truck stop
-    const mockStop: StopPlace = {
-      id: 'mock-stop-1',
-      name: 'Pilot Travel Center',
-      type: 'travel_center',
-      lat: latitude,
-      lng: longitude,
-      address: '1234 Interstate Highway',
-      averageRating: 4.2,
-      ratingCount: 156,
-    };
+    setDetectingStop(true);
     
-    setCurrentStop(mockStop);
-    setLoading(false);
-  }, [latitude, longitude]);
+    try {
+      // Search for nearby truck stops, travel centers, and gas stations
+      const { data, error } = await supabase.functions.invoke('here_browse_pois', {
+        body: {
+          lat: latitude,
+          lng: longitude,
+          radiusMeters: 500, // Within 500m means you're "at" the stop
+          categories: ['700-7850-0000', '700-7600-0116'], // Truck stops and gas stations
+          limit: 5,
+        },
+      });
+
+      if (error) {
+        console.error('[StopAdvisor] Error detecting stop:', error);
+        setLoading(false);
+        setDetectingStop(false);
+        return;
+      }
+
+      const pois = data?.pois || [];
+      console.log('[StopAdvisor] Found nearby POIs:', pois.length);
+
+      if (pois.length > 0) {
+        // Get the closest one
+        const closest = pois[0];
+        
+        const detectedStop: StopPlace = {
+          id: closest.id || `poi-${Date.now()}`,
+          name: closest.name || closest.title || 'Unknown Stop',
+          type: closest.category === 'truck_stop' ? 'truck_stop' : 
+                closest.category === 'fuel' ? 'gas_station' : 'travel_center',
+          lat: closest.lat,
+          lng: closest.lng,
+          address: closest.address || '',
+          distance: closest.distance,
+        };
+        
+        setCurrentStop(detectedStop);
+        
+        // Fetch nearby restaurants at this location
+        const restaurantData = await fetchNearbyRestaurants(closest.lat, closest.lng, closest.name);
+        if (restaurantData?.restaurants) {
+          setNearbyRestaurants(restaurantData.restaurants);
+        }
+      }
+    } catch (err) {
+      console.error('[StopAdvisor] Detection error:', err);
+    } finally {
+      setLoading(false);
+      setDetectingStop(false);
+    }
+  }, [latitude, longitude, fetchNearbyRestaurants]);
+
+  useEffect(() => {
+    if (latitude && longitude) {
+      detectNearbyStop();
+    }
+  }, [latitude, longitude, detectNearbyStop]);
 
   // Load ratings for current stop
   useEffect(() => {
@@ -194,10 +243,20 @@ const StopAdvisorScreen: React.FC = () => {
     }
   };
 
-  const handleImHere = () => {
-    // Mark as arrived at stop - would trigger detection logic
-    toast({ title: 'Location noted', description: 'Detecting nearby stops...' });
-  };
+  const handleImHere = useCallback(async () => {
+    toast({ title: 'Detecting location...', description: 'Looking for nearby stops and restaurants' });
+    await detectNearbyStop();
+  }, [detectNearbyStop]);
+
+  const handleRefresh = useCallback(async () => {
+    if (!currentStop) return;
+    toast({ title: 'Refreshing...', description: 'Looking for restaurants nearby' });
+    const restaurantData = await fetchNearbyRestaurants(currentStop.lat, currentStop.lng, currentStop.name);
+    if (restaurantData?.restaurants) {
+      setNearbyRestaurants(restaurantData.restaurants);
+      toast({ title: 'Updated!', description: `Found ${restaurantData.restaurants.length} restaurants nearby` });
+    }
+  }, [currentStop, fetchNearbyRestaurants]);
 
   if (geoLoading || loading) {
     return (
@@ -264,9 +323,8 @@ const StopAdvisorScreen: React.FC = () => {
               </div>
             </div>
           </div>
-          <Button variant="outline" size="sm">
-            <Navigation2 className="w-4 h-4 mr-1" />
-            Navigate
+          <Button variant="ghost" size="icon" onClick={handleRefresh} disabled={restaurantsLoading}>
+            <RefreshCw className={`w-5 h-5 ${restaurantsLoading ? 'animate-spin' : ''}`} />
           </Button>
         </div>
       </header>
@@ -282,6 +340,25 @@ const StopAdvisorScreen: React.FC = () => {
             </div>
           </CardContent>
         </Card>
+
+        {/* Nearby Restaurants */}
+        {nearbyRestaurants.length > 0 && (
+          <Card className="border-primary/20 bg-gradient-to-br from-primary/5 to-transparent">
+            <CardContent className="py-3">
+              <div className="flex items-center gap-2 mb-2">
+                <Utensils className="w-4 h-4 text-primary" />
+                <span className="font-medium text-sm">Restaurants Here</span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {nearbyRestaurants.map((restaurant) => (
+                  <Badge key={restaurant.id} variant="secondary" className="text-xs">
+                    {restaurant.name} ({Math.round(restaurant.distance)}m)
+                  </Badge>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab}>
@@ -306,6 +383,8 @@ const StopAdvisorScreen: React.FC = () => {
               placeType={currentStop.type}
               menuItems={menuItems}
               userProfile={userProfile}
+              stopName={currentStop.name}
+              nearbyRestaurants={nearbyRestaurants.map(r => r.name)}
             />
             {!userProfile && (
               <Card className="mt-4">
