@@ -20,20 +20,27 @@ const BottomETABar = ({
   onEndNavigation,
   onMore,
 }: BottomETABarProps) => {
-  // Calculate ETA
+  // Calculate ETA - handle NaN and invalid values
   const eta = useMemo(() => {
-    if (typeof remainingDuration !== 'number' || remainingDuration <= 0) return null;
+    if (typeof remainingDuration !== 'number' || !Number.isFinite(remainingDuration) || remainingDuration <= 0) {
+      return null;
+    }
     return addSeconds(new Date(), remainingDuration);
   }, [remainingDuration]);
 
+  // Safe formatting - only format if eta is valid
   const etaFormatted = eta ? format(eta, 'hh:mm a') : '--:--';
-  const timeZone = eta ? format(eta, 'zzz').replace(/[a-z]/g, '') : 'CST';
+  const timeZone = eta ? format(eta, 'zzz').replace(/[a-z]/g, '') : '';
   
-  // Format distance (convert to miles)
-  const distanceMiles = (remainingDistance / 1609.34).toFixed(0);
+  // Format distance (convert to miles) - handle NaN
+  const distanceMiles = Number.isFinite(remainingDistance) && remainingDistance > 0 
+    ? (remainingDistance / 1609.34).toFixed(0) 
+    : '--';
   
-  // Format duration
-  const durationMins = Math.round(remainingDuration / 60);
+  // Format duration - handle NaN
+  const durationMins = Number.isFinite(remainingDuration) && remainingDuration > 0 
+    ? Math.round(remainingDuration / 60) 
+    : '--';
 
   return (
     <div className="absolute bottom-0 inset-x-0 z-30 safe-bottom">
