@@ -108,9 +108,14 @@ serve(async (req) => {
       origin: `${originLat},${originLng}`,
       destination: `${destLat},${destLng}`,
       mode: 'truck',
-      // Using default mode (not 'flexible') for more balanced routing
-      // 'flexible' can create unnecessarily long detours
-      altcount: '2', // Get alternative routes
+      // CRITICAL: Enable turn-by-turn instructions
+      steps: 'true',
+      // CRITICAL: Get detailed geometry for each step
+      overview: 'full',
+      // CRITICAL: Get voice instructions for exit info
+      voice_instructions: 'true',
+      // Get alternative routes
+      altcount: '2',
       // Truck dimensions: height,width,length in cm (per NextBillion docs)
       truck_size: `${heightCm},${widthCm},${totalLengthCm}`,
       // Truck weight in kg
@@ -195,17 +200,47 @@ serve(async (req) => {
       return 0;
     };
     
-    // Extract turn-by-turn instructions
-    const instructions = leg?.steps?.map((step: any) => ({
-      instruction: step.maneuver?.instruction || '',
-      duration: extractValue(step.duration),
-      distance: extractValue(step.distance),
-      maneuverType: step.maneuver?.type || '',
-      modifier: step.maneuver?.modifier || '',
-      roadName: step.name || '',
-      // Geometry for this step (if available)
-      geometry: step.geometry || '',
-    })) || [];
+    // Extract turn-by-turn instructions from ALL legs
+    const instructions: any[] = [];
+    for (const l of route.legs || []) {
+      for (const step of l.steps || []) {
+        // Extract exit number from instruction or exit field
+        let exitInfo: string | null = null;
+        const instruction = step.maneuver?.instruction || step.html_instructions || '';
+        
+        // Check for exit property directly
+        if (step.maneuver?.exit) {
+          exitInfo = String(step.maneuver.exit);
+        }
+        
+        // Fallback: extract from instruction text
+        if (!exitInfo && instruction) {
+          const exitMatch = instruction.match(/exit\s*(?:onto\s*)?(\d+[A-Za-z]?)/i);
+          if (exitMatch) {
+            exitInfo = exitMatch[1];
+          }
+        }
+        
+        instructions.push({
+          instruction,
+          duration: extractValue(step.duration),
+          distance: extractValue(step.distance),
+          length: extractValue(step.distance), // Alias for compatibility
+          maneuverType: step.maneuver?.type || '',
+          modifier: step.maneuver?.modifier || '',
+          roadName: step.name || step.ref || '',
+          // Geometry for this step
+          geometry: step.geometry || '',
+          // Exit info if available
+          exitInfo,
+          // Voice instruction if available
+          voiceInstruction: step.voiceInstructions?.[0]?.announcement || null,
+        });
+      }
+    }
+    
+    console.log('[NEXTBILLION_ROUTE] Extracted instructions:', instructions.length, 
+      'with exits:', instructions.filter(i => i.exitInfo).length);
 
     // Calculate distance and duration from legs
     // NextBillion uses { value: number } format for distance/duration
