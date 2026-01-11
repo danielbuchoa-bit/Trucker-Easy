@@ -1,13 +1,13 @@
 import { useCallback, useRef, useEffect, useState } from 'react';
+import { Language } from '@/i18n/translations';
 
 interface UseSpeedingAlertSoundProps {
   currentSpeedMph: number | null;
   speedLimitMph: number | null;
   enabled?: boolean;
+  language?: Language;
   // How many mph over the limit before alerting
   toleranceMph?: number;
-  // Minimum interval between alerts (ms)
-  alertIntervalMs?: number;
 }
 
 interface UseSpeedingAlertSoundReturn {
@@ -17,6 +17,32 @@ interface UseSpeedingAlertSoundReturn {
   setAlertsEnabled: (enabled: boolean) => void;
   testAlert: () => void;
 }
+
+// Translations for speed alerts
+const speedAlertMessages: Record<Language, { slowDown: string; overLimit: string; checkSpeed: string }> = {
+  en: {
+    slowDown: 'Slow down',
+    overLimit: 'over limit',
+    checkSpeed: 'Check your speed',
+  },
+  es: {
+    slowDown: 'Reduzca la velocidad',
+    overLimit: 'sobre el límite',
+    checkSpeed: 'Verifique su velocidad',
+  },
+  pt: {
+    slowDown: 'Reduza a velocidade',
+    overLimit: 'acima do limite',
+    checkSpeed: 'Verifique sua velocidade',
+  },
+};
+
+// Language codes for speech synthesis
+const speechLangCodes: Record<Language, string> = {
+  en: 'en-US',
+  es: 'es-ES',
+  pt: 'pt-BR',
+};
 
 // Create audio context lazily to avoid autoplay policy issues
 let audioContext: AudioContext | null = null;
@@ -55,16 +81,20 @@ function playWarningBeep(type: 'warning' | 'critical' = 'warning') {
       
       // Second beep
       setTimeout(() => {
-        const osc2 = ctx.createOscillator();
-        const gain2 = ctx.createGain();
-        osc2.connect(gain2);
-        gain2.connect(ctx.destination);
-        osc2.frequency.value = 880;
-        osc2.type = 'square';
-        gain2.gain.setValueAtTime(0.3, ctx.currentTime);
-        gain2.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.15);
-        osc2.start(ctx.currentTime);
-        osc2.stop(ctx.currentTime + 0.15);
+        try {
+          const osc2 = ctx.createOscillator();
+          const gain2 = ctx.createGain();
+          osc2.connect(gain2);
+          gain2.connect(ctx.destination);
+          osc2.frequency.value = 880;
+          osc2.type = 'square';
+          gain2.gain.setValueAtTime(0.3, ctx.currentTime);
+          gain2.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.15);
+          osc2.start(ctx.currentTime);
+          osc2.stop(ctx.currentTime + 0.15);
+        } catch (e) {
+          console.error('[SPEED_ALERT_SOUND] Second beep error:', e);
+        }
       }, 200);
     } else {
       // Lower pitch, single beep
@@ -82,22 +112,23 @@ function playWarningBeep(type: 'warning' | 'critical' = 'warning') {
 }
 
 // Play voice alert using Speech Synthesis
-function playVoiceAlert(message: string) {
+function playVoiceAlert(message: string, langCode: string) {
   try {
     if ('speechSynthesis' in window) {
       // Cancel any pending speech
       window.speechSynthesis.cancel();
       
       const utterance = new SpeechSynthesisUtterance(message);
-      utterance.rate = 1.1;
+      utterance.lang = langCode;
+      utterance.rate = 1.0;
       utterance.pitch = 1.0;
-      utterance.volume = 0.8;
+      utterance.volume = 0.9;
       
-      // Try to use a natural voice
+      // Try to find a voice for the specified language
       const voices = window.speechSynthesis.getVoices();
-      const englishVoice = voices.find(v => v.lang.startsWith('en') && v.name.includes('Google'));
-      if (englishVoice) {
-        utterance.voice = englishVoice;
+      const matchingVoice = voices.find(v => v.lang.startsWith(langCode.split('-')[0]));
+      if (matchingVoice) {
+        utterance.voice = matchingVoice;
       }
       
       window.speechSynthesis.speak(utterance);
@@ -111,13 +142,11 @@ export function useSpeedingAlertSound({
   currentSpeedMph,
   speedLimitMph,
   enabled = true,
+  language = 'en',
   toleranceMph = 5,
-  alertIntervalMs = 10000, // 10 seconds between alerts
 }: UseSpeedingAlertSoundProps): UseSpeedingAlertSoundReturn {
   const [alertsEnabled, setAlertsEnabled] = useState(enabled);
-  const lastAlertTimeRef = useRef<number>(0);
-  const wasSpeedingRef = useRef<boolean>(false);
-  const speedingStartTimeRef = useRef<number | null>(null);
+  const hasAlertedRef = useRef<boolean>(false);
 
   // Calculate if speeding
   const isSpeeding = 
@@ -130,78 +159,55 @@ export function useSpeedingAlertSound({
       ? Math.max(0, currentSpeedMph - speedLimitMph)
       : 0;
 
+  // Get messages for current language
+  const messages = speedAlertMessages[language] || speedAlertMessages.en;
+  const langCode = speechLangCodes[language] || 'en-US';
+
   // Test function to play alert sound
   const testAlert = useCallback(() => {
     playWarningBeep('warning');
-    setTimeout(() => playVoiceAlert('Speed alert test'), 500);
-  }, []);
+    setTimeout(() => playVoiceAlert(messages.checkSpeed, langCode), 500);
+  }, [messages, langCode]);
 
-  // Monitor speeding and trigger alerts
+  // Reset alert flag when driver slows down
   useEffect(() => {
-    if (!alertsEnabled) {
-      wasSpeedingRef.current = false;
-      speedingStartTimeRef.current = null;
+    if (!isSpeeding) {
+      hasAlertedRef.current = false;
+    }
+  }, [isSpeeding]);
+
+  // Trigger alert only once when speeding starts
+  useEffect(() => {
+    if (!alertsEnabled || !isSpeeding || hasAlertedRef.current) {
       return;
     }
 
-    const now = Date.now();
+    // Mark as alerted immediately to prevent multiple alerts
+    hasAlertedRef.current = true;
 
-    if (isSpeeding) {
-      // Track when speeding started
-      if (!speedingStartTimeRef.current) {
-        speedingStartTimeRef.current = now;
-      }
+    const isCritical = speedOverLimit > 15;
 
-      const speedingDuration = now - speedingStartTimeRef.current;
-      const timeSinceLastAlert = now - lastAlertTimeRef.current;
+    console.log('[SPEED_ALERT_SOUND] Triggering ONE-TIME alert:', {
+      currentSpeed: currentSpeedMph,
+      limit: speedLimitMph,
+      over: speedOverLimit,
+      critical: isCritical,
+      language,
+    });
 
-      // Determine alert type based on how much over the limit
-      const isCritical = speedOverLimit > 15; // More than 15 mph over
-
-      // Alert conditions:
-      // 1. Just started speeding (wasn't speeding before)
-      // 2. Been speeding for a while and interval has passed
-      // 3. Critical speeding (much higher than limit)
-      
-      const shouldAlert = 
-        (!wasSpeedingRef.current && speedingDuration > 1000) || // New speeding after 1 second
-        (wasSpeedingRef.current && timeSinceLastAlert > alertIntervalMs) || // Repeat alert
-        (isCritical && timeSinceLastAlert > 5000); // Critical - more frequent
-
-      if (shouldAlert) {
-        console.log('[SPEED_ALERT_SOUND] Triggering alert:', {
-          currentSpeed: currentSpeedMph,
-          limit: speedLimitMph,
-          over: speedOverLimit,
-          critical: isCritical,
-        });
-
-        // Play appropriate alert
-        if (isCritical) {
-          playWarningBeep('critical');
-          setTimeout(() => {
-            playVoiceAlert(`Slow down. ${Math.round(speedOverLimit)} over limit.`);
-          }, 400);
-        } else {
-          playWarningBeep('warning');
-          // Only voice alert on first detection or after long interval
-          if (!wasSpeedingRef.current || timeSinceLastAlert > 30000) {
-            setTimeout(() => {
-              playVoiceAlert('Check your speed');
-            }, 400);
-          }
-        }
-
-        lastAlertTimeRef.current = now;
-      }
-
-      wasSpeedingRef.current = true;
+    // Play appropriate alert
+    if (isCritical) {
+      playWarningBeep('critical');
+      setTimeout(() => {
+        playVoiceAlert(`${messages.slowDown}. ${Math.round(speedOverLimit)} ${messages.overLimit}.`, langCode);
+      }, 400);
     } else {
-      // Reset speeding state
-      wasSpeedingRef.current = false;
-      speedingStartTimeRef.current = null;
+      playWarningBeep('warning');
+      setTimeout(() => {
+        playVoiceAlert(messages.checkSpeed, langCode);
+      }, 400);
     }
-  }, [isSpeeding, speedOverLimit, alertsEnabled, alertIntervalMs, currentSpeedMph, speedLimitMph]);
+  }, [isSpeeding, speedOverLimit, alertsEnabled, currentSpeedMph, speedLimitMph, messages, langCode, language]);
 
   // Initialize voices (needed for some browsers)
   useEffect(() => {
