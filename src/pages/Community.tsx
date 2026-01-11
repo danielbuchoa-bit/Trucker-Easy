@@ -1,18 +1,39 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useLanguage } from '@/i18n/LanguageContext';
-import { Users, Plus, MessageCircle, Globe, MapPin, Truck, ChevronRight, AlertTriangle, Building2 } from 'lucide-react';
+import { Users, Plus, MessageCircle, Globe, MapPin, Truck, ChevronRight, AlertTriangle, Building2, Loader2 } from 'lucide-react';
 import BottomNav from '@/components/navigation/BottomNav';
 import { useNavigate } from 'react-router-dom';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import RoadReportsList from '@/components/road/RoadReportsList';
 import RoadReportButton from '@/components/road/RoadReportButton';
 import FacilitiesList from '@/components/facility/FacilitiesList';
+import { supabase } from '@/integrations/supabase/client';
+import { formatDistanceToNow } from 'date-fns';
+import { pt, es, enUS } from 'date-fns/locale';
+
+interface ChatRoom {
+  id: string;
+  name: string;
+  description: string | null;
+  icon: string | null;
+  language: string;
+  region: string;
+  trailer_type: string;
+  member_count: number;
+  message_count: number;
+  last_message_preview: string | null;
+  last_message_at: string | null;
+}
 
 const CommunityScreen = () => {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('reports');
   const [activeFilter, setActiveFilter] = useState('all');
+  const [chatRooms, setChatRooms] = useState<ChatRoom[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const dateLocale = language === 'pt' ? pt : language === 'es' ? es : enUS;
 
   const filters = [
     { id: 'all', label: t.community.all },
@@ -21,62 +42,48 @@ const CommunityScreen = () => {
     { id: 'trailer', label: t.community.byTrailer },
   ];
 
-  const mockCommunities = [
-    {
-      id: '1',
-      name: 'Truckers USA',
-      members: 12453,
-      messages: 234,
-      type: 'general',
-      icon: '🇺🇸',
-      lastMessage: 'Anyone knows if the I-40 weigh station is open?',
-      lastMessageTime: '2m ago',
-    },
-    {
-      id: '2',
-      name: 'Camioneros Latinos',
-      members: 5621,
-      messages: 156,
-      type: 'language',
-      icon: '🌎',
-      lastMessage: 'Buenas noches, alguien por Texas?',
-      lastMessageTime: '5m ago',
-    },
-    {
-      id: '3',
-      name: 'Flatbed Haulers',
-      members: 3245,
-      messages: 89,
-      type: 'trailer',
-      icon: '🚛',
-      lastMessage: 'Best straps for oversized loads?',
-      lastMessageTime: '12m ago',
-    },
-    {
-      id: '4',
-      name: 'Brasileiros on the Road',
-      members: 2134,
-      messages: 67,
-      type: 'language',
-      icon: '🇧🇷',
-      lastMessage: 'Boa noite pessoal!',
-      lastMessageTime: '15m ago',
-    },
-  ];
+  useEffect(() => {
+    fetchChatRooms();
+  }, []);
+
+  const fetchChatRooms = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('chat_rooms')
+        .select('*')
+        .order('last_message_at', { ascending: false, nullsFirst: false });
+
+      if (error) throw error;
+      setChatRooms(data || []);
+    } catch (error) {
+      console.error('Error fetching chat rooms:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const filteredCommunities = activeFilter === 'all'
-    ? mockCommunities
-    : mockCommunities.filter(c => c.type === activeFilter || 
-        (activeFilter === 'language' && c.type === 'language') ||
-        (activeFilter === 'region' && c.type === 'region') ||
-        (activeFilter === 'trailer' && c.type === 'trailer'));
+    ? chatRooms
+    : chatRooms.filter(room => {
+        if (activeFilter === 'language') return room.language !== 'all';
+        if (activeFilter === 'region') return room.region !== 'all';
+        if (activeFilter === 'trailer') return room.trailer_type !== 'all';
+        return true;
+      });
 
-  const getTypeIcon = (type: string) => {
-    switch (type) {
-      case 'language': return Globe;
-      case 'region': return MapPin;
-      case 'trailer': return Truck;
-      default: return Users;
+  const getTypeIcon = (room: ChatRoom) => {
+    if (room.language !== 'all') return Globe;
+    if (room.region !== 'all') return MapPin;
+    if (room.trailer_type !== 'all') return Truck;
+    return Users;
+  };
+
+  const formatTime = (dateStr: string | null) => {
+    if (!dateStr) return '';
+    try {
+      return formatDistanceToNow(new Date(dateStr), { addSuffix: true, locale: dateLocale });
+    } catch {
+      return '';
     }
   };
 
@@ -134,42 +141,59 @@ const CommunityScreen = () => {
               ))}
             </div>
 
+            {/* Loading State */}
+            {loading && (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="w-8 h-8 animate-spin text-primary" />
+              </div>
+            )}
+
             {/* Communities List */}
-            {filteredCommunities.map((community) => (
+            {!loading && filteredCommunities.map((room) => (
               <button
-                key={community.id}
-                onClick={() => navigate(`/chat/${community.id}`)}
+                key={room.id}
+                onClick={() => navigate(`/chat/${room.id}`)}
                 className="w-full flex items-start gap-4 p-4 bg-card rounded-xl border border-border hover:border-primary/50 transition-all text-left"
               >
                 <div className="w-12 h-12 rounded-full bg-secondary flex items-center justify-center flex-shrink-0 text-2xl">
-                  {community.icon}
+                  {room.icon || '💬'}
                 </div>
 
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
-                    <h3 className="font-semibold text-foreground truncate">{community.name}</h3>
+                    <h3 className="font-semibold text-foreground truncate">{room.name}</h3>
                   </div>
                   
                   <p className="text-sm text-muted-foreground truncate mt-0.5">
-                    {community.lastMessage}
+                    {room.last_message_preview || room.description || 'No messages yet'}
                   </p>
                   
                   <div className="flex items-center gap-3 mt-2">
                     <div className="flex items-center gap-1 text-xs text-muted-foreground">
                       <Users className="w-3.5 h-3.5" />
-                      <span>{community.members.toLocaleString()}</span>
+                      <span>{room.member_count.toLocaleString()}</span>
                     </div>
                     <div className="flex items-center gap-1 text-xs text-muted-foreground">
                       <MessageCircle className="w-3.5 h-3.5" />
-                      <span>{community.messages}</span>
+                      <span>{room.message_count}</span>
                     </div>
-                    <span className="text-xs text-muted-foreground">{community.lastMessageTime}</span>
+                    {room.last_message_at && (
+                      <span className="text-xs text-muted-foreground">{formatTime(room.last_message_at)}</span>
+                    )}
                   </div>
                 </div>
 
                 <ChevronRight className="w-5 h-5 text-muted-foreground flex-shrink-0 mt-2" />
               </button>
             ))}
+
+            {/* Empty State */}
+            {!loading && filteredCommunities.length === 0 && (
+              <div className="text-center py-12">
+                <MessageCircle className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+                <p className="text-muted-foreground">No chat rooms found</p>
+              </div>
+            )}
           </div>
         )}
       </div>
