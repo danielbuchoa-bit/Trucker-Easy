@@ -66,19 +66,16 @@ const BottomETABar = ({
             <span className="text-[10px] font-semibold mt-0.5">Tap to Chat</span>
           </button>
           
-          {/* Center - Distance, Time, ETA */}
-          <div className="flex-1 flex items-center justify-center gap-1">
+          {/* Center - Distance and ETA time */}
+          <div className="flex-1 flex items-center justify-center gap-4">
             <div className="text-center">
               <span className="text-2xl font-black text-foreground">{distanceMiles}</span>
-              <span className="text-sm font-medium text-muted-foreground">mi</span>
+              <span className="text-sm font-medium text-muted-foreground ml-1">mi</span>
             </div>
-            <span className="text-muted-foreground mx-2">|</span>
+            <span className="text-muted-foreground">|</span>
             <div className="text-center">
-              <span className="text-2xl font-black text-foreground">{durationMins}</span>
-              <span className="text-sm font-medium text-muted-foreground">mins</span>
-            </div>
-            <div className="ml-4 text-right">
-              <p className="text-lg font-bold text-muted-foreground">{etaFormatted} {timeZone}</p>
+              <span className="text-2xl font-black text-foreground">{etaFormatted}</span>
+              {timeZone && <span className="text-sm font-medium text-muted-foreground ml-1">{timeZone}</span>}
             </div>
           </div>
           
