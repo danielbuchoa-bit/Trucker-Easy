@@ -1,10 +1,11 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useLanguage } from '@/i18n/LanguageContext';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Send, MoreVertical, Users, Flag, Loader2, LogIn, LogOut } from 'lucide-react';
+import { ArrowLeft, Send, MoreVertical, Users, Flag, Loader2, LogOut, Edit2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
+import NicknameModal from '@/components/chat/NicknameModal';
 
 interface ChatRoom {
   id: string;
@@ -43,6 +44,8 @@ const ChatRoomScreen = () => {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [userProfiles, setUserProfiles] = useState<Record<string, UserProfile>>({});
   const [memberNicknames, setMemberNicknames] = useState<Record<string, string>>({});
+  const [showNicknameModal, setShowNicknameModal] = useState(false);
+  const [myNickname, setMyNickname] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -109,6 +112,9 @@ const ChatRoomScreen = () => {
       .maybeSingle();
 
     setIsMember(!!data);
+    if (data?.nickname) {
+      setMyNickname(data.nickname);
+    }
     setLoading(false);
   };
 
@@ -205,7 +211,11 @@ const ChatRoomScreen = () => {
     };
   };
 
-  const handleJoinRoom = async () => {
+  const handleJoinRoom = () => {
+    setShowNicknameModal(true);
+  };
+
+  const handleJoinWithNickname = async (nickname: string) => {
     if (!roomId || !currentUserId) return;
     
     setJoining(true);
@@ -215,6 +225,7 @@ const ChatRoomScreen = () => {
       .insert({
         room_id: roomId,
         user_id: currentUserId,
+        nickname: nickname,
       });
 
     if (error) {
@@ -225,14 +236,44 @@ const ChatRoomScreen = () => {
         variant: 'destructive',
       });
     } else {
+      setMyNickname(nickname);
+      setMemberNicknames(prev => ({ ...prev, [currentUserId]: nickname }));
       setIsMember(true);
+      setShowNicknameModal(false);
       toast({
         title: 'Bem-vindo!',
-        description: 'Você entrou na sala de chat.',
+        description: `Você entrou como "${nickname}".`,
       });
     }
     
     setJoining(false);
+  };
+
+  const handleUpdateNickname = async (nickname: string) => {
+    if (!roomId || !currentUserId) return;
+    
+    const { error } = await supabase
+      .from('chat_room_members')
+      .update({ nickname })
+      .eq('room_id', roomId)
+      .eq('user_id', currentUserId);
+
+    if (error) {
+      console.error('Error updating nickname:', error);
+      toast({
+        title: 'Erro',
+        description: 'Não foi possível atualizar o apelido.',
+        variant: 'destructive',
+      });
+    } else {
+      setMyNickname(nickname);
+      setMemberNicknames(prev => ({ ...prev, [currentUserId]: nickname }));
+      setShowNicknameModal(false);
+      toast({
+        title: 'Apelido atualizado!',
+        description: `Agora você é "${nickname}".`,
+      });
+    }
   };
 
   const handleLeaveRoom = async () => {
@@ -338,13 +379,22 @@ const ChatRoomScreen = () => {
           </div>
           <div className="flex items-center gap-2">
             {isMember && (
-              <button
-                onClick={handleLeaveRoom}
-                className="w-10 h-10 flex items-center justify-center text-muted-foreground hover:text-destructive"
-                title="Sair da sala"
-              >
-                <LogOut className="w-5 h-5" />
-              </button>
+              <>
+                <button
+                  onClick={() => setShowNicknameModal(true)}
+                  className="w-10 h-10 flex items-center justify-center text-muted-foreground hover:text-primary"
+                  title="Editar apelido"
+                >
+                  <Edit2 className="w-5 h-5" />
+                </button>
+                <button
+                  onClick={handleLeaveRoom}
+                  className="w-10 h-10 flex items-center justify-center text-muted-foreground hover:text-destructive"
+                  title="Sair da sala"
+                >
+                  <LogOut className="w-5 h-5" />
+                </button>
+              </>
             )}
             <button className="w-10 h-10 flex items-center justify-center text-muted-foreground">
               <MoreVertical className="w-5 h-5" />
@@ -354,7 +404,7 @@ const ChatRoomScreen = () => {
       </div>
 
       {/* Join Room Prompt */}
-      {!isMember && (
+      {!isMember && !showNicknameModal && (
         <div className="flex-1 flex flex-col items-center justify-center p-6">
           <div className="text-6xl mb-4">{room?.icon || '💬'}</div>
           <h2 className="text-xl font-semibold text-foreground mb-2">{room?.name}</h2>
@@ -366,15 +416,18 @@ const ChatRoomScreen = () => {
             disabled={joining}
             className="flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground rounded-full font-medium disabled:opacity-50"
           >
-            {joining ? (
-              <Loader2 className="w-5 h-5 animate-spin" />
-            ) : (
-              <LogIn className="w-5 h-5" />
-            )}
-            Entrar na Sala
+            Escolher Apelido e Entrar
           </button>
         </div>
       )}
+
+      {/* Nickname Modal */}
+      <NicknameModal
+        isOpen={showNicknameModal}
+        onClose={() => setShowNicknameModal(false)}
+        onSubmit={isMember ? handleUpdateNickname : handleJoinWithNickname}
+        roomName={room?.name || 'Chat'}
+      />
 
       {/* Messages */}
       {isMember && (
