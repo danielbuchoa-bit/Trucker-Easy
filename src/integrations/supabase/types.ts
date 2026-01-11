@@ -866,7 +866,21 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      poi_ratings_aggregate: {
+        Row: {
+          avg_cleanliness: number | null
+          avg_friendliness: number | null
+          avg_overall: number | null
+          avg_recommendation: number | null
+          avg_structure: number | null
+          poi_id: string | null
+          poi_name: string | null
+          poi_type: string | null
+          review_count: number | null
+          would_return_pct: number | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       can_create_report: { Args: { p_user_id: string }; Returns: boolean }
