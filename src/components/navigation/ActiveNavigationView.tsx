@@ -10,6 +10,7 @@ import { usePositionInterpolator } from '@/hooks/usePositionInterpolator';
 import { useMapPerformance } from '@/hooks/useMapPerformance';
 import { useWeighStationAlerts } from '@/hooks/useWeighStationAlerts';
 import { useSpeedAlerts } from '@/hooks/useSpeedAlerts';
+import { useSpeedLimit } from '@/hooks/useSpeedLimit';
 import { ALERT_TYPE_CONFIG, SpeedAlertType } from '@/types/speedAlerts';
 import NavigationHUD from './NavigationHUD';
 import SpeedIndicator from './SpeedIndicator';
@@ -235,6 +236,13 @@ const ActiveNavigationView = () => {
     enabled: true,
   });
 
+  // Current road speed limit
+  const currentSpeedLimit = useSpeedLimit({
+    lat: userPosition?.lat ?? null,
+    lng: userPosition?.lng ?? null,
+    heading: debugInfo.calculatedBearing ?? userPosition?.heading ?? null,
+    enabled: true,
+  });
   // Arrival detection hook
   const arrival = useArrivalDetection({
     lat: userPosition?.lat ?? null,
@@ -673,7 +681,15 @@ const ActiveNavigationView = () => {
 
       {/* Speed Indicator - Bottom Left */}
       <div className="absolute bottom-24 left-4 z-30">
-        <SpeedIndicator speedMph={speedMph} speedLimitMph={speedAlerts.criticalAlert?.speedLimitMph ?? 55} />
+        <SpeedIndicator 
+          speedMph={speedMph} 
+          speedLimitMph={
+            // Priority: 1) Speed alert zone limit, 2) Current road limit from API, 3) null
+            speedAlerts.criticalAlert?.speedLimit ?? 
+            currentSpeedLimit.speedLimitMph ?? 
+            null
+          } 
+        />
       </div>
 
       {/* Bottom ETA Bar */}

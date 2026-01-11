@@ -5,14 +5,15 @@ interface SpeedIndicatorProps {
   speedLimitMph?: number | null;
 }
 
-const SpeedIndicator = ({ speedMph, speedLimitMph = 55 }: SpeedIndicatorProps) => {
+const SpeedIndicator = ({ speedMph, speedLimitMph }: SpeedIndicatorProps) => {
   const currentSpeed = speedMph !== null ? Math.round(speedMph) : '--';
   const isOverLimit = speedLimitMph !== null && speedMph !== null && speedMph > speedLimitMph;
+  const hasSpeedLimit = speedLimitMph !== null && speedLimitMph !== undefined;
 
   return (
     <div className="flex items-stretch bg-card/95 backdrop-blur-md rounded-xl shadow-lg border border-border/50 overflow-hidden">
-      {/* Speed limit box */}
-      {speedLimitMph !== null && (
+      {/* Speed limit box - only show if we have a speed limit */}
+      {hasSpeedLimit && (
         <div className="flex flex-col items-center justify-center px-3 py-2 bg-card border-r border-border/50">
           <span className="text-[10px] font-bold text-muted-foreground leading-none">
             LIMIT
