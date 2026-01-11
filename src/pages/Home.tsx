@@ -1,16 +1,36 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect, useCallback } from 'react';
 import { useLanguage } from '@/i18n/LanguageContext';
-import { Search, Filter, MapPin, Navigation, Route, Utensils, Building2 } from 'lucide-react';
+import { Search, Filter, MapPin, Navigation, Route, Utensils, Building2, Loader2, RefreshCw, AlertCircle } from 'lucide-react';
 import BottomNav from '@/components/navigation/BottomNav';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import { supabase } from '@/integrations/supabase/client';
+import { getBrandLogo } from '@/lib/truckStopLogos';
+
+interface NearbyPlace {
+  id: string;
+  name: string;
+  type: 'truckStop' | 'weighStation' | 'restaurant' | 'restArea';
+  distance: string;
+  distanceMeters: number;
+  parking?: 'available' | 'limited' | 'full';
+  status?: 'open' | 'closed';
+  rating?: number;
+  lat: number;
+  lng: number;
+  address?: string;
+}
 
 const HomeScreen = () => {
   const { t } = useLanguage();
   const navigate = useNavigate();
   const [activeFilter, setActiveFilter] = useState('nearMe');
   const [searchQuery, setSearchQuery] = useState('');
+  const [places, setPlaces] = useState<NearbyPlace[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [locationError, setLocationError] = useState<string | null>(null);
 
   const filters = [
     { id: 'nearMe', label: t.map.nearMe, icon: Navigation },
@@ -20,62 +40,148 @@ const HomeScreen = () => {
     { id: 'restAreas', label: t.map.restAreas },
   ];
 
-  // Mock nearby places
-  const mockPlaces = [
-    {
-      id: '1',
-      name: 'Pilot Travel Center',
-      type: 'truckStop',
-      distance: '0.5 mi',
-      parking: 'available',
-      rating: 4.2,
-      isOpen: true,
-    },
-    {
-      id: '2',
-      name: 'Flying J',
-      type: 'truckStop',
-      distance: '1.2 mi',
-      parking: 'limited',
-      rating: 4.0,
-      isOpen: true,
-    },
-    {
-      id: '3',
-      name: 'Weigh Station I-40 E',
-      type: 'weighStation',
-      distance: '3.5 mi',
-      status: 'open',
-    },
-    {
-      id: '4',
-      name: "Love's Travel Stop",
-      type: 'truckStop',
-      distance: '5.0 mi',
-      parking: 'full',
-      rating: 4.5,
-      isOpen: true,
-    },
-    {
-      id: '5',
-      name: 'Diner 24/7',
-      type: 'restaurant',
-      distance: '0.9 mi',
-      rating: 4.1,
-      isOpen: true,
-    },
-    {
-      id: '6',
-      name: 'Roadside Rest Area',
-      type: 'restArea',
-      distance: '7.8 mi',
-      parking: 'available',
-      isOpen: true,
-    },
-  ];
+  // Get user's current location
+  const getUserLocation = useCallback(() => {
+    setLocationError(null);
+    
+    if (!navigator.geolocation) {
+      setLocationError('Geolocation is not supported by your browser');
+      setLoading(false);
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setUserLocation({
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+        });
+      },
+      (err) => {
+        console.error('Geolocation error:', err);
+        setLocationError('Unable to get your location. Please enable location services.');
+        setLoading(false);
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 60000, // Cache for 1 minute
+      }
+    );
+  }, []);
+
+  // Fetch nearby places from HERE API
+  const fetchNearbyPlaces = useCallback(async (lat: number, lng: number) => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      // Fetch truck stops
+      const { data: truckStopsData, error: truckStopsError } = await supabase.functions.invoke(
+        'here_browse_pois',
+        {
+          body: { lat, lng, radius: 32000 }, // 20 miles ≈ 32km
+        }
+      );
+
+      if (truckStopsError) throw truckStopsError;
+
+      // Fetch weigh stations from database
+      const { data: weighStations, error: weighError } = await supabase
+        .from('weigh_stations')
+        .select('*')
+        .eq('active', true);
+
+      if (weighError) throw weighError;
+
+      // Convert truck stops to NearbyPlace format
+      const truckStopPlaces: NearbyPlace[] = (truckStopsData?.pois || []).map((poi: any) => ({
+        id: poi.id,
+        name: poi.title || poi.name,
+        type: 'truckStop' as const,
+        distance: formatDistance(poi.distance),
+        distanceMeters: poi.distance,
+        lat: poi.position?.lat || poi.lat,
+        lng: poi.position?.lng || poi.lng,
+        address: poi.address?.label,
+        rating: poi.rating,
+        parking: getRandomParkingStatus(), // Would ideally come from real data
+      }));
+
+      // Convert weigh stations to NearbyPlace format with distance calculation
+      const weighStationPlaces: NearbyPlace[] = (weighStations || [])
+        .map((ws: any) => {
+          const distance = calculateDistance(lat, lng, ws.lat, ws.lng);
+          return {
+            id: ws.id,
+            name: ws.name,
+            type: 'weighStation' as const,
+            distance: formatDistance(distance),
+            distanceMeters: distance,
+            lat: ws.lat,
+            lng: ws.lng,
+            status: 'open' as const, // Would ideally come from real-time status
+          };
+        })
+        .filter((ws: NearbyPlace) => ws.distanceMeters <= 80000) // Within 50 miles
+        .sort((a: NearbyPlace, b: NearbyPlace) => a.distanceMeters - b.distanceMeters)
+        .slice(0, 5);
+
+      // Combine and sort by distance
+      const allPlaces = [...truckStopPlaces, ...weighStationPlaces].sort(
+        (a, b) => a.distanceMeters - b.distanceMeters
+      );
+
+      setPlaces(allPlaces);
+    } catch (err) {
+      console.error('Error fetching places:', err);
+      setError('Could not load nearby places. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // Calculate distance between two points in meters
+  const calculateDistance = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
+    const R = 6371000; // Earth's radius in meters
+    const dLat = ((lat2 - lat1) * Math.PI) / 180;
+    const dLng = ((lng2 - lng1) * Math.PI) / 180;
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos((lat1 * Math.PI) / 180) *
+        Math.cos((lat2 * Math.PI) / 180) *
+        Math.sin(dLng / 2) *
+        Math.sin(dLng / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  };
+
+  // Format distance for display
+  const formatDistance = (meters: number): string => {
+    const miles = meters / 1609.34;
+    return `${miles.toFixed(1)} mi`;
+  };
+
+  // Temporary: random parking status (would come from real data)
+  const getRandomParkingStatus = (): 'available' | 'limited' | 'full' => {
+    const statuses: ('available' | 'limited' | 'full')[] = ['available', 'limited', 'full'];
+    return statuses[Math.floor(Math.random() * statuses.length)];
+  };
+
+  // Get location on mount
+  useEffect(() => {
+    getUserLocation();
+  }, [getUserLocation]);
+
+  // Fetch places when location is available
+  useEffect(() => {
+    if (userLocation) {
+      fetchNearbyPlaces(userLocation.lat, userLocation.lng);
+    }
+  }, [userLocation, fetchNearbyPlaces]);
 
   const filteredPlaces = useMemo(() => {
-    const byType = mockPlaces.filter((place) => {
+    const byType = places.filter((place) => {
       if (activeFilter === 'nearMe') return true;
       if (activeFilter === 'truckStops') return place.type === 'truckStop';
       if (activeFilter === 'weighStations') return place.type === 'weighStation';
@@ -87,7 +193,7 @@ const HomeScreen = () => {
     const q = searchQuery.trim().toLowerCase();
     if (!q) return byType;
     return byType.filter((p) => p.name.toLowerCase().includes(q));
-  }, [activeFilter, mockPlaces, searchQuery]);
+  }, [activeFilter, places, searchQuery]);
 
   const getParkingColor = (status: string) => {
     switch (status) {
@@ -113,6 +219,10 @@ const HomeScreen = () => {
       default:
         return t.place.unknown;
     }
+  };
+
+  const handleRefresh = () => {
+    getUserLocation();
   };
 
   return (
@@ -159,7 +269,13 @@ const HomeScreen = () => {
       <div className="relative h-[40vh] bg-secondary/30 flex items-center justify-center border-b border-border">
         <div className="text-center">
           <MapPin className="w-12 h-12 text-primary mx-auto mb-2" />
-          <p className="text-muted-foreground text-sm">{t.common.loading}</p>
+          {userLocation ? (
+            <p className="text-muted-foreground text-sm">
+              📍 {userLocation.lat.toFixed(4)}, {userLocation.lng.toFixed(4)}
+            </p>
+          ) : (
+            <p className="text-muted-foreground text-sm">{t.common.loading}</p>
+          )}
           <p className="text-xs text-muted-foreground mt-1">Map integration coming soon</p>
           
           {/* Action Buttons */}
@@ -179,66 +295,124 @@ const HomeScreen = () => {
           </div>
         </div>
 
-        {/* Floating Current Location Button */}
-        <button className="absolute bottom-4 right-4 w-12 h-12 bg-card border border-border rounded-full shadow-lg flex items-center justify-center text-primary hover:bg-secondary transition-colors">
-          <Navigation className="w-5 h-5" />
+        {/* Floating Refresh Location Button */}
+        <button 
+          onClick={handleRefresh}
+          disabled={loading}
+          className="absolute bottom-4 right-4 w-12 h-12 bg-card border border-border rounded-full shadow-lg flex items-center justify-center text-primary hover:bg-secondary transition-colors disabled:opacity-50"
+        >
+          {loading ? (
+            <Loader2 className="w-5 h-5 animate-spin" />
+          ) : (
+            <Navigation className="w-5 h-5" />
+          )}
         </button>
       </div>
 
       {/* Nearby Places List */}
       <div className="p-4">
-        <h2 className="text-lg font-semibold mb-3">{t.map.nearMe}</h2>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-lg font-semibold">{t.map.nearMe}</h2>
+          <Button variant="ghost" size="sm" onClick={handleRefresh} disabled={loading}>
+            <RefreshCw className={`w-4 h-4 mr-1 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
+        </div>
 
-        {filteredPlaces.length === 0 ? (
-          <div className="bg-card border border-border rounded-xl p-4">
-            <p className="text-sm text-muted-foreground">Nenhum resultado para este filtro.</p>
+        {/* Location Error */}
+        {locationError && (
+          <div className="bg-destructive/10 border border-destructive/30 rounded-xl p-4 mb-4">
+            <div className="flex items-center gap-2 text-destructive">
+              <AlertCircle className="w-5 h-5" />
+              <p className="text-sm">{locationError}</p>
+            </div>
+            <Button variant="outline" size="sm" onClick={handleRefresh} className="mt-2">
+              Try Again
+            </Button>
           </div>
-        ) : (
+        )}
+
+        {/* Loading State */}
+        {loading && !locationError && (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="w-8 h-8 animate-spin text-primary" />
+            <span className="ml-2 text-muted-foreground">Finding nearby stops...</span>
+          </div>
+        )}
+
+        {/* Error State */}
+        {error && !loading && (
+          <div className="bg-card border border-border rounded-xl p-4 text-center">
+            <AlertCircle className="w-8 h-8 text-destructive mx-auto mb-2" />
+            <p className="text-sm text-muted-foreground">{error}</p>
+            <Button variant="outline" size="sm" onClick={handleRefresh} className="mt-2">
+              Try Again
+            </Button>
+          </div>
+        )}
+
+        {/* Empty State */}
+        {!loading && !error && filteredPlaces.length === 0 && (
+          <div className="bg-card border border-border rounded-xl p-4">
+            <p className="text-sm text-muted-foreground">No results for this filter.</p>
+          </div>
+        )}
+
+        {/* Places List */}
+        {!loading && !error && filteredPlaces.length > 0 && (
           <div className="space-y-3">
-            {filteredPlaces.map((place) => (
-              <button
-                key={place.id}
-                onClick={() => navigate(`/place/${place.id}`)}
-                className="w-full flex items-center gap-4 p-4 bg-card rounded-xl border border-border hover:border-primary/50 transition-all text-left"
-              >
-                <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
-                  <MapPin className="w-6 h-6 text-primary" />
-                </div>
-
-                <div className="flex-1 min-w-0">
-                  <h3 className="font-semibold text-foreground truncate">{place.name}</h3>
-                  <div className="flex items-center gap-2 mt-1">
-                    <span className="text-sm text-muted-foreground">{place.distance}</span>
-                    {place.parking && (
-                      <>
-                        <span className="text-muted-foreground">•</span>
-                        <div className="flex items-center gap-1.5">
-                          <div className={`w-2 h-2 rounded-full ${getParkingColor(place.parking)}`} />
-                          <span className="text-sm text-muted-foreground">{getParkingLabel(place.parking)}</span>
-                        </div>
-                      </>
-                    )}
-                    {place.status && (
-                      <>
-                        <span className="text-muted-foreground">•</span>
-                        <span
-                          className={`text-sm ${place.status === 'open' ? 'text-status-open' : 'text-status-closed'}`}
-                        >
-                          {place.status === 'open' ? t.place.weighOpen : t.place.weighClosed}
-                        </span>
-                      </>
+            {filteredPlaces.map((place) => {
+              const BrandLogo = getBrandLogo(place.name);
+              
+              return (
+                <button
+                  key={place.id}
+                  onClick={() => navigate(`/place/${place.id}`)}
+                  className="w-full flex items-center gap-4 p-4 bg-card rounded-xl border border-border hover:border-primary/50 transition-all text-left"
+                >
+                  <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0 overflow-hidden">
+                    {BrandLogo ? (
+                      <BrandLogo className="w-8 h-8" />
+                    ) : (
+                      <MapPin className="w-6 h-6 text-primary" />
                     )}
                   </div>
-                </div>
 
-                {place.rating && (
-                  <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                    <span className="text-primary">★</span>
-                    <span>{place.rating}</span>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-semibold text-foreground truncate">{place.name}</h3>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-sm text-muted-foreground">{place.distance}</span>
+                      {place.parking && (
+                        <>
+                          <span className="text-muted-foreground">•</span>
+                          <div className="flex items-center gap-1.5">
+                            <div className={`w-2 h-2 rounded-full ${getParkingColor(place.parking)}`} />
+                            <span className="text-sm text-muted-foreground">{getParkingLabel(place.parking)}</span>
+                          </div>
+                        </>
+                      )}
+                      {place.status && (
+                        <>
+                          <span className="text-muted-foreground">•</span>
+                          <span
+                            className={`text-sm ${place.status === 'open' ? 'text-status-open' : 'text-status-closed'}`}
+                          >
+                            {place.status === 'open' ? t.place.weighOpen : t.place.weighClosed}
+                          </span>
+                        </>
+                      )}
+                    </div>
                   </div>
-                )}
-              </button>
-            ))}
+
+                  {place.rating && (
+                    <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                      <span className="text-primary">★</span>
+                      <span>{place.rating}</span>
+                    </div>
+                  )}
+                </button>
+              );
+            })}
           </div>
         )}
       </div>
