@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { Navigation, MapPin } from 'lucide-react';
+import { Navigation, MapPin, Star } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Sheet,
@@ -20,6 +20,9 @@ import {
 } from '@/components/ui/alert-dialog';
 import { detectBrand, getInitial, getColorForInitial, type TruckBrand } from '@/lib/truckBrands';
 import { getBrandLogo, GenericTruckStopLogo } from '@/lib/truckStopLogos';
+import { usePoiRatings } from '@/hooks/usePoiRatings';
+import PoiRatingBadge from '@/components/poi/PoiRatingBadge';
+import PoiRatingDetails from '@/components/poi/PoiRatingDetails';
 
 interface Poi {
   id: string;
@@ -48,9 +51,10 @@ interface NearbyPoisOverlayProps {
   onPoisUpdate?: (pois: Poi[]) => void;
 }
 
-// HERE category IDs - ONLY Truck Stops (no regular gas stations)
+// HERE category IDs - Truck Stops AND Gas Stations for driver convenience
 const TRUCK_CATEGORIES = [
-  '700-7850-0000',   // Truck Stop / Service Area ONLY
+  '700-7850-0000',   // Truck Stop / Service Area
+  '700-7600-0000',   // Fueling Station / Gas Station
 ];
 
 // Color to hex mapping for generic logos
@@ -125,14 +129,15 @@ const BrandLogo = React.memo<{
 BrandLogo.displayName = 'BrandLogo';
 
 /**
- * POI Card with brand logo and distance indicator
+ * POI Card with brand logo, distance indicator, and rating
  * Trucker Path style with colored distance badge
  */
 const PoiCard = React.memo<{ 
   poi: Poi; 
   onClick: () => void;
   color: 'green' | 'teal' | 'orange' | 'red';
-}>(({ poi, onClick, color }) => {
+  rating?: { avg_overall: number; review_count: number };
+}>(({ poi, onClick, color, rating }) => {
   const distanceDisplay = poi.distanceMiles < 10 
     ? `${poi.distanceMiles.toFixed(0)}` 
     : `${Math.round(poi.distanceMiles)}`;
@@ -147,7 +152,7 @@ const PoiCard = React.memo<{
   return (
     <button
       onClick={onClick}
-      className="flex items-center gap-2 text-left group"
+      className="flex items-center gap-1 text-left group"
     >
       {/* Brand logo + Distance - Combined card */}
       <div className={`flex items-center gap-1.5 px-1.5 py-1 rounded-lg ${colorClasses[color]}`}>
@@ -161,6 +166,14 @@ const PoiCard = React.memo<{
           <span className="text-[9px] font-semibold leading-none opacity-80">mi</span>
         </div>
       </div>
+      {/* Rating badge if available */}
+      {rating && rating.review_count > 0 && (
+        <PoiRatingBadge 
+          rating={rating.avg_overall} 
+          reviewCount={rating.review_count}
+          size="sm"
+        />
+      )}
     </button>
   );
 });
@@ -180,6 +193,9 @@ const NearbyPoisOverlay: React.FC<NearbyPoisOverlayProps> = ({
   const [selectedPoi, setSelectedPoi] = useState<Poi | null>(null);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const lastFetchRef = useRef<{ lat: number; lng: number; time: number } | null>(null);
+  
+  // POI ratings hook
+  const { ratings, fetchRatingsForPois } = usePoiRatings();
 
   useEffect(() => {
     if (lat === null || lng === null) return;
@@ -217,6 +233,10 @@ const NearbyPoisOverlay: React.FC<NearbyPoisOverlayProps> = ({
           const allPois = data.pois.slice(0, 10);
           setPois(allPois.slice(0, 5));
           
+          // Fetch ratings for these POIs
+          const poiIds = allPois.map((p: Poi) => p.id);
+          fetchRatingsForPois(poiIds);
+          
           // Notify parent for arrival detection
           if (onPoisUpdate) {
             onPoisUpdate(allPois.map((p: Poi) => ({
@@ -238,7 +258,7 @@ const NearbyPoisOverlay: React.FC<NearbyPoisOverlayProps> = ({
     };
 
     fetchPois();
-  }, [lat, lng, heading]);
+  }, [lat, lng, heading, fetchRatingsForPois]);
 
   const handleNavigateClick = () => {
     if (!selectedPoi) return;
@@ -288,19 +308,23 @@ const NearbyPoisOverlay: React.FC<NearbyPoisOverlayProps> = ({
         )}
         
         {/* Show max 3 POIs to avoid overflow */}
-        {pois.slice(0, 3).map((poi) => (
-          <PoiCard
-            key={poi.id}
-            poi={poi}
-            onClick={() => setSelectedPoi(poi)}
-            color={getPoiColor(poi.distanceMiles)}
-          />
-        ))}
+        {pois.slice(0, 3).map((poi) => {
+          const poiRating = ratings.get(poi.id);
+          return (
+            <PoiCard
+              key={poi.id}
+              poi={poi}
+              onClick={() => setSelectedPoi(poi)}
+              color={getPoiColor(poi.distanceMiles)}
+              rating={poiRating ? { avg_overall: poiRating.avg_overall, review_count: poiRating.review_count } : undefined}
+            />
+          );
+        })}
       </div>
 
       {/* POI Detail Sheet */}
       <Sheet open={!!selectedPoi && !showConfirmDialog} onOpenChange={(open) => !open && setSelectedPoi(null)}>
-        <SheetContent side="bottom" className="h-auto max-h-[50vh]">
+        <SheetContent side="bottom" className="h-auto max-h-[70vh] overflow-y-auto">
           {selectedPoi && (
             <>
               <SheetHeader>
@@ -318,29 +342,50 @@ const NearbyPoisOverlay: React.FC<NearbyPoisOverlayProps> = ({
                       <span className="text-sm font-semibold text-primary">
                         {selectedPoi.distanceMiles.toFixed(1)} mi
                       </span>
+                      {ratings.get(selectedPoi.id) && (
+                        <PoiRatingBadge 
+                          rating={ratings.get(selectedPoi.id)!.avg_overall}
+                          reviewCount={ratings.get(selectedPoi.id)!.review_count}
+                          size="md"
+                        />
+                      )}
                     </div>
                   </div>
                 </div>
               </SheetHeader>
 
-              <div className="mt-4 space-y-3">
+              <div className="mt-4 space-y-4">
+                {/* Rating Details Section */}
+                {ratings.get(selectedPoi.id) && (
+                  <PoiRatingDetails rating={ratings.get(selectedPoi.id)!} />
+                )}
+
                 <div className="text-sm text-muted-foreground">
                   {selectedPoi.address}
                 </div>
 
                 {selectedPoi.openingHours && (
                   <div className="text-sm">
-                    <span className="text-muted-foreground">Hours: </span>
+                    <span className="text-muted-foreground">Horário: </span>
                     {selectedPoi.openingHours}
                   </div>
                 )}
 
                 {selectedPoi.contacts && (
                   <div className="text-sm">
-                    <span className="text-muted-foreground">Phone: </span>
+                    <span className="text-muted-foreground">Telefone: </span>
                     <a href={`tel:${selectedPoi.contacts}`} className="text-primary">
                       {selectedPoi.contacts}
                     </a>
+                  </div>
+                )}
+
+                {!ratings.get(selectedPoi.id) && (
+                  <div className="p-3 bg-muted/50 rounded-lg text-center">
+                    <Star className="w-5 h-5 text-muted-foreground mx-auto mb-1" />
+                    <p className="text-xs text-muted-foreground">
+                      Nenhuma avaliação ainda. Seja o primeiro a avaliar!
+                    </p>
                   </div>
                 )}
 
@@ -352,12 +397,12 @@ const NearbyPoisOverlay: React.FC<NearbyPoisOverlayProps> = ({
                     {hasActiveTrip ? (
                       <>
                         <MapPin className="w-4 h-4 mr-2" />
-                        Add as Next Stop
+                        Adicionar Parada
                       </>
                     ) : (
                       <>
                         <Navigation className="w-4 h-4 mr-2" />
-                        Navigate Here
+                        Navegar
                       </>
                     )}
                   </Button>
@@ -365,7 +410,7 @@ const NearbyPoisOverlay: React.FC<NearbyPoisOverlayProps> = ({
                     variant="outline" 
                     onClick={() => setSelectedPoi(null)}
                   >
-                    Close
+                    Fechar
                   </Button>
                 </div>
               </div>
