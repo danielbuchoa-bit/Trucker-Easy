@@ -111,8 +111,14 @@ export function usePositionInterpolator(
   // Smoothed values (adaptive EMA)
   const smoothedSpeedRef = useRef<number>(0);
   const smoothedHeadingRef = useRef<number>(0);
+  
+  // Throttle state updates to reduce re-renders
+  const lastStateUpdateRef = useRef<number>(0);
+  const STATE_UPDATE_INTERVAL = 50; // 20fps for state updates (vs 60fps animation)
+  const pendingStateRef = useRef<InterpolatedPosition | null>(null);
 
   // Animation loop - runs continuously at 60fps when active
+  // But only updates React state at 20fps to reduce re-renders
   const animationLoop = useCallback(() => {
     if (!isRunningRef.current) {
       rafRef.current = null;
@@ -190,8 +196,8 @@ export function usePositionInterpolator(
       return;
     }
 
-    // Update interpolated state (triggers re-render)
-    setInterpolated({
+    // Prepare new state
+    const newState: InterpolatedPosition = {
       lat: curr.lat,
       lng: curr.lng,
       heading: curr.heading,
@@ -203,7 +209,16 @@ export function usePositionInterpolator(
       interpolationProgress,
       isDeadReckoning,
       timeSinceLastFix,
-    });
+    };
+    
+    // Store pending state
+    pendingStateRef.current = newState;
+    
+    // Only update React state at throttled rate (20fps)
+    if (now - lastStateUpdateRef.current >= STATE_UPDATE_INTERVAL) {
+      lastStateUpdateRef.current = now;
+      setInterpolated(pendingStateRef.current);
+    }
 
     rafRef.current = requestAnimationFrame(animationLoop);
   }, []);
