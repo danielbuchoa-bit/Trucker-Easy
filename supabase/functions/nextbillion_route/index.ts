@@ -146,6 +146,20 @@ serve(async (req) => {
     const data = await response.json();
 
     console.log('[NEXTBILLION_ROUTE] Response status:', response.status);
+    
+    // Debug: Log the full response structure to understand the format
+    console.log('[NEXTBILLION_ROUTE] Full response keys:', Object.keys(data));
+    if (data.routes && data.routes[0]) {
+      const route = data.routes[0];
+      console.log('[NEXTBILLION_ROUTE] Route keys:', Object.keys(route));
+      if (route.legs && route.legs[0]) {
+        console.log('[NEXTBILLION_ROUTE] Leg keys:', Object.keys(route.legs[0]));
+        console.log('[NEXTBILLION_ROUTE] Leg values:', {
+          distance: route.legs[0].distance,
+          duration: route.legs[0].duration,
+        });
+      }
+    }
 
     if (!response.ok || data.status !== 'Ok') {
       console.error('[NEXTBILLION_ROUTE] API Error:', data);
@@ -170,22 +184,19 @@ serve(async (req) => {
 
     const leg = route.legs?.[0];
     
-    // Debug: log the raw structure to understand the format
-    console.log('[NEXTBILLION_ROUTE] Route structure:', {
-      hasGeometry: !!route.geometry,
-      geometryLength: route.geometry?.length || 0,
-      routeDistance: route.distance,
-      routeDuration: route.duration,
-      legDistance: leg?.distance,
-      legDuration: leg?.duration,
-      stepsCount: leg?.steps?.length || 0,
-    });
+    // Helper to extract value from NextBillion's format (can be { value: number } or number)
+    const extractValue = (val: any): number => {
+      if (val === null || val === undefined) return 0;
+      if (typeof val === 'number') return val;
+      if (typeof val === 'object' && 'value' in val) return val.value || 0;
+      return 0;
+    };
     
     // Extract turn-by-turn instructions
     const instructions = leg?.steps?.map((step: any) => ({
       instruction: step.maneuver?.instruction || '',
-      duration: step.duration || 0,
-      distance: step.distance || 0,
+      duration: extractValue(step.duration),
+      distance: extractValue(step.distance),
       maneuverType: step.maneuver?.type || '',
       modifier: step.maneuver?.modifier || '',
       roadName: step.name || '',
@@ -193,21 +204,21 @@ serve(async (req) => {
       geometry: step.geometry || '',
     })) || [];
 
-    // Calculate distance and duration from legs if not available at route level
-    // NextBillion may use different property names
+    // Calculate distance and duration from legs
+    // NextBillion uses { value: number } format for distance/duration
     let totalDistance = 0;
     let totalDuration = 0;
     
     if (route.legs && Array.isArray(route.legs)) {
       for (const l of route.legs) {
-        totalDistance += l.distance || 0;
-        totalDuration += l.duration || 0;
+        totalDistance += extractValue(l.distance);
+        totalDuration += extractValue(l.duration);
       }
     }
     
     // Fallback to route-level values if available
-    if (totalDistance === 0 && route.distance) totalDistance = route.distance;
-    if (totalDuration === 0 && route.duration) totalDuration = route.duration;
+    if (totalDistance === 0) totalDistance = extractValue(route.distance);
+    if (totalDuration === 0) totalDuration = extractValue(route.duration);
 
     // Build result
     const result = {
@@ -232,8 +243,8 @@ serve(async (req) => {
       // Alternative routes if available
       alternatives: data.routes?.slice(1).map((alt: any) => ({
         polyline: alt.geometry || '',
-        distance: alt.legs?.[0]?.distance || alt.distance || 0,
-        duration: alt.legs?.[0]?.duration || alt.duration || 0,
+        distance: extractValue(alt.legs?.[0]?.distance) || extractValue(alt.distance),
+        duration: extractValue(alt.legs?.[0]?.duration) || extractValue(alt.duration),
       })) || [],
     };
 
