@@ -32,12 +32,18 @@ export const usePoiFeedback = () => {
 // POI types that trigger feedback
 const FEEDBACK_POI_TYPES = ['fuel', 'truck_stop', 'rest_area'];
 
-// HERE category IDs for truck-related POIs - ONLY truck stops
-const TRUCK_CATEGORIES = ['700-7850-0000'];
+// HERE category IDs for truck-related POIs - EXPANDED to include gas stations and rest areas
+const TRUCK_CATEGORIES = [
+  '700-7850-0000',   // Truck Stop / Service Area
+  '700-7600-0000',   // Fueling Station / Gas Station
+  '700-7600-0116',   // Petrol Station
+  '700-7600-0117',   // Diesel Station
+  '550-5510-0000',   // Rest Area
+];
 
 // Distance thresholds - INCREASED for truck stop detection
-const ENTER_RADIUS_M = 150; // Enter when within 150m
-const EXIT_RADIUS_M = 250; // Exit when beyond 250m
+const ENTER_RADIUS_M = 200; // Enter when within 200m (increased for better detection)
+const EXIT_RADIUS_M = 350; // Exit when beyond 350m (increased for hysteresis)
 const MIN_STAY_TIME_MS = 60000; // Minimum 1 minute stay to trigger feedback
 
 export const PoiFeedbackProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -139,9 +145,9 @@ export const PoiFeedbackProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
   // Map HERE category to our type
   const mapPoiType = (category: string): 'fuel' | 'truck_stop' | 'rest_area' => {
-    if (category.includes('truck')) return 'truck_stop';
-    if (category.includes('rest')) return 'rest_area';
-    return 'fuel';
+    if (category.includes('7850')) return 'truck_stop'; // Truck Stop category
+    if (category.includes('5510') || category.includes('rest')) return 'rest_area'; // Rest Area
+    return 'fuel'; // Default to fuel for gas stations
   };
 
   // Monitor position and detect POI entry/exit
