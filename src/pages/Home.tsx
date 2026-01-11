@@ -6,6 +6,7 @@ import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/supabase/client';
 import { getBrandLogo } from '@/lib/truckStopLogos';
+import LocationErrorCard from '@/components/location/LocationErrorCard';
 
 interface NearbyPlace {
   id: string;
@@ -31,6 +32,7 @@ const HomeScreen = () => {
   const [error, setError] = useState<string | null>(null);
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [locationError, setLocationError] = useState<string | null>(null);
+  const [locationErrorCode, setLocationErrorCode] = useState<number | undefined>(undefined);
 
   const filters = [
     { id: 'nearMe', label: t.map.nearMe, icon: Navigation },
@@ -43,29 +45,54 @@ const HomeScreen = () => {
   // Get user's current location
   const getUserLocation = useCallback(() => {
     setLocationError(null);
+    setLocationErrorCode(undefined);
+    setLoading(true);
     
     if (!navigator.geolocation) {
       setLocationError('Geolocation is not supported by your browser');
+      setLocationErrorCode(0);
       setLoading(false);
       return;
     }
 
+    // Check if in secure context (HTTPS)
+    if (window.isSecureContext === false) {
+      console.warn('[Location] Not in secure context, geolocation may fail');
+    }
+
     navigator.geolocation.getCurrentPosition(
       (position) => {
+        setLocationError(null);
+        setLocationErrorCode(undefined);
         setUserLocation({
           lat: position.coords.latitude,
           lng: position.coords.longitude,
         });
       },
       (err) => {
-        console.error('Geolocation error:', err);
-        setLocationError('Unable to get your location. Please enable location services.');
+        console.error('[Location] Geolocation error:', err.code, err.message);
+        setLocationErrorCode(err.code);
+        
+        // More descriptive error messages
+        switch (err.code) {
+          case 1: // PERMISSION_DENIED
+            setLocationError('Permissão de localização negada');
+            break;
+          case 2: // POSITION_UNAVAILABLE
+            setLocationError('Localização indisponível');
+            break;
+          case 3: // TIMEOUT
+            setLocationError('Tempo esgotado ao buscar localização');
+            break;
+          default:
+            setLocationError('Erro ao obter localização');
+        }
         setLoading(false);
       },
       {
         enableHighAccuracy: true,
-        timeout: 10000,
-        maximumAge: 60000, // Cache for 1 minute
+        timeout: 15000, // Increased timeout for slower devices
+        maximumAge: 60000,
       }
     );
   }, []);
@@ -321,15 +348,11 @@ const HomeScreen = () => {
 
         {/* Location Error */}
         {locationError && (
-          <div className="bg-destructive/10 border border-destructive/30 rounded-xl p-4 mb-4">
-            <div className="flex items-center gap-2 text-destructive">
-              <AlertCircle className="w-5 h-5" />
-              <p className="text-sm">{locationError}</p>
-            </div>
-            <Button variant="outline" size="sm" onClick={handleRefresh} className="mt-2">
-              Try Again
-            </Button>
-          </div>
+          <LocationErrorCard 
+            errorCode={locationErrorCode} 
+            onRetry={handleRefresh} 
+            loading={loading} 
+          />
         )}
 
         {/* Loading State */}
