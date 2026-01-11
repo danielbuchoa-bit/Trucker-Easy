@@ -15,7 +15,10 @@ export interface RouteRequest {
   transportMode?: 'truck' | 'car';
   avoidTolls?: boolean;
   avoidFerries?: boolean;
+  avoidHighways?: boolean;
   truckProfile?: TruckProfile;
+  // Optional waypoints for multi-stop routes
+  waypoints?: Array<{ lat: number; lng: number }>;
 }
 
 export interface GeocodeResult {
@@ -148,18 +151,89 @@ class HereServiceClass {
   }
 
   async calculateRoute(request: RouteRequest): Promise<RouteResponse> {
-    console.log('[HereService] Calling: Routing API', { 
+    const isTruck = request.transportMode === 'truck';
+    const routingProvider = isTruck ? 'NextBillion' : 'HERE';
+    
+    console.log(`[HereService] Calling: ${routingProvider} Routing API`, { 
       origin: `${request.originLat},${request.originLng}`,
       dest: `${request.destLat},${request.destLng}`,
       mode: request.transportMode,
+      provider: routingProvider,
     });
+
+    // Use NextBillion for truck routing, HERE for car routing
+    if (isTruck) {
+      return this.calculateRouteWithNextBillion(request);
+    } else {
+      return this.calculateRouteWithHere(request);
+    }
+  }
+
+  private async calculateRouteWithNextBillion(request: RouteRequest): Promise<RouteResponse> {
+    const truckProfile = request.truckProfile || DEFAULT_TRUCK_PROFILE;
     
+    const { data, error } = await supabase.functions.invoke('nextbillion_route', {
+      body: {
+        originLat: request.originLat,
+        originLng: request.originLng,
+        destLat: request.destLat,
+        destLng: request.destLng,
+        avoidTolls: request.avoidTolls,
+        avoidHighways: request.avoidHighways,
+        avoidFerries: request.avoidFerries,
+        truckProfile: {
+          trailerLengthFt: truckProfile.trailerLengthFt,
+          heightFt: truckProfile.heightFt,
+          widthFt: 8.5, // Default truck width
+          weightLbs: truckProfile.weightLbs,
+          axles: truckProfile.axles,
+        },
+        waypoints: request.waypoints,
+      },
+    });
+
+    if (error) {
+      this.logApiResult('Routing', 'nextbillion_route', 'error', { message: error.message, status: error.status });
+      throw new Error(error.message || 'Failed to calculate truck route');
+    }
+
+    if (data.error) {
+      this.logApiResult('Routing', 'nextbillion_route', 'error', { message: data.error, status: data.status });
+      throw new Error(data.error);
+    }
+
+    // Map NextBillion response to RouteResponse format
+    const instructions: RouteInstruction[] = (data.instructions || []).map((inst: any, index: number) => ({
+      instruction: inst.instruction || '',
+      duration: inst.duration || 0,
+      length: inst.distance || 0,
+      direction: inst.modifier || '',
+      action: inst.maneuverType || '',
+      roadName: inst.roadName || '',
+      offset: index,
+    }));
+
+    this.logApiResult('Routing', 'nextbillion_route', 'success', { 
+      distance: data.distance, 
+      duration: data.duration,
+      instructions: instructions.length,
+      provider: 'NextBillion',
+    });
+
+    return {
+      polyline: data.polyline,
+      distance: data.distance,
+      duration: data.duration,
+      instructions,
+      transportMode: 'truck',
+    };
+  }
+
+  private async calculateRouteWithHere(request: RouteRequest): Promise<RouteResponse> {
     const { data, error } = await supabase.functions.invoke('here_route', {
       body: {
         ...request,
-        truckProfile: request.transportMode === 'truck' 
-          ? (request.truckProfile || DEFAULT_TRUCK_PROFILE)
-          : undefined,
+        truckProfile: undefined, // Car mode doesn't need truck profile
       },
     });
 
@@ -177,7 +251,9 @@ class HereServiceClass {
       distance: data.distance, 
       duration: data.duration,
       instructions: data.instructions?.length || 0,
+      provider: 'HERE',
     });
+    
     return data as RouteResponse;
   }
 
