@@ -1,79 +1,315 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { useLanguage } from '@/i18n/LanguageContext';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Send, MoreVertical, Users, Flag } from 'lucide-react';
+import { ArrowLeft, Send, MoreVertical, Users, Flag, Loader2, LogIn, LogOut } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
+import { useToast } from '@/hooks/use-toast';
+import { format } from 'date-fns';
+
+interface ChatRoom {
+  id: string;
+  name: string;
+  icon: string | null;
+  member_count: number;
+}
+
+interface ChatMessage {
+  id: string;
+  content: string;
+  created_at: string;
+  user_id: string;
+  user_nickname?: string;
+  user_phone?: string;
+}
+
+interface UserProfile {
+  id: string;
+  full_name: string | null;
+  phone: string | null;
+}
 
 const ChatRoomScreen = () => {
   const { t } = useLanguage();
   const navigate = useNavigate();
-  const { id } = useParams();
+  const { toast } = useToast();
+  const { id: roomId } = useParams();
   const [message, setMessage] = useState('');
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [room, setRoom] = useState<ChatRoom | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [sending, setSending] = useState(false);
+  const [isMember, setIsMember] = useState(false);
+  const [joining, setJoining] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [userProfiles, setUserProfiles] = useState<Record<string, UserProfile>>({});
+  const [memberNicknames, setMemberNicknames] = useState<Record<string, string>>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Mock community data
-  const community = {
-    id,
-    name: 'Truckers USA',
-    members: 12453,
-    icon: '🇺🇸',
-  };
+  useEffect(() => {
+    checkAuth();
+  }, []);
 
-  // Mock messages
-  const [messages] = useState([
-    {
-      id: '1',
-      user: 'BigRigBob',
-      text: 'Anyone knows if the I-40 weigh station is open?',
-      time: '10:30 AM',
-      isMe: false,
-    },
-    {
-      id: '2',
-      user: 'You',
-      text: 'Just passed it, it was closed!',
-      time: '10:32 AM',
-      isMe: true,
-    },
-    {
-      id: '3',
-      user: 'HighwayQueen',
-      text: 'Thanks for the heads up! 🙏',
-      time: '10:33 AM',
-      isMe: false,
-    },
-    {
-      id: '4',
-      user: 'OTRVeteran',
-      text: 'Traffic is getting heavy on I-35 near Dallas. Heads up!',
-      time: '10:45 AM',
-      isMe: false,
-    },
-    {
-      id: '5',
-      user: 'LoneStarDriver',
-      text: 'Yeah I noticed that too. Taking the back roads instead.',
-      time: '10:47 AM',
-      isMe: false,
-    },
-    {
-      id: '6',
-      user: 'You',
-      text: 'Good call. Stay safe out there everyone!',
-      time: '10:50 AM',
-      isMe: true,
-    },
-  ]);
+  useEffect(() => {
+    if (roomId && currentUserId) {
+      fetchRoom();
+      checkMembership();
+    }
+  }, [roomId, currentUserId]);
+
+  useEffect(() => {
+    if (isMember && roomId) {
+      fetchMessages();
+      subscribeToMessages();
+    }
+  }, [isMember, roomId]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const handleSend = () => {
-    if (message.trim()) {
-      // Add message logic here
-      setMessage('');
+  const checkAuth = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      setCurrentUserId(user.id);
+    } else {
+      toast({
+        title: 'Login necessário',
+        description: 'Você precisa estar logado para acessar o chat.',
+        variant: 'destructive',
+      });
+      navigate('/auth');
     }
   };
+
+  const fetchRoom = async () => {
+    if (!roomId) return;
+    
+    const { data, error } = await supabase
+      .from('chat_rooms')
+      .select('id, name, icon, member_count')
+      .eq('id', roomId)
+      .single();
+
+    if (error) {
+      console.error('Error fetching room:', error);
+      return;
+    }
+    
+    setRoom(data);
+  };
+
+  const checkMembership = async () => {
+    if (!roomId || !currentUserId) return;
+    
+    const { data } = await supabase
+      .from('chat_room_members')
+      .select('id, nickname')
+      .eq('room_id', roomId)
+      .eq('user_id', currentUserId)
+      .maybeSingle();
+
+    setIsMember(!!data);
+    setLoading(false);
+  };
+
+  const fetchMessages = async () => {
+    if (!roomId) return;
+
+    const { data: messagesData, error } = await supabase
+      .from('chat_messages')
+      .select('*')
+      .eq('room_id', roomId)
+      .order('created_at', { ascending: true })
+      .limit(100);
+
+    if (error) {
+      console.error('Error fetching messages:', error);
+      return;
+    }
+
+    if (messagesData) {
+      setMessages(messagesData);
+      
+      // Fetch user profiles for message authors
+      const userIds = [...new Set(messagesData.map(m => m.user_id))];
+      await fetchUserProfiles(userIds);
+      await fetchMemberNicknames(userIds);
+    }
+  };
+
+  const fetchUserProfiles = async (userIds: string[]) => {
+    if (userIds.length === 0) return;
+
+    const { data } = await supabase
+      .from('profiles')
+      .select('id, full_name, phone')
+      .in('id', userIds);
+
+    if (data) {
+      const profilesMap: Record<string, UserProfile> = {};
+      data.forEach(profile => {
+        profilesMap[profile.id] = profile;
+      });
+      setUserProfiles(prev => ({ ...prev, ...profilesMap }));
+    }
+  };
+
+  const fetchMemberNicknames = async (userIds: string[]) => {
+    if (userIds.length === 0 || !roomId) return;
+
+    const { data } = await supabase
+      .from('chat_room_members')
+      .select('user_id, nickname')
+      .eq('room_id', roomId)
+      .in('user_id', userIds);
+
+    if (data) {
+      const nicknamesMap: Record<string, string> = {};
+      data.forEach(member => {
+        if (member.nickname) {
+          nicknamesMap[member.user_id] = member.nickname;
+        }
+      });
+      setMemberNicknames(prev => ({ ...prev, ...nicknamesMap }));
+    }
+  };
+
+  const subscribeToMessages = () => {
+    if (!roomId) return;
+
+    const channel = supabase
+      .channel(`room-${roomId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'chat_messages',
+          filter: `room_id=eq.${roomId}`,
+        },
+        async (payload) => {
+          const newMessage = payload.new as ChatMessage;
+          setMessages(prev => [...prev, newMessage]);
+          
+          // Fetch profile for new message author if not cached
+          if (!userProfiles[newMessage.user_id]) {
+            await fetchUserProfiles([newMessage.user_id]);
+            await fetchMemberNicknames([newMessage.user_id]);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  };
+
+  const handleJoinRoom = async () => {
+    if (!roomId || !currentUserId) return;
+    
+    setJoining(true);
+    
+    const { error } = await supabase
+      .from('chat_room_members')
+      .insert({
+        room_id: roomId,
+        user_id: currentUserId,
+      });
+
+    if (error) {
+      console.error('Error joining room:', error);
+      toast({
+        title: 'Erro',
+        description: 'Não foi possível entrar na sala.',
+        variant: 'destructive',
+      });
+    } else {
+      setIsMember(true);
+      toast({
+        title: 'Bem-vindo!',
+        description: 'Você entrou na sala de chat.',
+      });
+    }
+    
+    setJoining(false);
+  };
+
+  const handleLeaveRoom = async () => {
+    if (!roomId || !currentUserId) return;
+    
+    const { error } = await supabase
+      .from('chat_room_members')
+      .delete()
+      .eq('room_id', roomId)
+      .eq('user_id', currentUserId);
+
+    if (error) {
+      console.error('Error leaving room:', error);
+    } else {
+      setIsMember(false);
+      setMessages([]);
+      toast({
+        title: 'Você saiu',
+        description: 'Você saiu da sala de chat.',
+      });
+    }
+  };
+
+  const handleSend = async () => {
+    if (!message.trim() || !roomId || !currentUserId || sending) return;
+    
+    setSending(true);
+    
+    const { error } = await supabase
+      .from('chat_messages')
+      .insert({
+        room_id: roomId,
+        user_id: currentUserId,
+        content: message.trim(),
+      });
+
+    if (error) {
+      console.error('Error sending message:', error);
+      toast({
+        title: 'Erro',
+        description: 'Não foi possível enviar a mensagem.',
+        variant: 'destructive',
+      });
+    } else {
+      setMessage('');
+    }
+    
+    setSending(false);
+  };
+
+  const getUserDisplayName = (userId: string) => {
+    // Priority: nickname > full_name > phone > anonymous
+    const nickname = memberNicknames[userId];
+    if (nickname) return nickname;
+    
+    const profile = userProfiles[userId];
+    if (profile?.full_name) return profile.full_name;
+    if (profile?.phone) return `📱 ${profile.phone}`;
+    
+    return 'Motorista';
+  };
+
+  const formatMessageTime = (dateStr: string) => {
+    try {
+      return format(new Date(dateStr), 'HH:mm');
+    } catch {
+      return '';
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="h-screen flex items-center justify-center bg-background">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   return (
     <div className="h-screen flex flex-col bg-background">
@@ -89,77 +325,130 @@ const ChatRoomScreen = () => {
             </button>
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-full bg-secondary flex items-center justify-center text-xl">
-                {community.icon}
+                {room?.icon || '💬'}
               </div>
               <div>
-                <h1 className="font-semibold text-foreground">{community.name}</h1>
+                <h1 className="font-semibold text-foreground">{room?.name || 'Chat'}</h1>
                 <div className="flex items-center gap-1 text-xs text-muted-foreground">
                   <Users className="w-3 h-3" />
-                  <span>{community.members.toLocaleString()} members</span>
+                  <span>{room?.member_count.toLocaleString() || 0} members</span>
                 </div>
               </div>
             </div>
           </div>
-          <button className="w-10 h-10 flex items-center justify-center text-muted-foreground">
-            <MoreVertical className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            {isMember && (
+              <button
+                onClick={handleLeaveRoom}
+                className="w-10 h-10 flex items-center justify-center text-muted-foreground hover:text-destructive"
+                title="Sair da sala"
+              >
+                <LogOut className="w-5 h-5" />
+              </button>
+            )}
+            <button className="w-10 h-10 flex items-center justify-center text-muted-foreground">
+              <MoreVertical className="w-5 h-5" />
+            </button>
+          </div>
         </div>
       </div>
+
+      {/* Join Room Prompt */}
+      {!isMember && (
+        <div className="flex-1 flex flex-col items-center justify-center p-6">
+          <div className="text-6xl mb-4">{room?.icon || '💬'}</div>
+          <h2 className="text-xl font-semibold text-foreground mb-2">{room?.name}</h2>
+          <p className="text-muted-foreground text-center mb-6">
+            Entre na sala para ver as mensagens e participar das conversas.
+          </p>
+          <button
+            onClick={handleJoinRoom}
+            disabled={joining}
+            className="flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground rounded-full font-medium disabled:opacity-50"
+          >
+            {joining ? (
+              <Loader2 className="w-5 h-5 animate-spin" />
+            ) : (
+              <LogIn className="w-5 h-5" />
+            )}
+            Entrar na Sala
+          </button>
+        </div>
+      )}
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {messages.map((msg) => (
-          <div
-            key={msg.id}
-            className={`flex ${msg.isMe ? 'justify-end' : 'justify-start'}`}
-          >
-            <div
-              className={`max-w-[80%] ${
-                msg.isMe
-                  ? 'bg-primary text-primary-foreground rounded-2xl rounded-br-md'
-                  : 'bg-card border border-border rounded-2xl rounded-bl-md'
-              } p-3`}
-            >
-              {!msg.isMe && (
-                <div className="flex items-center justify-between gap-2 mb-1">
-                  <span className="text-xs font-medium text-primary">{msg.user}</span>
-                  <button className="text-muted-foreground hover:text-foreground">
-                    <Flag className="w-3 h-3" />
-                  </button>
+      {isMember && (
+        <>
+          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            {messages.length === 0 && (
+              <div className="text-center py-12">
+                <p className="text-muted-foreground">Nenhuma mensagem ainda. Seja o primeiro a enviar!</p>
+              </div>
+            )}
+            
+            {messages.map((msg) => {
+              const isMe = msg.user_id === currentUserId;
+              return (
+                <div
+                  key={msg.id}
+                  className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}
+                >
+                  <div
+                    className={`max-w-[80%] ${
+                      isMe
+                        ? 'bg-primary text-primary-foreground rounded-2xl rounded-br-md'
+                        : 'bg-card border border-border rounded-2xl rounded-bl-md'
+                    } p-3`}
+                  >
+                    {!isMe && (
+                      <div className="flex items-center justify-between gap-2 mb-1">
+                        <span className="text-xs font-medium text-primary">
+                          {getUserDisplayName(msg.user_id)}
+                        </span>
+                        <button className="text-muted-foreground hover:text-foreground">
+                          <Flag className="w-3 h-3" />
+                        </button>
+                      </div>
+                    )}
+                    <p className={`text-sm ${isMe ? 'text-primary-foreground' : 'text-foreground'}`}>
+                      {msg.content}
+                    </p>
+                    <p className={`text-xs mt-1 ${isMe ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>
+                      {formatMessageTime(msg.created_at)}
+                    </p>
+                  </div>
                 </div>
-              )}
-              <p className={`text-sm ${msg.isMe ? 'text-primary-foreground' : 'text-foreground'}`}>
-                {msg.text}
-              </p>
-              <p className={`text-xs mt-1 ${msg.isMe ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>
-                {msg.time}
-              </p>
+              );
+            })}
+            <div ref={messagesEndRef} />
+          </div>
+
+          {/* Input */}
+          <div className="sticky bottom-0 bg-background border-t border-border p-4 safe-bottom">
+            <div className="flex items-center gap-3">
+              <input
+                type="text"
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+                onKeyPress={(e) => e.key === 'Enter' && handleSend()}
+                placeholder={t.community.typeMessage}
+                className="flex-1 h-12 px-4 bg-card border border-border rounded-full text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+              />
+              <button
+                onClick={handleSend}
+                disabled={!message.trim() || sending}
+                className="w-12 h-12 bg-primary rounded-full flex items-center justify-center text-primary-foreground disabled:opacity-50"
+              >
+                {sending ? (
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                ) : (
+                  <Send className="w-5 h-5" />
+                )}
+              </button>
             </div>
           </div>
-        ))}
-        <div ref={messagesEndRef} />
-      </div>
-
-      {/* Input */}
-      <div className="sticky bottom-0 bg-background border-t border-border p-4 safe-bottom">
-        <div className="flex items-center gap-3">
-          <input
-            type="text"
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            onKeyPress={(e) => e.key === 'Enter' && handleSend()}
-            placeholder={t.community.typeMessage}
-            className="flex-1 h-12 px-4 bg-card border border-border rounded-full text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-          />
-          <button
-            onClick={handleSend}
-            disabled={!message.trim()}
-            className="w-12 h-12 bg-primary rounded-full flex items-center justify-center text-primary-foreground disabled:opacity-50"
-          >
-            <Send className="w-5 h-5" />
-          </button>
-        </div>
-      </div>
+        </>
+      )}
     </div>
   );
 };
