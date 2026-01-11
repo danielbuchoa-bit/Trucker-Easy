@@ -101,12 +101,15 @@ serve(async (req) => {
     const weightKg = poundsToKg(profile.weightLbs);
 
     // Build request parameters
+    // Note: Using 'fast' mode for better route optimization
+    // 'flexible' mode can be overly restrictive for truck routing
     const params = new URLSearchParams({
       key: apiKey,
       origin: `${originLat},${originLng}`,
       destination: `${destLat},${destLng}`,
       mode: 'truck',
-      option: 'flexible', // Use flexible for truck-specific features
+      // Using default mode (not 'flexible') for more balanced routing
+      // 'flexible' can create unnecessarily long detours
       altcount: '2', // Get alternative routes
       // Truck dimensions: height,width,length in cm (per NextBillion docs)
       truck_size: `${heightCm},${widthCm},${totalLengthCm}`,
