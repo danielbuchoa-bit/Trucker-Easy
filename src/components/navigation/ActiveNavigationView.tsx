@@ -287,13 +287,14 @@ const ActiveNavigationView = () => {
   // Effective speed limit (alert zone takes priority over road limit)
   const effectiveSpeedLimit = speedAlerts.criticalAlert?.speedLimit ?? currentSpeedLimit.speedLimitMph;
 
-  // Speeding alert sounds
+  // Speeding alert sounds (alerts once per speeding event, in user's language)
+  const { language } = useLanguage();
   const speedingAlert = useSpeedingAlertSound({
     currentSpeedMph: speedMph,
     speedLimitMph: effectiveSpeedLimit ?? null,
-    enabled: voice.settings.enabled, // Link to voice settings
+    enabled: voice.settings.enabled,
+    language,
     toleranceMph: 5,
-    alertIntervalMs: 15000,
   });
 
   // Voice guidance for instructions - with look-ahead based on speed
