@@ -22,6 +22,7 @@ import ArrivalPrompt from './ArrivalPrompt';
 import ArrivalDebugPanel from './ArrivalDebugPanel';
 import LaneGuidancePanel from './LaneGuidancePanel';
 import SpeedAlertOverlay from './SpeedAlertOverlay';
+import SpeedAlertDetailsSheet from './SpeedAlertDetailsSheet';
 import ReportAlertButton from './ReportAlertButton';
 import { createTruckCursorElement } from './TruckCursor';
 import { MapPin, Navigation as NavIcon, RotateCcw, Layers, Bug, Plus, Route } from 'lucide-react';
@@ -178,6 +179,10 @@ const ActiveNavigationView = () => {
   
   // Location context state
   const [locationContext, setLocationContext] = useState<{ roadName?: string; cityState?: string }>({});
+  
+  // Selected speed alert for details sheet
+  const [selectedSpeedAlert, setSelectedSpeedAlert] = useState<typeof speedAlerts.alerts[0] | null>(null);
+  const [speedAlertDetailsOpen, setSpeedAlertDetailsOpen] = useState(false);
   
   // Heading interpolation refs
   const currentBearingRef = useRef<number>(0);
@@ -558,6 +563,14 @@ const ActiveNavigationView = () => {
         </div>
       `;
       
+      // Add click handler for interaction
+      el.style.cursor = 'pointer';
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        setSelectedSpeedAlert(alert);
+        setSpeedAlertDetailsOpen(true);
+      });
+      
       const marker = new mapboxgl.Marker({ element: el, anchor: 'center' })
         .setLngLat([alert.lng, alert.lat])
         .addTo(map.current!);
@@ -648,6 +661,15 @@ const ActiveNavigationView = () => {
 
       {/* Report Alert Button */}
       <ReportAlertButton onReport={speedAlerts.reportAlert} />
+
+      {/* Speed Alert Details Sheet */}
+      <SpeedAlertDetailsSheet
+        alert={selectedSpeedAlert}
+        open={speedAlertDetailsOpen}
+        onOpenChange={setSpeedAlertDetailsOpen}
+        onConfirm={speedAlerts.confirmAlert}
+        onDeny={speedAlerts.denyAlert}
+      />
 
       {/* Speed Indicator - Bottom Left */}
       <div className="absolute bottom-24 left-4 z-30">
