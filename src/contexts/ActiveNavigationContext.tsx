@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
-import { decodeHereFlexiblePolyline, type LngLat } from '@/lib/hereFlexiblePolyline';
+import { decodePolyline, type LngLat } from '@/lib/polylineDecoder';
 import {
   calculateNavigationProgress,
   haversineDistance,
@@ -199,7 +199,7 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
         const state: NavigationState = JSON.parse(saved);
         if (Date.now() - state.startedAt < 8 * 60 * 60 * 1000) {
           setRoute(state.route);
-          setRouteCoords(decodeHereFlexiblePolyline(state.route.polyline));
+          setRouteCoords(decodePolyline(state.route.polyline));
           setOrigin(state.origin);
           setDestination(state.destination);
           setTruckProfile(state.truckProfile || DEFAULT_TRUCK_PROFILE);
@@ -426,7 +426,7 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
         };
 
         setRoute(newRoute);
-        setRouteCoords(decodeHereFlexiblePolyline(newRoute.polyline));
+        setRouteCoords(decodePolyline(newRoute.polyline));
         setOrigin(newOrigin);
         setDestination(originalTrip.destination);
         setTruckProfile(originalTrip.truckProfile);
@@ -586,7 +586,7 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
             });
 
             setRoute(newRoute);
-            setRouteCoords(decodeHereFlexiblePolyline(newRoute.polyline));
+            setRouteCoords(decodePolyline(newRoute.polyline));
 
             const newOrigin: GeocodeResult = {
               id: 'reroute-origin',
@@ -697,7 +697,7 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
       const usedProfile = profile || DEFAULT_TRUCK_PROFILE;
 
       setRoute(newRoute);
-      setRouteCoords(decodeHereFlexiblePolyline(newRoute.polyline));
+      setRouteCoords(decodePolyline(newRoute.polyline));
       setOrigin(newOrigin);
       setDestination(newDest);
       setTruckProfile(usedProfile);
@@ -814,7 +814,7 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
 
         // Update navigation to detour
         setRoute(detourRoute);
-        setRouteCoords(decodeHereFlexiblePolyline(detourRoute.polyline));
+        setRouteCoords(decodePolyline(detourRoute.polyline));
         setOrigin(newOrigin);
         setDestination(detourDest);
         setDetourStop(newDetour);
@@ -885,7 +885,7 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
       };
 
       setRoute(newRoute);
-      setRouteCoords(decodeHereFlexiblePolyline(newRoute.polyline));
+      setRouteCoords(decodePolyline(newRoute.polyline));
       setOrigin(newOrigin);
       setDestination(originalTrip.destination);
       setTruckProfile(originalTrip.truckProfile);
@@ -949,7 +949,7 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
         };
 
         setRoute(newRoute);
-        setRouteCoords(decodeHereFlexiblePolyline(newRoute.polyline));
+        setRouteCoords(decodePolyline(newRoute.polyline));
         setOrigin(newOrigin);
         setDestination(newDest);
         setIsOffRoute(false);
