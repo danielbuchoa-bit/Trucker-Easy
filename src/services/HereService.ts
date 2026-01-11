@@ -1,3 +1,14 @@
+/**
+ * Hybrid Routing Service - Collaborative HERE + NextBillion.ai Integration
+ * 
+ * Architecture:
+ * - NextBillion.ai: Primary routing for TRUCKS (superior vehicle restrictions, dimensions, weight limits)
+ * - HERE: Primary for CAR routing, geocoding, POIs, weather alerts, and reverse geocoding
+ * 
+ * This hybrid approach leverages the strengths of each provider:
+ * - NextBillion excels at truck-specific routing with accurate restrictions
+ * - HERE provides excellent geocoding, POI search, and weather data
+ */
 import { supabase } from "@/integrations/supabase/client";
 
 export interface TruckProfile {
