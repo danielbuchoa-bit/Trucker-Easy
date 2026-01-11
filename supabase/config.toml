@@ -23,3 +23,6 @@ verify_jwt = false
 
 [functions.nextbillion_test]
 verify_jwt = false
+
+[functions.nextbillion_route]
+verify_jwt = false
