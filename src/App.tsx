@@ -10,6 +10,7 @@ import { ActiveNavigationProvider } from "./contexts/ActiveNavigationContext";
 import { DiagnosticsProvider } from "./contexts/DiagnosticsContext";
 import { PoiFeedbackProvider } from "./contexts/PoiFeedbackContext";
 import DiagnosticsPanel from "./components/diagnostics/DiagnosticsPanel";
+import LocationPermissionRequest from "./components/location/LocationPermissionRequest";
 import WelcomeScreen from "./pages/Welcome";
 import AuthScreen from "./pages/Auth";
 import OnboardingScreen from "./pages/Onboarding";
@@ -41,6 +42,7 @@ const App = () => (
           <Toaster />
           <Sonner />
           <DiagnosticsPanel />
+          <LocationPermissionRequest />
           <BrowserRouter>
             <ActiveNavigationProvider>
               <PoiFeedbackProvider>
