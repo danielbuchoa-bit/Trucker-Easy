@@ -19,6 +19,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { detectBrand, getInitial, getColorForInitial, type TruckBrand } from '@/lib/truckBrands';
+import { getBrandLogo, GenericTruckStopLogo } from '@/lib/truckStopLogos';
 
 interface Poi {
   id: string;
@@ -52,24 +53,38 @@ const TRUCK_CATEGORIES = [
   '700-7850-0000',   // Truck Stop / Service Area ONLY
 ];
 
+// Color to hex mapping for generic logos
+const COLOR_TO_HEX: Record<string, string> = {
+  'bg-emerald-600': '#059669',
+  'bg-cyan-600': '#0891b2',
+  'bg-violet-600': '#7c3aed',
+  'bg-pink-600': '#db2777',
+  'bg-amber-600': '#d97706',
+  'bg-teal-600': '#0d9488',
+  'bg-indigo-600': '#4f46e5',
+  'bg-rose-600': '#e11d48',
+};
+
 /**
- * Brand Badge Component - shows brand initial with brand-specific colors
+ * Brand Logo Component - shows SVG logo for known brands, initial for others
  * Uses memoization to prevent re-renders
  */
-const BrandBadge = React.memo<{ 
+const BrandLogo = React.memo<{ 
   name: string; 
   chainName: string | null;
+  size?: number;
   className?: string;
-}>(({ name, chainName, className = '' }) => {
+}>(({ name, chainName, size = 32, className = '' }) => {
   const displayInfo = useMemo(() => {
     const brand = detectBrand(name, chainName);
     
     if (brand) {
+      const LogoComponent = getBrandLogo(brand.key);
       return {
+        LogoComponent,
+        brand,
         initial: brand.initial,
         bgColor: brand.color,
-        textColor: brand.textColor,
-        brandName: brand.name,
       };
     }
     
@@ -78,26 +93,39 @@ const BrandBadge = React.memo<{
     const colors = getColorForInitial(initial);
     
     return {
+      LogoComponent: null,
+      brand: null,
       initial,
       bgColor: colors.bg,
-      textColor: colors.text,
-      brandName: null,
     };
   }, [name, chainName]);
 
+  // If we have a logo component, render it
+  if (displayInfo.LogoComponent) {
+    const LogoComponent = displayInfo.LogoComponent;
+    return (
+      <div className={`rounded-lg overflow-hidden shrink-0 ${className}`}>
+        <LogoComponent size={size} />
+      </div>
+    );
+  }
+  
+  // Fallback to generic logo with initial
+  const bgHex = COLOR_TO_HEX[displayInfo.bgColor] || '#666';
   return (
-    <div 
-      className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-sm shrink-0 ${displayInfo.bgColor} ${displayInfo.textColor} ${className}`}
-      title={displayInfo.brandName || (chainName || name)}
-    >
-      {displayInfo.initial}
+    <div className={`rounded-lg overflow-hidden shrink-0 ${className}`}>
+      <GenericTruckStopLogo 
+        size={size} 
+        initial={displayInfo.initial} 
+        bgColor={bgHex}
+      />
     </div>
   );
 });
-BrandBadge.displayName = 'BrandBadge';
+BrandLogo.displayName = 'BrandLogo';
 
 /**
- * POI Card with brand badge and distance indicator
+ * POI Card with brand logo and distance indicator
  * Trucker Path style with colored distance badge
  */
 const PoiCard = React.memo<{ 
@@ -121,12 +149,12 @@ const PoiCard = React.memo<{
       onClick={onClick}
       className="flex items-center gap-2 text-left group"
     >
-      {/* Brand badge + Distance - Combined card */}
-      <div className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg ${colorClasses[color]}`}>
-        <BrandBadge 
+      {/* Brand logo + Distance - Combined card */}
+      <div className={`flex items-center gap-1.5 px-1.5 py-1 rounded-lg ${colorClasses[color]}`}>
+        <BrandLogo 
           name={poi.name} 
           chainName={poi.chainName}
-          className="w-7 h-7 text-xs"
+          size={28}
         />
         <div className="flex flex-col items-center min-w-[28px]">
           <span className="text-lg font-black leading-none">{distanceDisplay}</span>
@@ -277,10 +305,10 @@ const NearbyPoisOverlay: React.FC<NearbyPoisOverlayProps> = ({
             <>
               <SheetHeader>
                 <div className="flex items-start gap-3">
-                  <BrandBadge 
+                  <BrandLogo 
                     name={selectedPoi.name}
                     chainName={selectedPoi.chainName}
-                    className="w-12 h-12 rounded-xl text-xl"
+                    size={48}
                   />
                   <div className="flex-1 min-w-0">
                     <SheetTitle className="text-left truncate">
