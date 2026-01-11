@@ -200,29 +200,87 @@ serve(async (req) => {
       return 0;
     };
     
+    // Generate human-readable instruction from modifier and maneuver type
+    function generateInstruction(step: any): string {
+      const type = step.maneuver?.type || '';
+      const modifier = step.maneuver?.modifier || '';
+      const roadName = step.name || step.ref || '';
+      const exit = step.maneuver?.exit;
+      
+      // Handle different maneuver types
+      if (type === 'depart') {
+        return roadName ? `Head towards ${roadName}` : 'Depart';
+      }
+      if (type === 'arrive') {
+        return 'Arrive at destination';
+      }
+      if (type === 'roundabout' || type === 'rotary') {
+        return exit ? `Take exit ${exit} from roundabout` : 'Enter roundabout';
+      }
+      if (type === 'off ramp' || type === 'exit') {
+        return exit ? `Take exit ${exit}${roadName ? ` onto ${roadName}` : ''}` : `Exit${roadName ? ` onto ${roadName}` : ''}`;
+      }
+      if (type === 'on ramp' || type === 'merge') {
+        return roadName ? `Merge onto ${roadName}` : 'Merge';
+      }
+      if (type === 'fork') {
+        const direction = modifier === 'left' ? 'left' : modifier === 'right' ? 'right' : '';
+        return `Keep ${direction}${roadName ? ` onto ${roadName}` : ''}`.trim();
+      }
+      
+      // Standard turn instructions
+      let action = 'Continue';
+      if (modifier === 'left') action = 'Turn left';
+      else if (modifier === 'right') action = 'Turn right';
+      else if (modifier === 'slight left') action = 'Slight left';
+      else if (modifier === 'slight right') action = 'Slight right';
+      else if (modifier === 'sharp left') action = 'Sharp left';
+      else if (modifier === 'sharp right') action = 'Sharp right';
+      else if (modifier === 'uturn') action = 'Make a U-turn';
+      else if (modifier === 'straight') action = 'Continue straight';
+      
+      return roadName ? `${action} onto ${roadName}` : action;
+    }
+    
+    // Extract exit number from various sources
+    function extractExitInfo(step: any): string | null {
+      // Check maneuver.exit directly
+      if (step.maneuver?.exit) {
+        return String(step.maneuver.exit);
+      }
+      
+      // Check instruction text
+      const instruction = step.maneuver?.instruction || step.html_instructions || '';
+      if (instruction) {
+        const exitMatch = instruction.match(/exit\s*(?:onto\s*)?(\d+[A-Za-z]?)/i);
+        if (exitMatch) return exitMatch[1];
+      }
+      
+      // Check road reference for exit numbers (e.g., "Exit 126A")
+      const ref = step.ref || '';
+      if (ref) {
+        const refMatch = ref.match(/exit\s*(\d+[A-Za-z]?)/i);
+        if (refMatch) return refMatch[1];
+      }
+      
+      // Check if it's an off-ramp with numbered exit
+      if ((step.maneuver?.type === 'off ramp' || step.maneuver?.type === 'exit') && step.ref) {
+        const numMatch = step.ref.match(/(\d+[A-Za-z]?)/);
+        if (numMatch) return numMatch[1];
+      }
+      
+      return null;
+    }
+    
     // Extract turn-by-turn instructions from ALL legs
     const instructions: any[] = [];
     for (const l of route.legs || []) {
       for (const step of l.steps || []) {
-        // Extract exit number from instruction or exit field
-        let exitInfo: string | null = null;
-        const instruction = step.maneuver?.instruction || step.html_instructions || '';
-        
-        // Check for exit property directly
-        if (step.maneuver?.exit) {
-          exitInfo = String(step.maneuver.exit);
-        }
-        
-        // Fallback: extract from instruction text
-        if (!exitInfo && instruction) {
-          const exitMatch = instruction.match(/exit\s*(?:onto\s*)?(\d+[A-Za-z]?)/i);
-          if (exitMatch) {
-            exitInfo = exitMatch[1];
-          }
-        }
+        const exitInfo = extractExitInfo(step);
+        const generatedInstruction = generateInstruction(step);
         
         instructions.push({
-          instruction,
+          instruction: step.maneuver?.instruction || step.html_instructions || generatedInstruction,
           duration: extractValue(step.duration),
           distance: extractValue(step.distance),
           length: extractValue(step.distance), // Alias for compatibility
@@ -234,13 +292,14 @@ serve(async (req) => {
           // Exit info if available
           exitInfo,
           // Voice instruction if available
-          voiceInstruction: step.voiceInstructions?.[0]?.announcement || null,
+          voiceInstruction: step.voiceInstructions?.[0]?.announcement || generatedInstruction,
         });
       }
     }
     
     console.log('[NEXTBILLION_ROUTE] Extracted instructions:', instructions.length, 
-      'with exits:', instructions.filter(i => i.exitInfo).length);
+      'with exits:', instructions.filter((i: any) => i.exitInfo).length,
+      'sample:', instructions[0]?.instruction?.substring(0, 50));
 
     // Calculate distance and duration from legs
     // NextBillion uses { value: number } format for distance/duration
