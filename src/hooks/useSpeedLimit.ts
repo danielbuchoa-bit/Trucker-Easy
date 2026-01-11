@@ -22,12 +22,16 @@ interface CacheEntry {
   roadName: string | null;
   source: string;
   timestamp: number;
+  lat: number;
+  lng: number;
 }
 
-const speedLimitCache = new Map<string, CacheEntry>();
-const CACHE_TTL_MS = 30000; // 30 seconds
-const MIN_DISTANCE_FOR_REFETCH = 200; // 200 meters - refetch more frequently for accuracy
-const FETCH_THROTTLE_MS = 5000; // 5 seconds between API calls
+// Global cache (shared between hook instances)
+const speedLimitCache: CacheEntry[] = [];
+const MAX_CACHE_SIZE = 50;
+const CACHE_TTL_MS = 60000; // 60 seconds - longer TTL to reduce API calls
+const MIN_DISTANCE_FOR_REFETCH = 500; // 500 meters - much higher threshold
+const FETCH_THROTTLE_MS = 10000; // 10 seconds between API calls
 
 function haversineDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 6371000;
@@ -39,9 +43,32 @@ function haversineDistance(lat1: number, lng1: number, lat2: number, lng2: numbe
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-function getCacheKey(lat: number, lng: number): string {
-  // Round to ~100m precision for cache key
-  return `${lat.toFixed(3)},${lng.toFixed(3)}`;
+// Find cached entry within radius
+function findCachedNearby(lat: number, lng: number): CacheEntry | null {
+  const now = Date.now();
+  for (let i = speedLimitCache.length - 1; i >= 0; i--) {
+    const entry = speedLimitCache[i];
+    // Clean old entries
+    if (now - entry.timestamp > CACHE_TTL_MS) {
+      speedLimitCache.splice(i, 1);
+      continue;
+    }
+    // Check if close enough
+    const dist = haversineDistance(lat, lng, entry.lat, entry.lng);
+    if (dist < MIN_DISTANCE_FOR_REFETCH) {
+      return entry;
+    }
+  }
+  return null;
+}
+
+function addToCache(entry: CacheEntry) {
+  // Add to cache
+  speedLimitCache.push(entry);
+  // Limit cache size
+  while (speedLimitCache.length > MAX_CACHE_SIZE) {
+    speedLimitCache.shift();
+  }
 }
 
 export function useSpeedLimit({
@@ -50,25 +77,29 @@ export function useSpeedLimit({
   heading,
   enabled = true,
 }: UseSpeedLimitProps): SpeedLimitResult {
-  const [speedLimitMph, setSpeedLimitMph] = useState<number | null>(null);
-  const [speedLimitKmh, setSpeedLimitKmh] = useState<number | null>(null);
-  const [roadName, setRoadName] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [source, setSource] = useState<'api' | 'estimated' | 'fallback' | null>(null);
+  const [result, setResult] = useState<SpeedLimitResult>({
+    speedLimitMph: null,
+    speedLimitKmh: null,
+    roadName: null,
+    loading: false,
+    source: null,
+  });
   
   const lastFetchRef = useRef<{ lat: number; lng: number; time: number } | null>(null);
+  const pendingRef = useRef(false);
 
   const fetchSpeedLimit = useCallback(async (userLat: number, userLng: number, userHeading?: number | null) => {
-    // Check cache first
-    const cacheKey = getCacheKey(userLat, userLng);
-    const cached = speedLimitCache.get(cacheKey);
+    // Check proximity cache first
+    const cached = findCachedNearby(userLat, userLng);
     
-    if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
-      console.log('[SPEED_LIMIT_HOOK] Using cached data:', cached.speedLimitMph, 'mph');
-      setSpeedLimitMph(cached.speedLimitMph);
-      setSpeedLimitKmh(Math.round(cached.speedLimitMph * 1.60934));
-      setRoadName(cached.roadName);
-      setSource(cached.source as any);
+    if (cached) {
+      setResult({
+        speedLimitMph: cached.speedLimitMph,
+        speedLimitKmh: Math.round(cached.speedLimitMph * 1.60934),
+        roadName: cached.roadName,
+        loading: false,
+        source: cached.source as 'api' | 'estimated' | 'fallback',
+      });
       return;
     }
 
@@ -80,17 +111,19 @@ export function useSpeedLimit({
         lastFetchRef.current.lat, lastFetchRef.current.lng
       );
       
-      if (timeSinceLastFetch < FETCH_THROTTLE_MS && distanceMoved < MIN_DISTANCE_FOR_REFETCH) {
-        console.log('[SPEED_LIMIT_HOOK] Throttled');
+      // Strong throttle: only refetch if moved significantly AND enough time passed
+      if (timeSinceLastFetch < FETCH_THROTTLE_MS || distanceMoved < MIN_DISTANCE_FOR_REFETCH) {
         return;
       }
     }
 
-    setLoading(true);
+    // Prevent concurrent fetches
+    if (pendingRef.current) return;
+    pendingRef.current = true;
+
+    setResult(prev => ({ ...prev, loading: true }));
 
     try {
-      console.log('[SPEED_LIMIT_HOOK] Fetching speed limit...');
-      
       const { data, error } = await supabase.functions.invoke('here_speed_limit', {
         body: {
           lat: userLat,
@@ -100,48 +133,67 @@ export function useSpeedLimit({
       });
 
       if (error) {
-        console.error('[SPEED_LIMIT_HOOK] API error:', error);
+        console.error('[SPEED_LIMIT] API error:', error);
         return;
       }
 
       if (data) {
-        console.log('[SPEED_LIMIT_HOOK] Got speed limit:', data.speedLimitMph, 'mph', data.source);
+        const newResult: SpeedLimitResult = {
+          speedLimitMph: data.speedLimitMph,
+          speedLimitKmh: data.speedLimitKmh,
+          roadName: data.roadName,
+          loading: false,
+          source: data.source === 'fallback' ? 'fallback' : data.source === 'estimated' ? 'estimated' : 'api',
+        };
         
-        setSpeedLimitMph(data.speedLimitMph);
-        setSpeedLimitKmh(data.speedLimitKmh);
-        setRoadName(data.roadName);
-        setSource(data.source === 'fallback' ? 'fallback' : data.source === 'estimated' ? 'estimated' : 'api');
+        setResult(newResult);
         
-        // Cache the result
-        speedLimitCache.set(cacheKey, {
+        // Add to cache
+        addToCache({
           speedLimitMph: data.speedLimitMph,
           roadName: data.roadName,
           source: data.source,
           timestamp: Date.now(),
+          lat: userLat,
+          lng: userLng,
         });
         
         lastFetchRef.current = { lat: userLat, lng: userLng, time: Date.now() };
       }
     } catch (err) {
-      console.error('[SPEED_LIMIT_HOOK] Fetch error:', err);
+      console.error('[SPEED_LIMIT] Fetch error:', err);
     } finally {
-      setLoading(false);
+      pendingRef.current = false;
+      setResult(prev => ({ ...prev, loading: false }));
     }
   }, []);
 
+  // Debounced effect - only trigger when position changes significantly
   useEffect(() => {
     if (!enabled || lat === null || lng === null) {
       return;
     }
 
-    fetchSpeedLimit(lat, lng, heading);
+    // Quick cache check before any fetch
+    const cached = findCachedNearby(lat, lng);
+    if (cached) {
+      setResult({
+        speedLimitMph: cached.speedLimitMph,
+        speedLimitKmh: Math.round(cached.speedLimitMph * 1.60934),
+        roadName: cached.roadName,
+        loading: false,
+        source: cached.source as 'api' | 'estimated' | 'fallback',
+      });
+      return;
+    }
+
+    // Debounce the API call
+    const timeoutId = setTimeout(() => {
+      fetchSpeedLimit(lat, lng, heading);
+    }, 1000); // 1 second debounce
+
+    return () => clearTimeout(timeoutId);
   }, [lat, lng, heading, enabled, fetchSpeedLimit]);
 
-  return {
-    speedLimitMph,
-    speedLimitKmh,
-    roadName,
-    loading,
-    source,
-  };
+  return result;
 }
