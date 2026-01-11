@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { supabase } from '@/integrations/supabase/client';
-import { decodeHereFlexiblePolyline } from '@/lib/hereFlexiblePolyline';
+import { decodePolyline } from '@/lib/polylineDecoder';
 import { useDiagnosticsSafe } from '@/contexts/DiagnosticsContext';
 import { useDiagnosticsTap } from '@/hooks/useDiagnosticsTap';
 
@@ -236,18 +236,20 @@ const RouteMap = ({ routePolyline, originLat, originLng, destLat, destLng, class
       }
     }
 
-    // Update route (from HERE Routing API)
+    // Update route - supports both HERE Flexible Polyline and Google Encoded Polyline (NextBillion)
     if (routePolyline) {
       try {
-        console.log('[RouteMap] 🛣️ Drawing route from HERE polyline on Mapbox');
-        const coordinates = decodeHereFlexiblePolyline(routePolyline);
+        console.log('[RouteMap] 🛣️ Drawing route polyline on Mapbox');
+        
+        // Auto-detect and decode polyline format
+        const coordinates = decodePolyline(routePolyline);
 
         if (coordinates.length === 0) {
-          console.warn('[RouteMap] Empty coordinates from HERE polyline');
+          console.warn('[RouteMap] Empty coordinates from polyline');
           return;
         }
 
-        console.log('[RouteMap] Route coordinates:', coordinates.length, 'points');
+        console.log('[RouteMap] Route decoded:', coordinates.length, 'points');
 
         const source = map.current.getSource('route') as mapboxgl.GeoJSONSource | undefined;
 
