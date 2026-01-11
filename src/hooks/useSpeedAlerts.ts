@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { SpeedAlert, SpeedAlertWithDistance, ALERT_TYPE_CONFIG } from '@/types/speedAlerts';
+import { SpeedAlert, SpeedAlertWithDistance, SpeedAlertType, ALERT_TYPE_CONFIG } from '@/types/speedAlerts';
 
 interface UseSpeedAlertsProps {
   lat: number | null;
@@ -14,7 +14,9 @@ interface UseSpeedAlertsReturn {
   alerts: SpeedAlertWithDistance[];
   criticalAlert: SpeedAlertWithDistance | null;
   warningAlerts: SpeedAlertWithDistance[];
-  reportAlert: (type: SpeedAlert['type']) => void;
+  reportAlert: (type: SpeedAlertType) => Promise<boolean>;
+  confirmAlert: (id: string) => Promise<void>;
+  denyAlert: (id: string) => Promise<void>;
   dismissAlert: (id: string) => void;
   dismissedIds: Set<string>;
   loading: boolean;
@@ -82,14 +84,13 @@ export function useSpeedAlerts({
   const lastFetchRef = useRef<{ lat: number; lng: number; time: number } | null>(null);
   const lastAlertRef = useRef<string | null>(null);
 
-  // Fetch alerts from API
-  const fetchAlerts = useCallback(async (userLat: number, userLng: number) => {
-    // Check cache first
+  // Fetch alerts from HERE API
+  const fetchHereAlerts = useCallback(async (userLat: number, userLng: number): Promise<SpeedAlert[]> => {
     const cacheKey = getCacheKey(userLat, userLng);
     const cached = alertsCache.get(cacheKey);
     
     if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
-      console.log('[SPEED_ALERTS] Using cached data');
+      console.log('[SPEED_ALERTS] Using cached HERE data');
       return cached.alerts;
     }
 
@@ -102,50 +103,84 @@ export function useSpeedAlerts({
       );
       
       if (timeSinceLastFetch < FETCH_THROTTLE_MS && distanceMoved < MIN_DISTANCE_FOR_REFETCH) {
-        console.log('[SPEED_ALERTS] Throttled, using existing data');
-        return null; // Use existing state
+        console.log('[SPEED_ALERTS] Throttled, using existing HERE data');
+        return cached?.alerts || [];
       }
     }
 
-    setLoading(true);
-    
     try {
-      console.log('[SPEED_ALERTS] Fetching from API...');
+      console.log('[SPEED_ALERTS] Fetching from HERE API...');
       
       const { data, error } = await supabase.functions.invoke('here_speed_alerts', {
         body: {
           lat: userLat,
           lng: userLng,
-          radiusMeters: 16000, // 10 miles
+          radiusMeters: 16000,
         },
       });
 
       if (error) {
-        console.error('[SPEED_ALERTS] API error:', error);
-        return null;
+        console.error('[SPEED_ALERTS] HERE API error:', error);
+        return cached?.alerts || [];
       }
 
       if (data?.ok && data.alerts) {
-        console.log('[SPEED_ALERTS] Received', data.alerts.length, 'alerts from API');
+        console.log('[SPEED_ALERTS] Received', data.alerts.length, 'alerts from HERE');
         
-        // Cache the results
         alertsCache.set(cacheKey, {
           alerts: data.alerts,
           timestamp: Date.now(),
         });
         
         lastFetchRef.current = { lat: userLat, lng: userLng, time: Date.now() };
-        setLastFetch(new Date());
         
         return data.alerts as SpeedAlert[];
       }
       
-      return null;
+      return cached?.alerts || [];
     } catch (err) {
-      console.error('[SPEED_ALERTS] Fetch error:', err);
-      return null;
-    } finally {
-      setLoading(false);
+      console.error('[SPEED_ALERTS] HERE fetch error:', err);
+      return cached?.alerts || [];
+    }
+  }, []);
+
+  // Fetch user-reported alerts from database
+  const fetchUserAlerts = useCallback(async (userLat: number, userLng: number): Promise<SpeedAlert[]> => {
+    try {
+      // Fetch alerts within a bounding box (~10 miles)
+      const latDelta = 0.15; // ~10 miles
+      const lngDelta = 0.15 / Math.cos((userLat * Math.PI) / 180);
+
+      const { data, error } = await supabase
+        .from('speed_alerts')
+        .select('*')
+        .gte('lat', userLat - latDelta)
+        .lte('lat', userLat + latDelta)
+        .gte('lng', userLng - lngDelta)
+        .lte('lng', userLng + lngDelta);
+
+      if (error) {
+        console.error('[SPEED_ALERTS] Database error:', error);
+        return [];
+      }
+
+      console.log('[SPEED_ALERTS] Received', data?.length || 0, 'user-reported alerts');
+
+      return (data || []).map(alert => ({
+        id: alert.id,
+        type: alert.alert_type as SpeedAlertType,
+        lat: alert.lat,
+        lng: alert.lng,
+        speedLimit: alert.speed_limit ?? undefined,
+        active: alert.active,
+        reportedAt: alert.created_at,
+        confirmations: alert.confirmations,
+        denials: alert.denials,
+        source: 'user' as const,
+      }));
+    } catch (err) {
+      console.error('[SPEED_ALERTS] User alerts fetch error:', err);
+      return [];
     }
   }, []);
 
@@ -157,39 +192,64 @@ export function useSpeedAlerts({
     }
 
     const processAlerts = async () => {
-      // Fetch new alerts (will use cache if available)
-      const apiAlerts = await fetchAlerts(lat, lng);
+      setLoading(true);
       
-      // Get alerts to process (either new or from existing state via cache)
-      const alertsToProcess = apiAlerts || alertsCache.get(getCacheKey(lat, lng))?.alerts || [];
-      
-      const maxDistanceMeters = 5000; // Show alerts within 3+ miles
+      try {
+        // Fetch both HERE and user alerts in parallel
+        const [hereAlerts, userAlerts] = await Promise.all([
+          fetchHereAlerts(lat, lng),
+          fetchUserAlerts(lat, lng),
+        ]);
 
-      const nearbyAlerts = alertsToProcess
-        .filter(alert => alert.active && !dismissedIds.has(alert.id))
-        .map(alert => {
-          const distanceMeters = haversineDistance(lat, lng, alert.lat, alert.lng);
-          const bearing = calculateBearing(lat, lng, alert.lat, alert.lng);
-          const isApproaching = heading !== null ? isWithinCone(bearing, heading) : true;
-          const eta = speedMph > 0 ? (distanceMeters / 1609.34) / speedMph * 3600 : undefined;
+        // Combine alerts, user alerts have priority (shown first)
+        const allAlerts = [...userAlerts, ...hereAlerts];
+        
+        // Deduplicate by proximity (50m threshold)
+        const deduped: SpeedAlert[] = [];
+        for (const alert of allAlerts) {
+          const isDupe = deduped.some(
+            existing => haversineDistance(alert.lat, alert.lng, existing.lat, existing.lng) < 50
+          );
+          if (!isDupe) {
+            deduped.push(alert);
+          }
+        }
 
-          return {
-            ...alert,
-            distanceMeters,
-            distanceMiles: distanceMeters / 1609.34,
-            bearing,
-            isApproaching,
-            eta,
-          };
-        })
-        .filter(alert => alert.distanceMeters <= maxDistanceMeters && alert.isApproaching)
-        .sort((a, b) => a.distanceMeters - b.distanceMeters);
+        const maxDistanceMeters = 5000;
 
-      setAlerts(nearbyAlerts);
+        const nearbyAlerts = deduped
+          .filter(alert => alert.active && !dismissedIds.has(alert.id))
+          .map(alert => {
+            const distanceMeters = haversineDistance(lat, lng, alert.lat, alert.lng);
+            const bearing = calculateBearing(lat, lng, alert.lat, alert.lng);
+            const isApproaching = heading !== null ? isWithinCone(bearing, heading) : true;
+            const eta = speedMph > 0 ? (distanceMeters / 1609.34) / speedMph * 3600 : undefined;
+
+            return {
+              ...alert,
+              distanceMeters,
+              distanceMiles: distanceMeters / 1609.34,
+              bearing,
+              isApproaching,
+              eta,
+            };
+          })
+          .filter(alert => alert.distanceMeters <= maxDistanceMeters && alert.isApproaching)
+          .sort((a, b) => a.distanceMeters - b.distanceMeters);
+
+        setAlerts(nearbyAlerts);
+        setLastFetch(new Date());
+      } finally {
+        setLoading(false);
+      }
     };
 
     processAlerts();
-  }, [lat, lng, heading, speedMph, enabled, dismissedIds, fetchAlerts]);
+    
+    // Refresh every 30 seconds
+    const interval = setInterval(processAlerts, 30000);
+    return () => clearInterval(interval);
+  }, [lat, lng, heading, speedMph, enabled, dismissedIds, fetchHereAlerts, fetchUserAlerts]);
 
   // Get critical alert (closest within critical distance)
   const criticalAlert = alerts.find(alert => {
@@ -205,33 +265,150 @@ export function useSpeedAlerts({
   });
 
   // Report a new alert at current location
-  const reportAlert = useCallback((type: SpeedAlert['type']) => {
-    if (lat === null || lng === null) return;
+  const reportAlert = useCallback(async (type: SpeedAlertType): Promise<boolean> => {
+    if (lat === null || lng === null) return false;
     
-    console.log('[SPEED_ALERTS] User reported:', type, 'at', lat, lng);
+    console.log('[SPEED_ALERTS] User reporting:', type, 'at', lat, lng);
     
-    // In production, this would send to an API
-    // For now, add to local alerts temporarily
-    const newAlert: SpeedAlertWithDistance = {
-      id: `user-${Date.now()}`,
-      type,
-      lat,
-      lng,
-      active: true,
-      reportedAt: new Date().toISOString(),
-      distanceMeters: 0,
-      distanceMiles: 0,
-      bearing: heading || 0,
-      isApproaching: true,
-    };
-    
-    setAlerts(prev => [newAlert, ...prev]);
-    
-    // Optionally save to database for other users
-    // This would be implemented with a separate edge function
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user) {
+        console.error('[SPEED_ALERTS] User not authenticated');
+        return false;
+      }
+
+      const { data, error } = await supabase
+        .from('speed_alerts')
+        .insert({
+          user_id: user.id,
+          alert_type: type,
+          lat,
+          lng,
+        })
+        .select()
+        .single();
+
+      if (error) {
+        console.error('[SPEED_ALERTS] Insert error:', error);
+        return false;
+      }
+
+      console.log('[SPEED_ALERTS] Alert saved:', data.id);
+
+      // Add to local state immediately
+      const newAlert: SpeedAlertWithDistance = {
+        id: data.id,
+        type,
+        lat,
+        lng,
+        active: true,
+        reportedAt: data.created_at,
+        confirmations: 1,
+        denials: 0,
+        source: 'user',
+        distanceMeters: 0,
+        distanceMiles: 0,
+        bearing: heading || 0,
+        isApproaching: true,
+      };
+      
+      setAlerts(prev => [newAlert, ...prev]);
+      return true;
+    } catch (err) {
+      console.error('[SPEED_ALERTS] Report error:', err);
+      return false;
+    }
   }, [lat, lng, heading]);
 
-  // Dismiss an alert
+  // Confirm an alert (increases reliability)
+  const confirmAlert = useCallback(async (alertId: string) => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      // Insert vote
+      const { error: voteError } = await supabase
+        .from('speed_alert_votes')
+        .insert({
+          alert_id: alertId,
+          user_id: user.id,
+          vote_type: 'confirm',
+        });
+
+      if (voteError) {
+        if (voteError.code === '23505') {
+          console.log('[SPEED_ALERTS] Already voted');
+        } else {
+          console.error('[SPEED_ALERTS] Vote error:', voteError);
+        }
+        return;
+      }
+
+      // Update confirmations count
+      const alert = alerts.find(a => a.id === alertId);
+      if (alert) {
+        await supabase
+          .from('speed_alerts')
+          .update({ confirmations: (alert.confirmations || 0) + 1 })
+          .eq('id', alertId);
+      }
+
+      console.log('[SPEED_ALERTS] Alert confirmed:', alertId);
+    } catch (err) {
+      console.error('[SPEED_ALERTS] Confirm error:', err);
+    }
+  }, [alerts]);
+
+  // Deny an alert (decreases reliability)
+  const denyAlert = useCallback(async (alertId: string) => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      // Insert vote
+      const { error: voteError } = await supabase
+        .from('speed_alert_votes')
+        .insert({
+          alert_id: alertId,
+          user_id: user.id,
+          vote_type: 'deny',
+        });
+
+      if (voteError) {
+        if (voteError.code === '23505') {
+          console.log('[SPEED_ALERTS] Already voted');
+        } else {
+          console.error('[SPEED_ALERTS] Vote error:', voteError);
+        }
+        return;
+      }
+
+      // Update denials count and potentially deactivate
+      const alert = alerts.find(a => a.id === alertId);
+      if (alert) {
+        const newDenials = (alert.denials || 0) + 1;
+        const shouldDeactivate = newDenials >= 3 && newDenials > (alert.confirmations || 0);
+        
+        await supabase
+          .from('speed_alerts')
+          .update({ 
+            denials: newDenials,
+            active: !shouldDeactivate,
+          })
+          .eq('id', alertId);
+      }
+
+      console.log('[SPEED_ALERTS] Alert denied:', alertId);
+      
+      // Dismiss locally
+      setDismissedIds(prev => new Set([...prev, alertId]));
+    } catch (err) {
+      console.error('[SPEED_ALERTS] Deny error:', err);
+    }
+  }, [alerts]);
+
+  // Dismiss an alert locally
   const dismissAlert = useCallback((id: string) => {
     setDismissedIds(prev => new Set([...prev, id]));
   }, []);
@@ -241,6 +418,8 @@ export function useSpeedAlerts({
     criticalAlert,
     warningAlerts,
     reportAlert,
+    confirmAlert,
+    denyAlert,
     dismissAlert,
     dismissedIds,
     loading,

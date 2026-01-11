@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Camera, Plus, Car, Construction, Shield, X } from 'lucide-react';
+import { Camera, Plus, Car, Construction, Shield, Loader2 } from 'lucide-react';
 import { SpeedAlertType } from '@/types/speedAlerts';
 import {
   Sheet,
@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 
 interface ReportAlertButtonProps {
-  onReport: (type: SpeedAlertType) => void;
+  onReport: (type: SpeedAlertType) => Promise<boolean>;
 }
 
 const REPORT_OPTIONS: { type: SpeedAlertType; label: string; icon: React.ReactNode; color: string }[] = [
@@ -43,13 +43,31 @@ const REPORT_OPTIONS: { type: SpeedAlertType; label: string; icon: React.ReactNo
 
 const ReportAlertButton: React.FC<ReportAlertButtonProps> = ({ onReport }) => {
   const [isOpen, setIsOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleReport = (type: SpeedAlertType) => {
-    onReport(type);
-    setIsOpen(false);
-    toast.success('Alert reported!', {
-      description: 'Thanks for helping other drivers.',
-    });
+  const handleReport = async (type: SpeedAlertType) => {
+    setIsSubmitting(true);
+    
+    try {
+      const success = await onReport(type);
+      
+      if (success) {
+        toast.success('Alert reported!', {
+          description: 'Thanks for helping other drivers. Your alert is now visible to nearby users.',
+        });
+        setIsOpen(false);
+      } else {
+        toast.error('Failed to report alert', {
+          description: 'Please make sure you are logged in and try again.',
+        });
+      }
+    } catch (error) {
+      toast.error('Error reporting alert', {
+        description: 'Something went wrong. Please try again.',
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -84,13 +102,19 @@ const ReportAlertButton: React.FC<ReportAlertButtonProps> = ({ onReport }) => {
               <Button
                 key={option.type}
                 variant="outline"
+                disabled={isSubmitting}
                 className={`
                   h-auto py-4 flex flex-col gap-2
                   ${option.color} text-white border-none
+                  disabled:opacity-50
                 `}
                 onClick={() => handleReport(option.type)}
               >
-                {option.icon}
+                {isSubmitting ? (
+                  <Loader2 className="w-6 h-6 animate-spin" />
+                ) : (
+                  option.icon
+                )}
                 <span className="text-sm font-medium">{option.label}</span>
               </Button>
             ))}
@@ -98,7 +122,7 @@ const ReportAlertButton: React.FC<ReportAlertButtonProps> = ({ onReport }) => {
 
           <div className="mt-4 p-3 bg-muted rounded-lg">
             <p className="text-xs text-muted-foreground text-center">
-              Your report will help warn other drivers. Reports expire after 30 minutes if not confirmed.
+              Your report will be shared with other drivers and expires after 2 hours if not confirmed by others.
             </p>
           </div>
         </SheetContent>
