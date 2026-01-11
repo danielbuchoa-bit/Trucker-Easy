@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
-import { MapPin, Navigation, X, Loader2 } from 'lucide-react';
+import { MapPin, Navigation, X, Loader2, Bell } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useNotifications } from '@/hooks/useNotifications';
 
 const LocationPermissionRequest = () => {
   const [showPrompt, setShowPrompt] = useState(false);
   const [requesting, setRequesting] = useState(false);
   const [permissionState, setPermissionState] = useState<'prompt' | 'granted' | 'denied' | 'unknown'>('unknown');
+  const { requestPermission: requestNotificationPermission } = useNotifications();
 
   useEffect(() => {
     checkPermission();
@@ -57,11 +59,14 @@ const LocationPermissionRequest = () => {
     localStorage.setItem('location_permission_asked', 'true');
     
     navigator.geolocation.getCurrentPosition(
-      (position) => {
+      async (position) => {
         console.log('[LocationPermission] Permission granted:', position.coords);
         setPermissionState('granted');
         setShowPrompt(false);
         setRequesting(false);
+        
+        // Also request notification permission
+        await requestNotificationPermission();
         
         // Store position for faster boot next time
         try {
@@ -140,6 +145,12 @@ const LocationPermissionRequest = () => {
                 ⚠️
               </div>
               <span className="text-foreground">Alertas de balanças no seu caminho</span>
+            </div>
+            <div className="flex items-center gap-3 text-sm">
+              <div className="w-8 h-8 bg-primary/10 rounded-full flex items-center justify-center flex-shrink-0">
+                <Bell className="w-4 h-4 text-primary" />
+              </div>
+              <span className="text-foreground">Lembrete para avaliar postos visitados</span>
             </div>
           </div>
 

@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import { supabase } from '@/integrations/supabase/client';
 import { useGeolocation, calculateDistance } from '@/hooks/useGeolocation';
 import { useActiveNavigation } from '@/contexts/ActiveNavigationContext';
+import { useNotifications } from '@/hooks/useNotifications';
 import PoiFeedbackModal from '@/components/poi/PoiFeedbackModal';
 import { toast } from 'sonner';
 
@@ -49,6 +50,7 @@ const MIN_STAY_TIME_MS = 60000; // Minimum 1 minute stay to trigger feedback
 export const PoiFeedbackProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { latitude, longitude } = useGeolocation({ enableHighAccuracy: true, watchPosition: true });
   const { isNavigating, progress } = useActiveNavigation();
+  const { sendNotification, requestPermission, permission } = useNotifications();
   
   const [currentVisitedPoi, setCurrentVisitedPoi] = useState<VisitedPoi | null>(null);
   const [pendingFeedbackPoi, setPendingFeedbackPoi] = useState<VisitedPoi | null>(null);
@@ -58,6 +60,15 @@ export const PoiFeedbackProvider: React.FC<{ children: React.ReactNode }> = ({ c
   const nearbyPoisCache = useRef<Map<string, any>>(new Map());
   const lastPoisFetch = useRef<number>(0);
   const recentlyRatedPois = useRef<Set<string>>(new Set());
+  const notificationPermissionRequested = useRef(false);
+
+  // Request notification permission when entering a POI for the first time
+  useEffect(() => {
+    if (currentVisitedPoi && !notificationPermissionRequested.current && permission === 'default') {
+      notificationPermissionRequested.current = true;
+      requestPermission();
+    }
+  }, [currentVisitedPoi, permission, requestPermission]);
 
   // Get current user
   useEffect(() => {
@@ -201,17 +212,34 @@ export const PoiFeedbackProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
       if (distanceFromVisited > EXIT_RADIUS_M) {
         const stayDuration = Date.now() - currentVisitedPoi.enteredAt;
+        const poiName = currentVisitedPoi.name;
+        const poiToRate = currentVisitedPoi;
         
-        console.log('[PoiFeedback] Left POI:', currentVisitedPoi.name, 'Stay:', Math.round(stayDuration / 1000), 's');
+        console.log('[PoiFeedback] Left POI:', poiName, 'Stay:', Math.round(stayDuration / 1000), 's');
 
         // Only show feedback if stayed long enough
         if (stayDuration >= MIN_STAY_TIME_MS) {
           // Don't show if critical maneuver
           if (!hasCriticalManeuver()) {
-            canSubmitFeedback(currentVisitedPoi.id).then((canSubmit) => {
+            canSubmitFeedback(poiToRate.id).then((canSubmit) => {
               if (canSubmit) {
-                setPendingFeedbackPoi(currentVisitedPoi);
-                setIsShowingFeedback(true);
+                // Send push notification
+                sendNotification({
+                  title: '⭐ Avalie sua visita!',
+                  body: `Como foi sua experiência em ${poiName}? Sua avaliação ajuda outros motoristas.`,
+                  tag: `poi-feedback-${poiToRate.id}`,
+                  requireInteraction: true,
+                  onClick: () => {
+                    setPendingFeedbackPoi(poiToRate);
+                    setIsShowingFeedback(true);
+                  },
+                });
+                
+                // Also show the modal directly after a short delay
+                setTimeout(() => {
+                  setPendingFeedbackPoi(poiToRate);
+                  setIsShowingFeedback(true);
+                }, 2000);
               }
             });
           }
@@ -220,7 +248,7 @@ export const PoiFeedbackProvider: React.FC<{ children: React.ReactNode }> = ({ c
         setCurrentVisitedPoi(null);
       }
     }
-  }, [latitude, longitude, currentVisitedPoi, fetchNearbyPois, canSubmitFeedback, hasCriticalManeuver]);
+  }, [latitude, longitude, currentVisitedPoi, fetchNearbyPois, canSubmitFeedback, hasCriticalManeuver, sendNotification]);
 
   // Handle feedback submission
   const handleSubmitFeedback = async (ratings: {
