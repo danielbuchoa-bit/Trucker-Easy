@@ -45,6 +45,8 @@ export const translations = {
       hasAccount: 'Already have an account?',
       orContinueWith: 'Or continue with',
       logout: 'Log Out',
+      fullName: 'Full Name',
+      phone: 'Phone',
     },
     
     onboarding: {
@@ -449,6 +451,8 @@ export const translations = {
       hasAccount: '¿Ya tienes cuenta?',
       orContinueWith: 'O continúa con',
       logout: 'Cerrar Sesión',
+      fullName: 'Nombre Completo',
+      phone: 'Teléfono',
     },
     
     onboarding: {
@@ -853,6 +857,8 @@ export const translations = {
       hasAccount: 'Já tem conta?',
       orContinueWith: 'Ou continue com',
       logout: 'Sair',
+      fullName: 'Nome Completo',
+      phone: 'Telefone',
     },
     
     onboarding: {

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useLanguage } from '@/i18n/LanguageContext';
-import { Mail, Lock, Eye, EyeOff, ArrowLeft } from 'lucide-react';
+import { Mail, Lock, Eye, EyeOff, ArrowLeft, User, Phone } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -18,6 +18,8 @@ const AuthScreen = ({ onComplete, onBack }: AuthScreenProps) => {
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [fullName, setFullName] = useState('');
+  const [phone, setPhone] = useState('');
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -42,6 +44,12 @@ const AuthScreen = ({ onComplete, onBack }: AuthScreenProps) => {
         const { error } = await supabase.auth.signUp({
           email,
           password,
+          options: {
+            data: {
+              full_name: fullName,
+              phone: phone,
+            },
+          },
         });
 
         if (error) throw error;
@@ -94,6 +102,21 @@ const AuthScreen = ({ onComplete, onBack }: AuthScreenProps) => {
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="w-full max-w-sm space-y-4">
+          {/* Full Name (Signup only) */}
+          {!isLogin && (
+            <div className="relative">
+              <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+              <input
+                type="text"
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+                placeholder={t.auth.fullName || "Nome completo"}
+                required
+                className="w-full h-14 pl-12 pr-4 bg-card border border-border rounded-xl text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
+              />
+            </div>
+          )}
+
           {/* Email */}
           <div className="relative">
             <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
@@ -106,6 +129,20 @@ const AuthScreen = ({ onComplete, onBack }: AuthScreenProps) => {
               className="w-full h-14 pl-12 pr-4 bg-card border border-border rounded-xl text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
             />
           </div>
+
+          {/* Phone (Signup only) */}
+          {!isLogin && (
+            <div className="relative">
+              <Phone className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+              <input
+                type="tel"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder={t.auth.phone || "Telefone"}
+                className="w-full h-14 pl-12 pr-4 bg-card border border-border rounded-xl text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
+              />
+            </div>
+          )}
 
           {/* Password */}
           <div className="relative">
