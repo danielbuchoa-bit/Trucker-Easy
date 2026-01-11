@@ -161,6 +161,7 @@ serve(async (req) => {
     // Process the response
     const route = data.routes?.[0];
     if (!route) {
+      console.error('[NEXTBILLION_ROUTE] No route in response:', JSON.stringify(data).substring(0, 500));
       return new Response(
         JSON.stringify({ error: 'No route found' }),
         { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -168,6 +169,17 @@ serve(async (req) => {
     }
 
     const leg = route.legs?.[0];
+    
+    // Debug: log the raw structure to understand the format
+    console.log('[NEXTBILLION_ROUTE] Route structure:', {
+      hasGeometry: !!route.geometry,
+      geometryLength: route.geometry?.length || 0,
+      routeDistance: route.distance,
+      routeDuration: route.duration,
+      legDistance: leg?.distance,
+      legDuration: leg?.duration,
+      stepsCount: leg?.steps?.length || 0,
+    });
     
     // Extract turn-by-turn instructions
     const instructions = leg?.steps?.map((step: any) => ({
@@ -181,14 +193,30 @@ serve(async (req) => {
       geometry: step.geometry || '',
     })) || [];
 
+    // Calculate distance and duration from legs if not available at route level
+    // NextBillion may use different property names
+    let totalDistance = 0;
+    let totalDuration = 0;
+    
+    if (route.legs && Array.isArray(route.legs)) {
+      for (const l of route.legs) {
+        totalDistance += l.distance || 0;
+        totalDuration += l.duration || 0;
+      }
+    }
+    
+    // Fallback to route-level values if available
+    if (totalDistance === 0 && route.distance) totalDistance = route.distance;
+    if (totalDuration === 0 && route.duration) totalDuration = route.duration;
+
     // Build result
     const result = {
       // Encoded polyline for the full route
       polyline: route.geometry || '',
       // Total distance in meters
-      distance: leg?.distance || route.distance || 0,
+      distance: totalDistance,
       // Total duration in seconds
-      duration: leg?.duration || route.duration || 0,
+      duration: totalDuration,
       // Turn-by-turn instructions
       instructions,
       // Transport mode used
