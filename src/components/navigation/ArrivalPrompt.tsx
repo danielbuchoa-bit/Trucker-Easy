@@ -15,8 +15,10 @@ import {
   ChefHat,
   Search,
   HelpCircle,
-  Store
+  Store,
+  Heart
 } from 'lucide-react';
+import FavoriteMealButton from '@/components/stops/FavoriteMealButton';
 import { supabase } from '@/integrations/supabase/client';
 import type { DetectedPoi } from '@/hooks/useArrivalDetection';
 import { useNearbyRestaurants, type NearbyRestaurantsResult } from '@/hooks/useNearbyRestaurants';
@@ -294,9 +296,19 @@ export default function ArrivalPrompt({
                       <ThumbsUp className="h-5 w-5 text-green-600" />
                     </div>
                     <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="font-semibold">Best Choice</span>
-                        <Badge className="bg-green-500/20 text-green-700 text-xs">Recommended</Badge>
+                      <div className="flex items-center justify-between gap-2 mb-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold">Best Choice</span>
+                          <Badge className="bg-green-500/20 text-green-700 text-xs">Recommended</Badge>
+                        </div>
+                        <FavoriteMealButton
+                          mealName={recommendation.best_choice.item}
+                          truckStopName={poi.name}
+                          truckStopId={poi.id}
+                          restaurantName={nearbyRestaurantsData?.restaurants?.[0]?.name || poi.name}
+                          lat={poi.lat}
+                          lng={poi.lng}
+                        />
                       </div>
                       <p className="font-medium">{recommendation.best_choice.item}</p>
                       <p className="text-sm text-muted-foreground mt-1">
@@ -313,7 +325,17 @@ export default function ArrivalPrompt({
                       <ChefHat className="h-5 w-5 text-blue-600" />
                     </div>
                     <div className="flex-1">
-                      <span className="font-semibold">Alternative</span>
+                      <div className="flex items-center justify-between">
+                        <span className="font-semibold">Alternative</span>
+                        <FavoriteMealButton
+                          mealName={recommendation.alternative.item}
+                          truckStopName={poi.name}
+                          truckStopId={poi.id}
+                          restaurantName={nearbyRestaurantsData?.restaurants?.[0]?.name || poi.name}
+                          lat={poi.lat}
+                          lng={poi.lng}
+                        />
+                      </div>
                       <p className="font-medium mt-1">{recommendation.alternative.item}</p>
                       <p className="text-sm text-muted-foreground mt-1">
                         {recommendation.alternative.reason}
@@ -329,8 +351,20 @@ export default function ArrivalPrompt({
                       <AlertTriangle className="h-5 w-5 text-orange-600" />
                     </div>
                     <div className="flex-1">
-                      <span className="font-semibold">Emergency Option</span>
-                      <p className="text-sm text-muted-foreground">If nothing else works</p>
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <span className="font-semibold">Emergency Option</span>
+                          <p className="text-sm text-muted-foreground">If nothing else works</p>
+                        </div>
+                        <FavoriteMealButton
+                          mealName={recommendation.emergency_option.item}
+                          truckStopName={poi.name}
+                          truckStopId={poi.id}
+                          restaurantName={nearbyRestaurantsData?.restaurants?.[0]?.name || poi.name}
+                          lat={poi.lat}
+                          lng={poi.lng}
+                        />
+                      </div>
                       <p className="font-medium mt-1">{recommendation.emergency_option.item}</p>
                       <p className="text-sm text-muted-foreground mt-1">
                         {recommendation.emergency_option.reason}

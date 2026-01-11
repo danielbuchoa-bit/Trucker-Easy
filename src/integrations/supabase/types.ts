@@ -314,6 +314,45 @@ export type Database = {
           },
         ]
       }
+      favorite_meals: {
+        Row: {
+          created_at: string
+          id: string
+          lat: number | null
+          lng: number | null
+          meal_name: string
+          notes: string | null
+          restaurant_name: string
+          truck_stop_id: string | null
+          truck_stop_name: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          lat?: number | null
+          lng?: number | null
+          meal_name: string
+          notes?: string | null
+          restaurant_name: string
+          truck_stop_id?: string | null
+          truck_stop_name: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          lat?: number | null
+          lng?: number | null
+          meal_name?: string
+          notes?: string | null
+          restaurant_name?: string
+          truck_stop_id?: string | null
+          truck_stop_name?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       poi_feedback: {
         Row: {
           cleanliness_rating: number
