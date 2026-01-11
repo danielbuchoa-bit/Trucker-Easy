@@ -55,17 +55,38 @@ const QUERY_FALLBACK_MAP: Record<string, string> = {
   'weigh-station': 'weigh station',
 };
 
-// Known truck stop brand names - ONLY these pass the filter
+// STRICT list of known truck stop brand names - ONLY these pass the filter
+// Must be very specific to avoid false positives
 const TRUCK_STOP_BRANDS = [
-  'pilot', 'flying j', 'loves', "love's", 'ta ', 'travel centers', 'petro',
-  'sapp bros', 'ambest', 'big cat', 'road ranger', 'buckys', "buc-ee's",
-  'buc-ees', 'bucees', 'kenly 95', 'truck stops of america', 'cefco',
-  'quik trip', 'quick trip', 'qt ', 'sheetz', 'wawa', 'maverick',
-  'caseys', "casey's", 'town pump', 'kwik trip', 'kwiktrip', 'speedway',
-  'circle k', 'husky', 'flying hook', 'saddleman', 'truck stop',
-  'travel plaza', 'travel center', 'truck plaza', 'truckstop',
-  'gas station', 'fuel stop', 'fuel center', 'service plaza', 'service area',
-  'rest stop', 'rest area', 'welcome center',
+  // Major truck stop chains
+  'pilot', 'flying j', 'pilot flying j',
+  "love's", 'loves travel', 'loves truck',
+  'ta ', 'ta travel', 'travel centers of america', 'travelcenters',
+  'petro stopping', 'petro travel',
+  'sapp bros', 'sapp brother',
+  'ambest',
+  "buc-ee's", 'buc-ees', 'bucees', 'buc ee',
+  'kenly 95',
+  'iowa 80',
+  'little america',
+  // Regional chains that cater to trucks
+  'kwik trip', 'kwiktrip',
+  'quiktrip', 'quik trip', 
+  'caseys', "casey's general",
+  'sheetz',
+  'wawa',
+  'racetrac', 'raceway',
+  'maverick',
+  'town pump',
+  'maverik',
+  'roady', "roady's",
+  'road ranger',
+  'big cat',
+  'cefco',
+  'allsups', "allsup's",
+  'stripes',
+  'truck stop', 'truckstop',
+  'travel plaza', 'travel center', 'truck plaza',
 ];
 
 // Words that DISQUALIFY a place from being a truck stop
@@ -379,20 +400,19 @@ serve(async (req) => {
         return false;
       }
       
-      // Check category IDs
-      for (const cat of item.categories || []) {
-        const id = cat.id || '';
-        // Only 7850 is truck stop category
-        if (id.includes('7850')) return true;
-      }
-      
-      // Check name/chain for known truck stop brands
+      // STRICT FILTER: Only accept if name/chain matches a KNOWN truck stop brand
+      // Do NOT rely on HERE category alone - it's too broad
       const searchText = `${name} ${chainName}`;
       
       for (const brand of TRUCK_STOP_BRANDS) {
-        if (searchText.includes(brand)) return true;
+        if (searchText.includes(brand)) {
+          console.log(`[HERE_BROWSE_POIS] ✅ Matched brand "${brand}": ${item.title}`);
+          return true;
+        }
       }
       
+      // Reject everything else - even if HERE says it's a truck stop
+      console.log(`[HERE_BROWSE_POIS] ⛔ No brand match, rejecting: ${item.title}`);
       return false;
     }
 
