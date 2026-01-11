@@ -20,3 +20,6 @@ verify_jwt = false
 
 [functions.here_browse_pois]
 verify_jwt = false
+
+[functions.nextbillion_test]
+verify_jwt = false
