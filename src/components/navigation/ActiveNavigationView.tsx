@@ -9,6 +9,7 @@ import { useArrivalDetection, type DetectedPoi } from '@/hooks/useArrivalDetecti
 import { usePositionInterpolator } from '@/hooks/usePositionInterpolator';
 import { useMapPerformance } from '@/hooks/useMapPerformance';
 import { useWeighStationAlerts } from '@/hooks/useWeighStationAlerts';
+import { useSpeedAlerts } from '@/hooks/useSpeedAlerts';
 import NavigationHUD from './NavigationHUD';
 import SpeedIndicator from './SpeedIndicator';
 import BottomETABar from './BottomETABar';
@@ -19,6 +20,8 @@ import NearbyPoisOverlay from './NearbyPoisOverlay';
 import ArrivalPrompt from './ArrivalPrompt';
 import ArrivalDebugPanel from './ArrivalDebugPanel';
 import LaneGuidancePanel from './LaneGuidancePanel';
+import SpeedAlertOverlay from './SpeedAlertOverlay';
+import ReportAlertButton from './ReportAlertButton';
 import { createTruckCursorElement } from './TruckCursor';
 import { MapPin, Navigation as NavIcon, RotateCcw, Layers, Bug, Plus, Route } from 'lucide-react';
 import WeighStationOverlay from '@/components/weighstation/WeighStationOverlay';
@@ -186,6 +189,15 @@ const ActiveNavigationView = () => {
     userLat: userPosition?.lat ?? null,
     userLng: userPosition?.lng ?? null,
     routeCoords,
+    enabled: true,
+  });
+
+  // Speed alerts (cameras, enforcement zones, etc.)
+  const speedAlerts = useSpeedAlerts({
+    lat: userPosition?.lat ?? null,
+    lng: userPosition?.lng ?? null,
+    heading: debugInfo.calculatedBearing ?? userPosition?.heading ?? null,
+    speedMph: userPosition?.speed ? userPosition.speed * 2.237 : 0,
     enabled: true,
   });
 
@@ -532,9 +544,20 @@ const ActiveNavigationView = () => {
         })}
       />
 
+      {/* Speed Alert Overlay - Camera warnings, enforcement zones */}
+      <SpeedAlertOverlay
+        criticalAlert={speedAlerts.criticalAlert}
+        warningAlerts={speedAlerts.warningAlerts}
+        currentSpeedMph={speedMph ?? 0}
+        onDismiss={speedAlerts.dismissAlert}
+      />
+
+      {/* Report Alert Button */}
+      <ReportAlertButton onReport={speedAlerts.reportAlert} />
+
       {/* Speed Indicator - Bottom Left */}
       <div className="absolute bottom-24 left-4 z-30">
-        <SpeedIndicator speedMph={speedMph} speedLimitMph={55} />
+        <SpeedIndicator speedMph={speedMph} speedLimitMph={speedAlerts.criticalAlert?.speedLimitMph ?? 55} />
       </div>
 
       {/* Bottom ETA Bar */}
