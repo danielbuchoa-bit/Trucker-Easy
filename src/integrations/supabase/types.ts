@@ -433,6 +433,80 @@ export type Database = {
         }
         Relationships: []
       }
+      speed_alert_votes: {
+        Row: {
+          alert_id: string
+          created_at: string
+          id: string
+          user_id: string
+          vote_type: string
+        }
+        Insert: {
+          alert_id: string
+          created_at?: string
+          id?: string
+          user_id: string
+          vote_type: string
+        }
+        Update: {
+          alert_id?: string
+          created_at?: string
+          id?: string
+          user_id?: string
+          vote_type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "speed_alert_votes_alert_id_fkey"
+            columns: ["alert_id"]
+            isOneToOne: false
+            referencedRelation: "speed_alerts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      speed_alerts: {
+        Row: {
+          active: boolean
+          alert_type: string
+          confirmations: number
+          created_at: string
+          denials: number
+          expires_at: string
+          id: string
+          lat: number
+          lng: number
+          speed_limit: number | null
+          user_id: string
+        }
+        Insert: {
+          active?: boolean
+          alert_type: string
+          confirmations?: number
+          created_at?: string
+          denials?: number
+          expires_at?: string
+          id?: string
+          lat: number
+          lng: number
+          speed_limit?: number | null
+          user_id: string
+        }
+        Update: {
+          active?: boolean
+          alert_type?: string
+          confirmations?: number
+          created_at?: string
+          denials?: number
+          expires_at?: string
+          id?: string
+          lat?: number
+          lng?: number
+          speed_limit?: number | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       stop_menu_items: {
         Row: {
           added_by: string
