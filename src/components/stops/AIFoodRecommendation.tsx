@@ -10,12 +10,16 @@ interface AIFoodRecommendationProps {
   placeType: string;
   menuItems: StopMenuItem[];
   userProfile?: DriverFoodProfile | null;
+  stopName?: string;
+  nearbyRestaurants?: string[];
 }
 
 const AIFoodRecommendation: React.FC<AIFoodRecommendationProps> = ({
   placeType,
   menuItems,
   userProfile,
+  stopName,
+  nearbyRestaurants = [],
 }) => {
   const [recommendation, setRecommendation] = useState<FoodRecommendation | null>(null);
   const [loading, setLoading] = useState(false);
@@ -41,6 +45,8 @@ const AIFoodRecommendation: React.FC<AIFoodRecommendationProps> = ({
             price: m.price,
           })),
           placeType,
+          stopName: stopName || 'Unknown Stop',
+          restaurantNames: nearbyRestaurants,
         },
       });
 
@@ -61,7 +67,7 @@ const AIFoodRecommendation: React.FC<AIFoodRecommendationProps> = ({
 
   useEffect(() => {
     fetchRecommendation();
-  }, [placeType]);
+  }, [placeType, stopName, nearbyRestaurants.length]);
 
   if (loading) {
     return (
