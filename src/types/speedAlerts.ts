@@ -13,13 +13,17 @@ export interface SpeedAlert {
   type: SpeedAlertType;
   lat: number;
   lng: number;
+  speedLimit?: number;
   speedLimitMph?: number;
   direction?: number; // Bearing the camera faces (0-360)
   active: boolean;
   reportedAt?: string;
   confirmedCount?: number;
+  confirmations?: number;
+  denials?: number;
   name?: string;
   description?: string;
+  source?: 'here' | 'user';
 }
 
 export interface SpeedAlertWithDistance extends SpeedAlert {
