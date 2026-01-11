@@ -5,6 +5,34 @@ import { supabase } from '@/integrations/supabase/client';
 import { decodePolyline } from '@/lib/polylineDecoder';
 import { useDiagnosticsSafe } from '@/contexts/DiagnosticsContext';
 import { useDiagnosticsTap } from '@/hooks/useDiagnosticsTap';
+import { SpeedAlertWithDistance, SpeedAlertType, ALERT_TYPE_CONFIG } from '@/types/speedAlerts';
+
+// SVG icons for alert markers
+function getAlertIconSvg(type: SpeedAlertType, config: typeof ALERT_TYPE_CONFIG[SpeedAlertType]): string {
+  const iconColor = 'white';
+  const size = 16;
+  
+  switch (type) {
+    case 'speed_camera':
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${iconColor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>`;
+    case 'red_light_camera':
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${iconColor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="6" height="14" x="9" y="7" rx="1"/><circle cx="12" cy="10" r="1" fill="${iconColor}"/><circle cx="12" cy="14" r="1" fill="${iconColor}"/><circle cx="12" cy="18" r="1" fill="${iconColor}"/><path d="M4 11h5"/><path d="M15 11h5"/><path d="M12 2v5"/></svg>`;
+    case 'mobile_patrol':
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${iconColor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"/><circle cx="7" cy="17" r="2"/><path d="M9 17h6"/><circle cx="17" cy="17" r="2"/></svg>`;
+    case 'enforcement_zone':
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${iconColor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/></svg>`;
+    case 'school_zone':
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${iconColor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c0 2 2 3 6 3s6-1 6-3v-5"/></svg>`;
+    case 'construction_zone':
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${iconColor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="8" rx="1"/><path d="M17 14v7"/><path d="M7 14v7"/><path d="M17 3v3"/><path d="M7 3v3"/><path d="M10 14L2.3 6.3"/><path d="M14 6l7.7 7.7"/><path d="M8 6l8 8"/></svg>`;
+    case 'average_speed':
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${iconColor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/></svg>`;
+    case 'weigh_station':
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${iconColor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="M7 21h10"/><path d="M12 3v18"/><path d="M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2"/></svg>`;
+    default:
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${iconColor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg>`;
+  }
+}
 
 interface RouteMapProps {
   routePolyline?: string;
@@ -12,15 +40,18 @@ interface RouteMapProps {
   originLng?: number;
   destLat?: number;
   destLng?: number;
+  speedAlerts?: SpeedAlertWithDistance[];
+  onAlertClick?: (alert: SpeedAlertWithDistance) => void;
   className?: string;
 }
 
-const RouteMap = ({ routePolyline, originLat, originLng, destLat, destLng, className }: RouteMapProps) => {
+const RouteMap = ({ routePolyline, originLat, originLng, destLat, destLng, speedAlerts, onAlertClick, className }: RouteMapProps) => {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
   const originMarker = useRef<mapboxgl.Marker | null>(null);
   const destMarker = useRef<mapboxgl.Marker | null>(null);
   const userLocationMarker = useRef<mapboxgl.Marker | null>(null);
+  const alertMarkersRef = useRef<Map<string, mapboxgl.Marker>>(new Map());
   const [mapReady, setMapReady] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -183,12 +214,77 @@ const RouteMap = ({ routePolyline, originLat, originLng, destLat, destLng, class
       originMarker.current?.remove();
       destMarker.current?.remove();
       userLocationMarker.current?.remove();
+      alertMarkersRef.current.forEach(marker => marker.remove());
+      alertMarkersRef.current.clear();
       map.current?.remove();
       map.current = null;
       mapInitialized.current = false;
       initializingRef.current = false;
     };
-  }, [locationStatus]); // Only depend on locationStatus, not on props that change
+  }, [locationStatus]);
+
+  // Update speed alert markers
+  useEffect(() => {
+    if (!map.current || !mapReady) return;
+    
+    const currentAlerts = speedAlerts || [];
+    const currentMarkers = alertMarkersRef.current;
+    const currentAlertIds = new Set(currentAlerts.map(a => a.id));
+    
+    // Remove markers for alerts no longer in list
+    currentMarkers.forEach((marker, id) => {
+      if (!currentAlertIds.has(id)) {
+        marker.remove();
+        currentMarkers.delete(id);
+      }
+    });
+    
+    // Add or update markers for current alerts
+    currentAlerts.forEach(alert => {
+      if (currentMarkers.has(alert.id)) {
+        // Update position if needed
+        const marker = currentMarkers.get(alert.id)!;
+        marker.setLngLat([alert.lng, alert.lat]);
+        return;
+      }
+      
+      // Create new marker
+      const config = ALERT_TYPE_CONFIG[alert.type];
+      const el = document.createElement('div');
+      el.className = 'speed-alert-marker flex items-center justify-center cursor-pointer transition-transform hover:scale-110';
+      el.style.width = '32px';
+      el.style.height = '32px';
+      
+      // Get icon based on type
+      const iconSvg = getAlertIconSvg(alert.type, config);
+      el.innerHTML = `
+        <div class="relative">
+          <div class="absolute inset-0 ${config.bgColor} rounded-full opacity-30 animate-ping"></div>
+          <div class="${config.bgColor} rounded-full p-1.5 shadow-lg border-2 border-white">
+            ${iconSvg}
+          </div>
+          ${alert.speedLimit ? `
+            <div class="absolute -bottom-1 -right-1 bg-white text-xs font-bold px-1 rounded shadow text-gray-900">
+              ${alert.speedLimit}
+            </div>
+          ` : ''}
+        </div>
+      `;
+      
+      if (onAlertClick) {
+        el.addEventListener('click', (e) => {
+          e.stopPropagation();
+          onAlertClick(alert);
+        });
+      }
+      
+      const marker = new mapboxgl.Marker({ element: el, anchor: 'center' })
+        .setLngLat([alert.lng, alert.lat])
+        .addTo(map.current!);
+      
+      currentMarkers.set(alert.id, marker);
+    });
+  }, [speedAlerts, mapReady, onAlertClick]);
 
   // Update markers and route when props change
   useEffect(() => {
