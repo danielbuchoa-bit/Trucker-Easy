@@ -28,6 +28,7 @@ import StopAdvisorScreen from "./pages/StopAdvisor";
 import FacilityRatingScreen from "./pages/FacilityRating";
 import FacilityDetailScreen from "./pages/FacilityDetail";
 import FoodPreferencesScreen from "./pages/FoodPreferences";
+import FavoriteMealsScreen from "./pages/FavoriteMeals";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -64,6 +65,7 @@ const App = () => (
                       <Route path="/facility-rating" element={<FacilityRatingScreen />} />
                       <Route path="/facility/:id" element={<FacilityDetailScreen />} />
                       <Route path="/food-preferences" element={<FoodPreferencesScreen />} />
+                      <Route path="/favorite-meals" element={<FavoriteMealsScreen />} />
                       <Route path="*" element={<NotFound />} />
                     </Routes>
                   </FacilityGeofenceProvider>

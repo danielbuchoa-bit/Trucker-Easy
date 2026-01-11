@@ -1,5 +1,5 @@
 import { useLanguage } from '@/i18n/LanguageContext';
-import { User, Settings, Globe, Moon, Bell, Shield, HelpCircle, LogOut, ChevronRight, Star, MessageSquare, Flag, Scale, Utensils, Building2 } from 'lucide-react';
+import { User, Settings, Globe, Moon, Bell, Shield, HelpCircle, LogOut, ChevronRight, Star, MessageSquare, Flag, Scale, Utensils, Building2, Heart } from 'lucide-react';
 import BottomNav from '@/components/navigation/BottomNav';
 import { useNavigate } from 'react-router-dom';
 
@@ -18,6 +18,7 @@ const ProfileScreen = () => {
     { id: 'stop-advisor', icon: Utensils, label: 'Stop Advisor', route: '/stop-advisor' },
     { id: 'facility-rating', icon: Building2, label: 'Facility Rating', route: '/facility-rating' },
     { id: 'food-prefs', icon: Utensils, label: 'Food Preferences', route: '/food-preferences' },
+    { id: 'favorite-meals', icon: Heart, label: 'Favorite Meals', route: '/favorite-meals' },
     { id: 'settings', icon: Settings, label: t.settings.title, route: '/settings' },
     { id: 'language', icon: Globe, label: t.settings.language, action: 'language' },
     { id: 'notifications', icon: Bell, label: t.settings.notifications },
