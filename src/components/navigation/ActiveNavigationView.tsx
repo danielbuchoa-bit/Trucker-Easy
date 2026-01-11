@@ -11,6 +11,7 @@ import { useMapPerformance } from '@/hooks/useMapPerformance';
 import { useWeighStationAlerts } from '@/hooks/useWeighStationAlerts';
 import { useSpeedAlerts } from '@/hooks/useSpeedAlerts';
 import { useSpeedLimit } from '@/hooks/useSpeedLimit';
+import { useSpeedingAlertSound } from '@/hooks/useSpeedingAlertSound';
 import { ALERT_TYPE_CONFIG, SpeedAlertType } from '@/types/speedAlerts';
 import NavigationHUD from './NavigationHUD';
 import SpeedIndicator from './SpeedIndicator';
@@ -243,6 +244,8 @@ const ActiveNavigationView = () => {
     heading: debugInfo.calculatedBearing ?? userPosition?.heading ?? null,
     enabled: true,
   });
+
+
   // Arrival detection hook
   const arrival = useArrivalDetection({
     lat: userPosition?.lat ?? null,
@@ -280,6 +283,18 @@ const ActiveNavigationView = () => {
     if (!userPosition?.speed) return null;
     return userPosition.speed * 2.237; // m/s to mph
   }, [userPosition?.speed]);
+
+  // Effective speed limit (alert zone takes priority over road limit)
+  const effectiveSpeedLimit = speedAlerts.criticalAlert?.speedLimit ?? currentSpeedLimit.speedLimitMph;
+
+  // Speeding alert sounds
+  const speedingAlert = useSpeedingAlertSound({
+    currentSpeedMph: speedMph,
+    speedLimitMph: effectiveSpeedLimit ?? null,
+    enabled: voice.settings.enabled, // Link to voice settings
+    toleranceMph: 5,
+    alertIntervalMs: 15000,
+  });
 
   // Voice guidance for instructions - with look-ahead based on speed
   useEffect(() => {
