@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { ArrowUp, Volume2, LogOut } from 'lucide-react';
+import { Volume2, LogOut, CornerUpRight, CornerUpLeft, ArrowUp, TrendingUp, TrendingDown, RotateCw } from 'lucide-react';
 import ManeuverIcon from './ManeuverIcon';
 import { getManeuverIcon } from '@/lib/navigationUtils';
 import { HereService, type RouteInstruction } from '@/services/HereService';
@@ -14,7 +14,6 @@ interface NavigationHUDProps {
 
 // Extract exit number from instruction text
 function extractExitNumber(instruction: string): string | null {
-  // Match patterns like "exit 126A", "Exit 27", "exit onto 45B"
   const exitMatch = instruction.match(/exit\s*(?:onto\s*)?(\d+[A-Za-z]?)/i);
   return exitMatch ? exitMatch[1] : null;
 }
@@ -31,7 +30,6 @@ function findNextExit(
   for (let i = currentIndex; i < instructions.length; i++) {
     const inst = instructions[i];
     
-    // Check exitInfo field first (more reliable)
     if (inst.exitInfo) {
       return {
         exitNumber: inst.exitInfo,
@@ -39,7 +37,6 @@ function findNextExit(
       };
     }
     
-    // Fallback: check instruction text for exit patterns
     const exitNum = extractExitNumber(inst.instruction || '');
     if (exitNum) {
       return {
@@ -48,12 +45,53 @@ function findNextExit(
       };
     }
 
-    // Accumulate distance for subsequent instructions
     if (i > currentIndex) {
       accumulatedDistance += inst.length || 0;
     }
   }
 
+  return null;
+}
+
+// Get maneuver description from modifier
+function getManeuverDescription(modifier: string | undefined, instruction: string): string | null {
+  if (!modifier) return null;
+  
+  const modifierMap: Record<string, string> = {
+    'slight left': 'Slight Left',
+    'slight right': 'Slight Right',
+    'sharp left': 'Sharp Left', 
+    'sharp right': 'Sharp Right',
+    'left': 'Turn Left',
+    'right': 'Turn Right',
+    'uturn': 'U-Turn',
+    'straight': 'Continue',
+  };
+  
+  return modifierMap[modifier.toLowerCase()] || null;
+}
+
+// Get maneuver icon component based on modifier
+function getManeuverBadgeIcon(modifier: string | undefined) {
+  if (!modifier) return null;
+  
+  const mod = modifier.toLowerCase();
+  
+  if (mod.includes('left')) {
+    if (mod.includes('slight')) return <TrendingDown className="w-4 h-4 rotate-90" />;
+    if (mod.includes('sharp')) return <CornerUpLeft className="w-4 h-4" />;
+    return <CornerUpLeft className="w-4 h-4" />;
+  }
+  
+  if (mod.includes('right')) {
+    if (mod.includes('slight')) return <TrendingUp className="w-4 h-4 rotate-90" />;
+    if (mod.includes('sharp')) return <CornerUpRight className="w-4 h-4" />;
+    return <CornerUpRight className="w-4 h-4" />;
+  }
+  
+  if (mod.includes('uturn')) return <RotateCw className="w-4 h-4" />;
+  if (mod.includes('straight')) return <ArrowUp className="w-4 h-4" />;
+  
   return null;
 }
 
@@ -71,6 +109,11 @@ const NavigationHUD = ({
   // Get road name for display
   const roadName = currentInstruction?.roadName || '';
   
+  // Get modifier for maneuver badge
+  const modifier = (currentInstruction as any)?.modifier;
+  const maneuverDescription = getManeuverDescription(modifier, currentInstruction?.instruction || '');
+  const maneuverBadgeIcon = getManeuverBadgeIcon(modifier);
+  
   // Find next exit info
   const nextExit = useMemo(() => {
     if (!instructions || currentInstructionIndex === undefined) return null;
@@ -85,6 +128,22 @@ const NavigationHUD = ({
   const instructionText = currentInstruction?.instruction || 'Continue';
   const isStayOn = instructionText.toLowerCase().includes('stay on') || 
                    instructionText.toLowerCase().includes('continue');
+
+  // Determine action text based on instruction
+  const getActionText = () => {
+    const text = instructionText.toLowerCase();
+    if (text.includes('turn left')) return 'Turn left onto';
+    if (text.includes('turn right')) return 'Turn right onto';
+    if (text.includes('slight left')) return 'Slight left onto';
+    if (text.includes('slight right')) return 'Slight right onto';
+    if (text.includes('sharp left')) return 'Sharp left onto';
+    if (text.includes('sharp right')) return 'Sharp right onto';
+    if (text.includes('merge')) return 'Merge onto';
+    if (text.includes('exit')) return 'Exit onto';
+    if (text.includes('u-turn') || text.includes('uturn')) return 'U-turn onto';
+    if (isStayOn) return 'Stay on';
+    return 'Continue on';
+  };
 
   return (
     <div className="absolute top-4 left-4 z-30 safe-top">
@@ -101,7 +160,7 @@ const NavigationHUD = ({
             {/* Text content */}
             <div className="flex-1 min-w-0">
               <p className="text-xs text-muted-foreground leading-tight truncate">
-                {isStayOn ? 'Stay on' : 'Turn onto'}
+                {getActionText()}
               </p>
               <p className="text-base font-bold text-foreground leading-tight truncate">
                 {roadName || 'Route'}
@@ -116,6 +175,16 @@ const NavigationHUD = ({
             {HereService.formatDistance(distanceToNextManeuver)}
           </p>
         </div>
+        
+        {/* Maneuver Badge - shows when no exit info but has modifier */}
+        {!nextExit && maneuverDescription && maneuverBadgeIcon && (
+          <div className="px-3 pb-3">
+            <div className="inline-flex items-center gap-1.5 bg-primary text-primary-foreground px-3 py-1.5 rounded-lg">
+              {maneuverBadgeIcon}
+              <span className="text-sm font-bold">{maneuverDescription}</span>
+            </div>
+          </div>
+        )}
         
         {/* Next Exit badge - always visible if there's an upcoming exit */}
         {nextExit && (
