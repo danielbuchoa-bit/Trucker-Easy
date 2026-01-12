@@ -393,7 +393,25 @@ const HomeScreen = () => {
                   className="w-full flex items-center gap-4 p-4 bg-card rounded-xl border border-border hover:border-primary/50 transition-all"
                 >
                   <button
-                    onClick={() => navigate(`/place/${place.id}`)}
+                    onClick={() => {
+                      // Save place data to localStorage for the detail page
+                      localStorage.setItem(`place_${place.id}`, JSON.stringify(place));
+                      navigate(`/place/${place.id}`, { 
+                        state: { 
+                          place: {
+                            id: place.id,
+                            name: place.name,
+                            type: place.type,
+                            lat: place.lat,
+                            lng: place.lng,
+                            address: place.address,
+                            distance: place.distance,
+                            rating: place.rating,
+                            parking: place.parking,
+                          }
+                        } 
+                      });
+                    }}
                     className="flex items-center gap-4 flex-1 min-w-0 text-left"
                   >
                     <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0 overflow-hidden">
