@@ -17,9 +17,13 @@ const TrafficLightOverlay: React.FC<TrafficLightOverlayProps> = ({
   alerts,
   maxToShow = 3,
 }) => {
-  // Filter only red light cameras
+  // Filter only red light cameras that are approaching (in the direction of travel)
   const trafficLightAlerts = alerts
-    .filter(alert => alert.type === 'red_light_camera')
+    .filter(alert => 
+      alert.type === 'red_light_camera' && 
+      alert.isApproaching && // Only show if in heading cone
+      alert.distanceMiles <= 2 // Only show within 2 miles
+    )
     .slice(0, maxToShow);
 
   if (trafficLightAlerts.length === 0) {
