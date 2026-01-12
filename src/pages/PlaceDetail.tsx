@@ -1,14 +1,16 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useLanguage } from '@/i18n/LanguageContext';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { 
   ArrowLeft, Star, MapPin, Clock, Phone, Navigation, 
   ParkingSquare, Fuel, Droplets, Coffee, Scale, Wifi,
-  ThumbsUp, Flag, Building2, Loader2
+  ThumbsUp, Flag, Building2, Loader2, Sparkles, ThumbsDown
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { formatDistanceToNow } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
 
 interface PlaceData {
   id: string;
@@ -31,6 +33,28 @@ interface LocationState {
   place?: PlaceData;
 }
 
+interface Review {
+  id: string;
+  user_id: string;
+  poi_id: string;
+  poi_name: string;
+  cleanliness_rating: number;
+  friendliness_rating: number;
+  recommendation_rating: number;
+  structure_rating: number | null;
+  would_return: boolean | null;
+  created_at: string;
+}
+
+interface AggregateRating {
+  avg_overall: number | null;
+  avg_cleanliness: number | null;
+  avg_friendliness: number | null;
+  avg_recommendation: number | null;
+  review_count: number | null;
+  would_return_pct: number | null;
+}
+
 const PlaceDetailScreen = () => {
   const { t } = useLanguage();
   const navigate = useNavigate();
@@ -41,10 +65,53 @@ const PlaceDetailScreen = () => {
   const [activeTab, setActiveTab] = useState('info');
   const [showReviewForm, setShowReviewForm] = useState(false);
   const [rating, setRating] = useState(0);
-  const [reviewText, setReviewText] = useState('');
+  const [cleanlinessRating, setCleanlinessRating] = useState(0);
+  const [friendlinessRating, setFriendlinessRating] = useState(0);
+  const [wouldReturn, setWouldReturn] = useState<boolean | null>(null);
   const [place, setPlace] = useState<PlaceData | null>(locationState?.place || null);
   const [loading, setLoading] = useState(!locationState?.place);
   const [realAddress, setRealAddress] = useState<string | null>(null);
+  const [reviews, setReviews] = useState<Review[]>([]);
+  const [reviewsLoading, setReviewsLoading] = useState(false);
+  const [aggregateRating, setAggregateRating] = useState<AggregateRating | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  // Fetch reviews from database
+  const fetchReviews = useCallback(async (poiId: string) => {
+    setReviewsLoading(true);
+    try {
+      // Fetch individual reviews
+      const { data: reviewsData, error: reviewsError } = await supabase
+        .from('poi_feedback')
+        .select('*')
+        .eq('poi_id', poiId)
+        .order('created_at', { ascending: false })
+        .limit(20);
+
+      if (reviewsError) {
+        console.error('Error fetching reviews:', reviewsError);
+      } else {
+        setReviews(reviewsData || []);
+      }
+
+      // Fetch aggregate rating
+      const { data: aggregateData, error: aggregateError } = await supabase
+        .from('poi_ratings_aggregate')
+        .select('*')
+        .eq('poi_id', poiId)
+        .maybeSingle();
+
+      if (aggregateError) {
+        console.error('Error fetching aggregate:', aggregateError);
+      } else if (aggregateData) {
+        setAggregateRating(aggregateData);
+      }
+    } catch (error) {
+      console.error('Error fetching reviews:', error);
+    } finally {
+      setReviewsLoading(false);
+    }
+  }, []);
 
   // Fetch place details if not passed via state
   useEffect(() => {
@@ -63,6 +130,12 @@ const PlaceDetailScreen = () => {
             console.error('Error fetching address:', error);
           }
         }
+        
+        // Fetch reviews for this place
+        if (place.id) {
+          fetchReviews(place.id);
+        }
+        
         setLoading(false);
         return;
       }
@@ -83,6 +156,12 @@ const PlaceDetailScreen = () => {
               setRealAddress(data.label);
             }
           }
+          
+          // Fetch reviews
+          if (parsedPlace.id) {
+            fetchReviews(parsedPlace.id);
+          }
+          
           setLoading(false);
           return;
         } catch (e) {
@@ -95,7 +174,7 @@ const PlaceDetailScreen = () => {
     };
 
     fetchPlaceDetails();
-  }, [id, place]);
+  }, [id, place, fetchReviews]);
 
   // Default amenities for truck stops
   const amenities = [
@@ -107,36 +186,16 @@ const PlaceDetailScreen = () => {
     { id: 'wifi', icon: Wifi, label: 'Free WiFi' },
   ];
 
-  const reviews = [
-    {
-      id: '1',
-      user: 'BigRigBob',
-      rating: 5,
-      date: '2 days ago',
-      text: 'Great stop! Clean showers, friendly staff, and plenty of parking even at night.',
-      helpful: 12,
-    },
-    {
-      id: '2',
-      user: 'HighwayQueen',
-      rating: 4,
-      date: '1 week ago',
-      text: 'Good food at the restaurant. Parking was a bit tight when I arrived around 8pm.',
-      helpful: 8,
-    },
-    {
-      id: '3',
-      user: 'OTRVeteran',
-      rating: 3,
-      date: '2 weeks ago',
-      text: 'Fuel prices are a bit high compared to other stops nearby. Otherwise decent.',
-      helpful: 5,
-    },
-  ];
+  // Calculate average rating from a review
+  const getReviewAverage = (review: Review): number => {
+    const ratings = [review.cleanliness_rating, review.friendliness_rating, review.recommendation_rating];
+    if (review.structure_rating) ratings.push(review.structure_rating);
+    return ratings.reduce((a, b) => a + b, 0) / ratings.length;
+  };
 
   const tabs = [
     { id: 'info', label: t.place.info },
-    { id: 'reviews', label: `${t.place.reviews} (${place?.reviewCount || 0})` },
+    { id: 'reviews', label: `${t.place.reviews} (${aggregateRating?.review_count || reviews.length || 0})` },
     { id: 'reports', label: t.place.reports },
   ];
 
@@ -149,15 +208,51 @@ const PlaceDetailScreen = () => {
     }
   };
 
-  const handleSubmitReview = () => {
-    if (rating === 0) {
-      toast.error('Please select a rating');
+  const handleSubmitReview = async () => {
+    if (rating === 0 || cleanlinessRating === 0 || friendlinessRating === 0) {
+      toast.error('Por favor, preencha todas as avaliações');
       return;
     }
-    toast.success(t.reviews.thankYou);
-    setShowReviewForm(false);
-    setRating(0);
-    setReviewText('');
+    
+    if (!place) return;
+
+    setSubmitting(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        toast.error('Você precisa estar logado para avaliar');
+        navigate('/auth');
+        return;
+      }
+
+      const { error } = await supabase.from('poi_feedback').insert({
+        user_id: user.id,
+        poi_id: place.id,
+        poi_name: place.name,
+        poi_type: place.type || 'truck_stop',
+        cleanliness_rating: cleanlinessRating,
+        friendliness_rating: friendlinessRating,
+        recommendation_rating: rating,
+        would_return: wouldReturn,
+      });
+
+      if (error) throw error;
+
+      toast.success(t.reviews.thankYou);
+      setShowReviewForm(false);
+      setRating(0);
+      setCleanlinessRating(0);
+      setFriendlinessRating(0);
+      setWouldReturn(null);
+      
+      // Refresh reviews
+      fetchReviews(place.id);
+    } catch (error) {
+      console.error('Error submitting review:', error);
+      toast.error('Erro ao enviar avaliação');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleNavigate = () => {
@@ -358,6 +453,37 @@ const PlaceDetailScreen = () => {
 
             {activeTab === 'reviews' && (
               <div className="space-y-4">
+                {/* Aggregate Rating Summary */}
+                {aggregateRating && aggregateRating.review_count && aggregateRating.review_count > 0 && (
+                  <div className="bg-card rounded-xl border border-border p-4">
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="flex items-center gap-1">
+                        <Star className="w-6 h-6 text-primary fill-primary" />
+                        <span className="text-2xl font-bold">{aggregateRating.avg_overall?.toFixed(1)}</span>
+                      </div>
+                      <span className="text-muted-foreground">
+                        ({aggregateRating.review_count} avaliações)
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 text-xs sm:text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Limpeza:</span>
+                        <span className="font-medium">{aggregateRating.avg_cleanliness?.toFixed(1) || '-'}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Atendimento:</span>
+                        <span className="font-medium">{aggregateRating.avg_friendliness?.toFixed(1) || '-'}</span>
+                      </div>
+                      {aggregateRating.would_return_pct !== null && (
+                        <div className="flex justify-between col-span-2">
+                          <span className="text-muted-foreground">Voltariam:</span>
+                          <span className="font-medium text-green-500">{aggregateRating.would_return_pct?.toFixed(0)}%</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 {/* Write Review Button */}
                 {!showReviewForm ? (
                   <button
@@ -367,83 +493,178 @@ const PlaceDetailScreen = () => {
                     {t.reviews.writeReview}
                   </button>
                 ) : (
-                  <div className="bg-card rounded-xl border border-border p-4">
-                    <h3 className="font-semibold text-foreground mb-3">{t.reviews.writeReview}</h3>
+                  <div className="bg-card rounded-xl border border-border p-4 space-y-4">
+                    <h3 className="font-semibold text-foreground">{t.reviews.writeReview}</h3>
                     
-                    {/* Star Rating */}
-                    <div className="flex gap-1 sm:gap-2 mb-4">
-                      {[1, 2, 3, 4, 5].map((star) => (
+                    {/* Recommendation Rating */}
+                    <div>
+                      <label className="text-sm text-muted-foreground mb-2 block">Recomendação geral</label>
+                      <div className="flex gap-1 sm:gap-2">
+                        {[1, 2, 3, 4, 5].map((star) => (
+                          <button
+                            key={star}
+                            onClick={() => setRating(star)}
+                            className="p-1"
+                          >
+                            <Star 
+                              className={`w-6 h-6 sm:w-8 sm:h-8 ${star <= rating ? 'text-primary fill-primary' : 'text-muted-foreground'}`} 
+                            />
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Cleanliness Rating */}
+                    <div>
+                      <label className="text-sm text-muted-foreground mb-2 block">Limpeza</label>
+                      <div className="flex gap-1 sm:gap-2">
+                        {[1, 2, 3, 4, 5].map((star) => (
+                          <button
+                            key={star}
+                            onClick={() => setCleanlinessRating(star)}
+                            className="p-1"
+                          >
+                            <Star 
+                              className={`w-5 h-5 sm:w-6 sm:h-6 ${star <= cleanlinessRating ? 'text-primary fill-primary' : 'text-muted-foreground'}`} 
+                            />
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Friendliness Rating */}
+                    <div>
+                      <label className="text-sm text-muted-foreground mb-2 block">Atendimento</label>
+                      <div className="flex gap-1 sm:gap-2">
+                        {[1, 2, 3, 4, 5].map((star) => (
+                          <button
+                            key={star}
+                            onClick={() => setFriendlinessRating(star)}
+                            className="p-1"
+                          >
+                            <Star 
+                              className={`w-5 h-5 sm:w-6 sm:h-6 ${star <= friendlinessRating ? 'text-primary fill-primary' : 'text-muted-foreground'}`} 
+                            />
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Would Return */}
+                    <div>
+                      <label className="text-sm text-muted-foreground mb-2 block">Voltaria aqui?</label>
+                      <div className="flex gap-2">
                         <button
-                          key={star}
-                          onClick={() => setRating(star)}
-                          className="p-1"
+                          onClick={() => setWouldReturn(true)}
+                          className={`flex-1 py-2 rounded-lg font-medium text-sm flex items-center justify-center gap-2 ${
+                            wouldReturn === true 
+                              ? 'bg-green-500/20 text-green-500 border border-green-500' 
+                              : 'bg-secondary text-muted-foreground'
+                          }`}
                         >
-                          <Star 
-                            className={`w-6 h-6 sm:w-8 sm:h-8 ${star <= rating ? 'text-primary fill-primary' : 'text-muted-foreground'}`} 
-                          />
+                          <ThumbsUp className="w-4 h-4" />
+                          Sim
                         </button>
-                      ))}
+                        <button
+                          onClick={() => setWouldReturn(false)}
+                          className={`flex-1 py-2 rounded-lg font-medium text-sm flex items-center justify-center gap-2 ${
+                            wouldReturn === false 
+                              ? 'bg-red-500/20 text-red-500 border border-red-500' 
+                              : 'bg-secondary text-muted-foreground'
+                          }`}
+                        >
+                          <ThumbsDown className="w-4 h-4" />
+                          Não
+                        </button>
+                      </div>
                     </div>
                     
-                    <textarea
-                      value={reviewText}
-                      onChange={(e) => setReviewText(e.target.value)}
-                      placeholder={t.reviews.shareFeedback}
-                      className="w-full h-20 sm:h-24 p-3 bg-secondary/50 border border-border rounded-lg text-foreground placeholder:text-muted-foreground resize-none focus:outline-none focus:ring-2 focus:ring-primary text-sm"
-                    />
-                    
-                    <div className="flex gap-2 mt-3">
+                    <div className="flex gap-2 pt-2">
                       <button
                         onClick={() => setShowReviewForm(false)}
                         className="flex-1 py-2 sm:py-3 bg-secondary text-foreground rounded-lg font-medium text-sm"
+                        disabled={submitting}
                       >
                         {t.common.cancel}
                       </button>
                       <button
                         onClick={handleSubmitReview}
-                        className="flex-1 py-2 sm:py-3 bg-primary text-primary-foreground rounded-lg font-medium text-sm"
+                        disabled={submitting}
+                        className="flex-1 py-2 sm:py-3 bg-primary text-primary-foreground rounded-lg font-medium text-sm disabled:opacity-50"
                       >
-                        {t.reviews.submit}
+                        {submitting ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : t.reviews.submit}
                       </button>
                     </div>
                   </div>
                 )}
 
-                {/* Reviews List */}
-                {reviews.map((review) => (
-                  <div key={review.id} className="bg-card rounded-xl border border-border p-3 sm:p-4">
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-2">
-                        <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-primary/20 flex items-center justify-center text-xs font-bold text-primary">
-                          {review.user[0]}
-                        </div>
-                        <span className="font-medium text-foreground text-sm">{review.user}</span>
-                      </div>
-                      <span className="text-xs sm:text-sm text-muted-foreground">{review.date}</span>
-                    </div>
-                    
-                    <div className="flex items-center gap-0.5 mb-2">
-                      {[1, 2, 3, 4, 5].map((star) => (
-                        <Star
-                          key={star}
-                          className={`w-3 h-3 sm:w-4 sm:h-4 ${star <= review.rating ? 'text-primary fill-primary' : 'text-muted-foreground'}`}
-                        />
-                      ))}
-                    </div>
-                    
-                    <p className="text-xs sm:text-sm text-foreground">{review.text}</p>
-                    
-                    <div className="flex items-center gap-4 mt-3">
-                      <button className="flex items-center gap-1 text-xs sm:text-sm text-muted-foreground hover:text-foreground">
-                        <ThumbsUp className="w-3 h-3 sm:w-4 sm:h-4" />
-                        <span>{review.helpful}</span>
-                      </button>
-                      <button className="flex items-center gap-1 text-xs sm:text-sm text-muted-foreground hover:text-foreground">
-                        <Flag className="w-3 h-3 sm:w-4 sm:h-4" />
-                      </button>
-                    </div>
+                {/* Reviews Loading */}
+                {reviewsLoading && (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                    <span className="ml-2 text-muted-foreground text-sm">Carregando avaliações...</span>
                   </div>
-                ))}
+                )}
+
+                {/* No Reviews */}
+                {!reviewsLoading && reviews.length === 0 && (
+                  <div className="bg-card rounded-xl border border-border p-6 text-center">
+                    <Sparkles className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
+                    <p className="text-muted-foreground text-sm">Nenhuma avaliação ainda.</p>
+                    <p className="text-muted-foreground text-xs mt-1">Seja o primeiro a avaliar!</p>
+                  </div>
+                )}
+
+                {/* Reviews List */}
+                {!reviewsLoading && reviews.map((review) => {
+                  const avgRating = getReviewAverage(review);
+                  const userInitial = review.user_id.substring(0, 2).toUpperCase();
+                  
+                  return (
+                    <div key={review.id} className="bg-card rounded-xl border border-border p-3 sm:p-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-primary/20 flex items-center justify-center text-xs font-bold text-primary">
+                            {userInitial}
+                          </div>
+                          <span className="font-medium text-foreground text-sm">Driver</span>
+                        </div>
+                        <span className="text-xs sm:text-sm text-muted-foreground">
+                          {formatDistanceToNow(new Date(review.created_at), { addSuffix: true, locale: ptBR })}
+                        </span>
+                      </div>
+                      
+                      <div className="flex items-center gap-0.5 mb-2">
+                        {[1, 2, 3, 4, 5].map((star) => (
+                          <Star
+                            key={star}
+                            className={`w-3 h-3 sm:w-4 sm:h-4 ${star <= Math.round(avgRating) ? 'text-primary fill-primary' : 'text-muted-foreground'}`}
+                          />
+                        ))}
+                        <span className="text-xs text-muted-foreground ml-1">({avgRating.toFixed(1)})</span>
+                      </div>
+                      
+                      <div className="grid grid-cols-2 gap-1 text-xs text-muted-foreground mb-2">
+                        <span>Limpeza: {review.cleanliness_rating}/5</span>
+                        <span>Atendimento: {review.friendliness_rating}/5</span>
+                      </div>
+                      
+                      {review.would_return !== null && (
+                        <div className="flex items-center gap-1 text-xs">
+                          {review.would_return ? (
+                            <span className="text-green-500 flex items-center gap-1">
+                              <ThumbsUp className="w-3 h-3" /> Voltaria
+                            </span>
+                          ) : (
+                            <span className="text-red-500 flex items-center gap-1">
+                              <ThumbsDown className="w-3 h-3" /> Não voltaria
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
 
