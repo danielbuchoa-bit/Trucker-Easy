@@ -4,6 +4,7 @@ import { useGeolocation, calculateDistance } from '@/hooks/useGeolocation';
 import { useActiveNavigation } from '@/contexts/ActiveNavigationContext';
 import { useNotifications } from '@/hooks/useNotifications';
 import PoiFeedbackModal from '@/components/poi/PoiFeedbackModal';
+import FoodSuggestionPrompt from '@/components/stops/FoodSuggestionPrompt';
 import { toast } from 'sonner';
 
 interface VisitedPoi {
@@ -18,6 +19,8 @@ interface VisitedPoi {
 interface PoiFeedbackContextType {
   currentVisitedPoi: VisitedPoi | null;
   isShowingFeedback: boolean;
+  isShowingFoodSuggestion: boolean;
+  dismissFoodSuggestion: () => void;
 }
 
 const PoiFeedbackContext = createContext<PoiFeedbackContextType | undefined>(undefined);
@@ -55,12 +58,22 @@ export const PoiFeedbackProvider: React.FC<{ children: React.ReactNode }> = ({ c
   const [currentVisitedPoi, setCurrentVisitedPoi] = useState<VisitedPoi | null>(null);
   const [pendingFeedbackPoi, setPendingFeedbackPoi] = useState<VisitedPoi | null>(null);
   const [isShowingFeedback, setIsShowingFeedback] = useState(false);
+  const [isShowingFoodSuggestion, setIsShowingFoodSuggestion] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   
   const nearbyPoisCache = useRef<Map<string, any>>(new Map());
   const lastPoisFetch = useRef<number>(0);
   const recentlyRatedPois = useRef<Set<string>>(new Set());
+  const dismissedFoodSuggestions = useRef<Set<string>>(new Set());
   const notificationPermissionRequested = useRef(false);
+
+  // Dismiss food suggestion
+  const dismissFoodSuggestion = useCallback(() => {
+    if (currentVisitedPoi) {
+      dismissedFoodSuggestions.current.add(currentVisitedPoi.id);
+    }
+    setIsShowingFoodSuggestion(false);
+  }, [currentVisitedPoi]);
 
   // Request notification permission when entering a POI for the first time
   useEffect(() => {
@@ -190,15 +203,22 @@ export const PoiFeedbackProvider: React.FC<{ children: React.ReactNode }> = ({ c
     // Handle entry
     if (closestPoi && closestDistance < ENTER_RADIUS_M && !currentVisitedPoi) {
       const poiType = mapPoiType(closestPoi.categories?.[0]?.id || 'fuel');
-      setCurrentVisitedPoi({
+      const newPoi: VisitedPoi = {
         id: closestPoi.id,
         name: closestPoi.title || 'Local',
         type: poiType,
         lat: closestPoi.position.lat,
         lng: closestPoi.position.lng,
         enteredAt: Date.now(),
-      });
+      };
+      setCurrentVisitedPoi(newPoi);
       console.log('[PoiFeedback] Entered POI:', closestPoi.title);
+      
+      // Show food suggestion prompt for truck stops (only if not dismissed before)
+      if ((poiType === 'truck_stop' || poiType === 'fuel') && !dismissedFoodSuggestions.current.has(closestPoi.id)) {
+        setIsShowingFoodSuggestion(true);
+        console.log('[PoiFeedback] Showing food suggestion for:', closestPoi.title);
+      }
     }
 
     // Handle exit
@@ -296,9 +316,29 @@ export const PoiFeedbackProvider: React.FC<{ children: React.ReactNode }> = ({ c
   };
 
   return (
-    <PoiFeedbackContext.Provider value={{ currentVisitedPoi, isShowingFeedback }}>
+    <PoiFeedbackContext.Provider value={{ 
+      currentVisitedPoi, 
+      isShowingFeedback, 
+      isShowingFoodSuggestion,
+      dismissFoodSuggestion 
+    }}>
       {children}
       
+      {/* Food suggestion prompt on entry */}
+      {isShowingFoodSuggestion && currentVisitedPoi && (
+        <FoodSuggestionPrompt
+          stop={{
+            id: currentVisitedPoi.id,
+            name: currentVisitedPoi.name,
+            type: currentVisitedPoi.type,
+            lat: currentVisitedPoi.lat,
+            lng: currentVisitedPoi.lng,
+          }}
+          onDismiss={dismissFoodSuggestion}
+        />
+      )}
+      
+      {/* Feedback modal on exit */}
       {isShowingFeedback && pendingFeedbackPoi && (
         <PoiFeedbackModal
           poiName={pendingFeedbackPoi.name}
