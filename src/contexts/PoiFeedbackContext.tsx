@@ -36,19 +36,31 @@ export const usePoiFeedback = () => {
 // POI types that trigger feedback
 const FEEDBACK_POI_TYPES = ['fuel', 'truck_stop', 'rest_area'];
 
-// HERE category IDs for truck-related POIs - EXPANDED to include gas stations and rest areas
+// HERE category IDs for truck-related POIs - EXPANDED for better coverage
 const TRUCK_CATEGORIES = [
   '700-7850-0000',   // Truck Stop / Service Area
+  '700-7850-0115',   // Truck Stop
   '700-7600-0000',   // Fueling Station / Gas Station
   '700-7600-0116',   // Petrol Station
   '700-7600-0117',   // Diesel Station
+  '700-7600-0324',   // Truck Dealer/Truck Parking
+  '700-7900-0000',   // Auto Service & Maintenance
   '550-5510-0000',   // Rest Area
+  '550-5510-0358',   // Rest Area with Truck Facilities
 ];
 
-// Distance thresholds - INCREASED for truck stop detection
-const ENTER_RADIUS_M = 200; // Enter when within 200m (increased for better detection)
-const EXIT_RADIUS_M = 350; // Exit when beyond 350m (increased for hysteresis)
-const MIN_STAY_TIME_MS = 60000; // Minimum 1 minute stay to trigger feedback
+// Common truck stop brand names for text-based detection fallback
+const TRUCK_STOP_BRANDS = [
+  'pilot', 'flying j', 'loves', 'ta', 'petro', 'town pump',
+  'sapp bros', 'kwik trip', 'casey', 'bucees', 'ambest',
+  'speedway', 'shell', 'chevron', 'exxon', 'mobil', 'bp',
+  'marathon', 'citgo', 'sinclair', 'conoco', 'phillips 66'
+];
+
+// Distance thresholds - Truck stops are large areas, need bigger radius
+const ENTER_RADIUS_M = 400; // Enter when within 400m (truck stops are big!)
+const EXIT_RADIUS_M = 600; // Exit when beyond 600m
+const MIN_STAY_TIME_MS = 45000; // Minimum 45 seconds stay to trigger feedback
 
 export const PoiFeedbackProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { latitude, longitude } = useGeolocation({ enableHighAccuracy: true, watchPosition: true });
@@ -98,40 +110,69 @@ export const PoiFeedbackProvider: React.FC<{ children: React.ReactNode }> = ({ c
     return () => subscription.unsubscribe();
   }, []);
 
-  // Fetch nearby POIs using correct HERE category IDs
+  // Fetch nearby POIs using categories AND text search fallback
   const fetchNearbyPois = useCallback(async (lat: number, lng: number) => {
     const now = Date.now();
-    if (now - lastPoisFetch.current < 30000) return; // Cache for 30s
+    if (now - lastPoisFetch.current < 20000) return; // Cache for 20s
     lastPoisFetch.current = now;
 
     try {
+      // First try category-based search
       const { data, error } = await supabase.functions.invoke('here_browse_pois', {
         body: {
           lat,
           lng,
-          radiusMeters: 500,
-          categories: TRUCK_CATEGORIES, // Use HERE category IDs
-          limit: 20,
+          radiusMeters: 800, // Increased radius
+          categories: TRUCK_CATEGORIES,
+          limit: 30,
         },
       });
 
       if (error) {
         console.error('[PoiFeedback] Error fetching POIs:', error);
-        return;
       }
 
-      // Response now uses 'pois' key from the updated edge function
-      if (data?.pois) {
+      let pois = data?.pois || [];
+      console.log('[PoiFeedback] Category search returned:', pois.length, 'POIs');
+
+      // If no POIs found, try text search for known truck stop brands
+      if (pois.length === 0) {
+        console.log('[PoiFeedback] Trying text search fallback...');
+        try {
+          const { data: textData } = await supabase.functions.invoke('here_browse_pois', {
+            body: {
+              lat,
+              lng,
+              radiusMeters: 800,
+              searchText: 'truck stop gas station fuel',
+              limit: 20,
+            },
+          });
+          if (textData?.pois) {
+            pois = textData.pois;
+            console.log('[PoiFeedback] Text search returned:', pois.length, 'POIs');
+          }
+        } catch (textErr) {
+          console.error('[PoiFeedback] Text search failed:', textErr);
+        }
+      }
+
+      // Cache all found POIs
+      if (pois.length > 0) {
         nearbyPoisCache.current.clear();
-        data.pois.forEach((poi: any) => {
+        pois.forEach((poi: any) => {
+          // Check if name matches known truck stop brands
+          const nameLower = (poi.name || '').toLowerCase();
+          const isTruckStop = TRUCK_STOP_BRANDS.some(brand => nameLower.includes(brand));
+          
           nearbyPoisCache.current.set(poi.id, {
             ...poi,
             position: { lat: poi.lat, lng: poi.lng },
             title: poi.name,
-            categories: [{ id: poi.category }],
+            categories: [{ id: isTruckStop ? '700-7850-0000' : (poi.category || '700-7600-0000') }],
           });
         });
-        console.log('[PoiFeedback] Cached POIs:', data.pois.length);
+        console.log('[PoiFeedback] Cached POIs:', nearbyPoisCache.current.size);
       }
     } catch (err) {
       console.error('[PoiFeedback] Failed to fetch POIs:', err);
@@ -176,10 +217,19 @@ export const PoiFeedbackProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
   // Monitor position and detect POI entry/exit
   useEffect(() => {
-    if (!latitude || !longitude) return;
+    if (!latitude || !longitude) {
+      console.log('[PoiFeedback] No position available');
+      return;
+    }
 
     // Fetch nearby POIs periodically
     fetchNearbyPois(latitude, longitude);
+
+    // Debug: log cache size
+    const cacheSize = nearbyPoisCache.current.size;
+    if (cacheSize > 0) {
+      console.log('[PoiFeedback] Checking', cacheSize, 'cached POIs at:', latitude.toFixed(5), longitude.toFixed(5));
+    }
 
     // Check if we're inside any POI
     let closestPoi: any = null;
@@ -199,6 +249,11 @@ export const PoiFeedbackProvider: React.FC<{ children: React.ReactNode }> = ({ c
         closestPoi = poi;
       }
     });
+
+    // Log closest POI for debugging
+    if (closestPoi) {
+      console.log('[PoiFeedback] Closest POI:', closestPoi.title, 'at', Math.round(closestDistance), 'm (threshold:', ENTER_RADIUS_M, 'm)');
+    }
 
     // Handle entry
     if (closestPoi && closestDistance < ENTER_RADIUS_M && !currentVisitedPoi) {
