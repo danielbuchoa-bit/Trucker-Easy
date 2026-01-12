@@ -1,12 +1,28 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Building2, Star, Clock, Search, Loader2 } from 'lucide-react';
+import { Building2, Star, Clock, Search, Loader2, Plus, MapPin, Navigation } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/supabase/client';
 import { useGeolocation, calculateDistance } from '@/hooks/useGeolocation';
 import type { Facility, FacilityAggregate } from '@/types/collaborative';
+import { toast } from 'sonner';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+
+interface GeocodedResult {
+  id: string;
+  title: string;
+  address: string;
+  lat: number;
+  lng: number;
+  city?: string;
+  state?: string;
+  country?: string;
+}
 
 const FacilitiesList: React.FC = () => {
   const navigate = useNavigate();
@@ -15,6 +31,17 @@ const FacilitiesList: React.FC = () => {
   const [aggregates, setAggregates] = useState<Record<string, FacilityAggregate>>({});
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
+  const [searching, setSearching] = useState(false);
+  const [geocodedResults, setGeocodedResults] = useState<GeocodedResult[]>([]);
+  const [showGeoResults, setShowGeoResults] = useState(false);
+  const [searchPerformed, setSearchPerformed] = useState(false);
+
+  // Manual entry modal state
+  const [showManualEntry, setShowManualEntry] = useState(false);
+  const [manualName, setManualName] = useState('');
+  const [manualAddress, setManualAddress] = useState('');
+  const [manualType, setManualType] = useState<'shipper' | 'receiver' | 'both'>('both');
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -45,6 +72,153 @@ const FacilitiesList: React.FC = () => {
     fetchData();
   }, []);
 
+  const handleSearch = useCallback(async () => {
+    if (searchQuery.trim().length < 3) return;
+
+    setSearching(true);
+    setSearchPerformed(true);
+    setGeocodedResults([]);
+
+    try {
+      // First check if we have matching facilities in DB
+      const { data: dbFacilities } = await supabase
+        .from('facilities')
+        .select('*')
+        .or(`name.ilike.%${searchQuery}%,address.ilike.%${searchQuery}%`)
+        .limit(10);
+
+      if (dbFacilities && dbFacilities.length > 0) {
+        setFacilities(dbFacilities as unknown as Facility[]);
+        setShowGeoResults(false);
+      } else {
+        // No DB results, try geocoding
+        const { data, error } = await supabase.functions.invoke('here_geocode', {
+          body: { query: searchQuery, limit: 5 },
+        });
+
+        if (error) {
+          console.error('Geocode error:', error);
+          toast.error('Error searching for location');
+        } else if (data?.results && data.results.length > 0) {
+          setGeocodedResults(data.results);
+          setShowGeoResults(true);
+        } else {
+          setGeocodedResults([]);
+          setShowGeoResults(true);
+        }
+      }
+    } catch (error) {
+      console.error('Search error:', error);
+      toast.error('Error during search');
+    } finally {
+      setSearching(false);
+    }
+  }, [searchQuery]);
+
+  const handleSelectGeoResult = async (result: GeocodedResult) => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        toast.error('Please login to add facilities');
+        return;
+      }
+
+      // Create facility from geocoded result
+      const { data, error } = await supabase.from('facilities').insert({
+        name: result.title,
+        address: result.address,
+        lat: result.lat,
+        lng: result.lng,
+        facility_type: 'both',
+        created_by: user.id,
+      }).select().single();
+
+      if (error) {
+        console.error('Error creating facility:', error);
+        toast.error('Error creating facility');
+        return;
+      }
+
+      toast.success('Facility added!');
+      setShowGeoResults(false);
+      setGeocodedResults([]);
+      
+      // Navigate to facility detail to rate it
+      if (data) {
+        navigate(`/facility/${data.id}`);
+      }
+    } catch (error) {
+      console.error('Error:', error);
+      toast.error('Error adding facility');
+    }
+  };
+
+  const handleNavigateToResult = (result: GeocodedResult) => {
+    navigate('/navigation', {
+      state: {
+        destinationLat: result.lat,
+        destinationLng: result.lng,
+        destinationName: result.title,
+        autoStart: true,
+      },
+    });
+  };
+
+  const handleManualEntry = () => {
+    setManualName(searchQuery);
+    setManualAddress('');
+    setManualType('both');
+    setShowManualEntry(true);
+  };
+
+  const handleSaveManual = async () => {
+    if (!manualName.trim()) {
+      toast.error('Please enter a facility name');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        toast.error('Please login to add facilities');
+        return;
+      }
+
+      // Use current location or default coords
+      const lat = latitude || 0;
+      const lng = longitude || 0;
+
+      const { data, error } = await supabase.from('facilities').insert({
+        name: manualName.trim(),
+        address: manualAddress.trim() || null,
+        lat,
+        lng,
+        facility_type: manualType,
+        created_by: user.id,
+      }).select().single();
+
+      if (error) {
+        console.error('Error creating facility:', error);
+        toast.error('Error creating facility');
+        return;
+      }
+
+      toast.success('Facility added!');
+      setShowManualEntry(false);
+      
+      // Navigate to facility detail to rate it
+      if (data) {
+        navigate(`/facility/${data.id}`);
+      }
+    } catch (error) {
+      console.error('Error:', error);
+      toast.error('Error adding facility');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const getDistance = (facility: Facility): number | null => {
     if (!latitude || !longitude) return null;
     return calculateDistance(latitude, longitude, facility.lat, facility.lng);
@@ -59,14 +233,15 @@ const FacilitiesList: React.FC = () => {
 
   const getTypeColor = (type: string) => {
     switch (type) {
-      case 'shipper': return 'bg-blue-500/10 text-blue-700 dark:text-blue-400';
-      case 'receiver': return 'bg-green-500/10 text-green-700 dark:text-green-400';
-      default: return 'bg-purple-500/10 text-purple-700 dark:text-purple-400';
+      case 'shipper': return 'bg-blue-500/10 text-blue-400';
+      case 'receiver': return 'bg-green-500/10 text-green-400';
+      default: return 'bg-purple-500/10 text-purple-400';
     }
   };
 
   const filteredFacilities = facilities
     .filter(f => 
+      !searchQuery || 
       f.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (f.address && f.address.toLowerCase().includes(searchQuery.toLowerCase()))
     )
@@ -90,81 +265,230 @@ const FacilitiesList: React.FC = () => {
   return (
     <div className="space-y-4">
       {/* Search */}
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-        <Input
-          placeholder="Search facilities..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="pl-10"
-        />
+      <div className="flex gap-2">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Input
+            placeholder="Search facilities..."
+            value={searchQuery}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              setSearchPerformed(false);
+              setShowGeoResults(false);
+            }}
+            onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+            className="pl-10"
+          />
+        </div>
+        <Button 
+          onClick={handleSearch} 
+          disabled={searchQuery.trim().length < 3 || searching}
+          size="icon"
+        >
+          {searching ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+        </Button>
       </div>
 
-      {/* List */}
-      {filteredFacilities.length === 0 ? (
-        <Card>
-          <CardContent className="py-8 text-center text-muted-foreground">
-            {searchQuery ? 'No facilities found' : 'No facilities yet. Rate your first facility!'}
-          </CardContent>
-        </Card>
-      ) : (
+      {/* Geocoded Results */}
+      {showGeoResults && (
         <div className="space-y-3">
-          {filteredFacilities.map((facility) => {
-            const agg = aggregates[facility.id];
-            const distance = getDistance(facility);
-            
-            return (
-              <Card 
-                key={facility.id}
-                className="cursor-pointer hover:border-primary/50 transition-colors"
-                onClick={() => navigate(`/facility/${facility.id}`)}
-              >
-                <CardContent className="py-4">
-                  <div className="flex items-start justify-between mb-2">
-                    <div className="flex items-start gap-3">
-                      <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
-                        <Building2 className="w-5 h-5 text-primary" />
-                      </div>
-                      <div>
-                        <h3 className="font-semibold">{facility.name}</h3>
-                        {facility.address && (
-                          <p className="text-sm text-muted-foreground">{facility.address}</p>
-                        )}
-                        <div className="flex items-center gap-2 mt-1">
-                          {distance !== null && (
-                            <span className="text-xs text-muted-foreground">
-                              {formatDistance(distance)}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                    <Badge className={getTypeColor(facility.facility_type)}>
-                      {facility.facility_type}
-                    </Badge>
-                  </div>
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-medium text-muted-foreground">
+              {geocodedResults.length > 0 ? 'Found on map:' : 'No results found on map'}
+            </h3>
+            <Button variant="outline" size="sm" onClick={handleManualEntry}>
+              <Plus className="w-4 h-4 mr-1" />
+              Add manually
+            </Button>
+          </div>
 
-                  {agg && (
-                    <div className="flex items-center gap-4 mt-2 text-sm">
-                      <div className="flex items-center gap-1">
-                        <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
-                        <span className="font-medium">{Number(agg.avg_overall).toFixed(1)}</span>
-                        <span className="text-muted-foreground">({agg.review_count})</span>
-                      </div>
-                      {agg.typical_time && (
-                        <div className="flex items-center gap-1 text-muted-foreground">
-                          <Clock className="w-4 h-4" />
-                          <span>{agg.typical_time}</span>
-                        </div>
-                      )}
+          {geocodedResults.map((result) => (
+            <Card key={result.id} className="border-dashed">
+              <CardContent className="py-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-start gap-3 flex-1">
+                    <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                      <MapPin className="w-5 h-5 text-primary" />
                     </div>
-                  )}
-                </CardContent>
-              </Card>
-            );
-          })}
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-semibold truncate">{result.title}</h3>
+                      <p className="text-sm text-muted-foreground truncate">{result.address}</p>
+                    </div>
+                  </div>
+                  <div className="flex gap-2 flex-shrink-0">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleNavigateToResult(result)}
+                    >
+                      <Navigation className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={() => handleSelectGeoResult(result)}
+                    >
+                      <Plus className="w-4 h-4 mr-1" />
+                      Add & Rate
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+
+          {geocodedResults.length === 0 && (
+            <Card>
+              <CardContent className="py-6 text-center">
+                <p className="text-muted-foreground mb-4">
+                  Can't find "{searchQuery}" on the map
+                </p>
+                <Button onClick={handleManualEntry}>
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add facility manually
+                </Button>
+              </CardContent>
+            </Card>
+          )}
         </div>
       )}
+
+      {/* DB Facilities List */}
+      {!showGeoResults && (
+        <>
+          {filteredFacilities.length === 0 ? (
+            <Card>
+              <CardContent className="py-8 text-center text-muted-foreground">
+                <Building2 className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                <p className="mb-4">
+                  {searchPerformed ? 'No facilities found' : 'No facilities yet'}
+                </p>
+                <p className="text-sm mb-4">
+                  Search for a company name above to find it on the map
+                </p>
+                <Button variant="outline" onClick={handleManualEntry} disabled={searchQuery.trim().length < 1}>
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add facility manually
+                </Button>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-3">
+              {filteredFacilities.map((facility) => {
+                const agg = aggregates[facility.id];
+                const distance = getDistance(facility);
+                
+                return (
+                  <Card 
+                    key={facility.id}
+                    className="cursor-pointer hover:border-primary/50 transition-colors"
+                    onClick={() => navigate(`/facility/${facility.id}`)}
+                  >
+                    <CardContent className="py-4">
+                      <div className="flex items-start justify-between mb-2">
+                        <div className="flex items-start gap-3">
+                          <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                            <Building2 className="w-5 h-5 text-primary" />
+                          </div>
+                          <div>
+                            <h3 className="font-semibold">{facility.name}</h3>
+                            {facility.address && (
+                              <p className="text-sm text-muted-foreground">{facility.address}</p>
+                            )}
+                            <div className="flex items-center gap-2 mt-1">
+                              {distance !== null && (
+                                <span className="text-xs text-muted-foreground">
+                                  {formatDistance(distance)}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                        <Badge className={getTypeColor(facility.facility_type)}>
+                          {facility.facility_type}
+                        </Badge>
+                      </div>
+
+                      {agg && (
+                        <div className="flex items-center gap-4 mt-2 text-sm">
+                          <div className="flex items-center gap-1">
+                            <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
+                            <span className="font-medium">{Number(agg.avg_overall).toFixed(1)}</span>
+                            <span className="text-muted-foreground">({agg.review_count})</span>
+                          </div>
+                          {agg.typical_time && (
+                            <div className="flex items-center gap-1 text-muted-foreground">
+                              <Clock className="w-4 h-4" />
+                              <span>{agg.typical_time}</span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Manual Entry Modal */}
+      <Dialog open={showManualEntry} onOpenChange={setShowManualEntry}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add Facility Manually</DialogTitle>
+            <DialogDescription>
+              Enter the facility details to add it to the database
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="manualName">Facility Name *</Label>
+              <Input
+                id="manualName"
+                value={manualName}
+                onChange={(e) => setManualName(e.target.value)}
+                placeholder="e.g., Amazon Warehouse"
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="manualAddress">Address (optional)</Label>
+              <Input
+                id="manualAddress"
+                value={manualAddress}
+                onChange={(e) => setManualAddress(e.target.value)}
+                placeholder="123 Main St, City, State"
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="manualType">Facility Type</Label>
+              <Select value={manualType} onValueChange={(v) => setManualType(v as 'shipper' | 'receiver' | 'both')}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="shipper">Shipper</SelectItem>
+                  <SelectItem value="receiver">Receiver</SelectItem>
+                  <SelectItem value="both">Both</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex gap-2 justify-end">
+              <Button variant="outline" onClick={() => setShowManualEntry(false)}>
+                Cancel
+              </Button>
+              <Button onClick={handleSaveManual} disabled={saving}>
+                {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+                Save & Rate
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
