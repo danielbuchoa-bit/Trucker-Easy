@@ -102,8 +102,9 @@ const NavigationHUD = ({
   currentInstructionIndex,
   onRepeat,
 }: NavigationHUDProps) => {
+  // Pass maneuverType (action) to getManeuverIcon for better accuracy
   const maneuverType = currentInstruction
-    ? getManeuverIcon(currentInstruction.instruction)
+    ? getManeuverIcon(currentInstruction.instruction, currentInstruction.action)
     : 'straight';
 
   // Get road name for display
