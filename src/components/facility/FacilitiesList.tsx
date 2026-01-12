@@ -424,9 +424,23 @@ const FacilitiesList: React.FC = () => {
                             )}
                           </>
                         ) : (
-                          <div className="flex items-center gap-1 text-muted-foreground">
-                            <Star className="w-4 h-4" />
-                            <span className="text-xs">No ratings yet</span>
+                          <div className="flex items-center justify-between w-full">
+                            <div className="flex items-center gap-1 text-muted-foreground">
+                              <Star className="w-4 h-4" />
+                              <span className="text-xs">No ratings yet</span>
+                            </div>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 text-xs"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                navigate(`/facility/${facility.id}`);
+                              }}
+                            >
+                              <Star className="w-3 h-3 mr-1" />
+                              Rate
+                            </Button>
                           </div>
                         )}
                       </div>
