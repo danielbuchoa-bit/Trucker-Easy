@@ -9,8 +9,7 @@ interface SpeedAlertsRequest {
   lat: number;
   lng: number;
   radiusMeters?: number;
-  // Optional: route corridor for along-route alerts
-  routeCoords?: [number, number][]; // [lng, lat] pairs
+  routeCoords?: [number, number][];
 }
 
 interface SpeedAlert {
@@ -28,6 +27,7 @@ interface SpeedAlert {
   startTime?: string;
   endTime?: string;
   criticality?: string;
+  source?: string;
 }
 
 // Map HERE incident types to our alert types
@@ -45,9 +45,6 @@ function mapIncidentType(hereType: string, codes: number[]): SpeedAlert['type'] 
     'disabledVehicle': 'incident',
   };
   
-  // Check codes for specific camera types
-  // Code 1: Traffic camera
-  // Code 2: Speed trap
   if (codes?.includes(1) || codes?.includes(2)) {
     return 'speed_camera';
   }
@@ -57,13 +54,118 @@ function mapIncidentType(hereType: string, codes: number[]): SpeedAlert['type'] 
 
 // Extract speed limit from incident data
 function extractSpeedLimit(incident: any): { mph?: number; kmh?: number } {
-  // HERE may include speed info in the incident
   const speedLimit = incident.speedLimit;
   if (speedLimit) {
     const kmh = speedLimit;
     return { kmh, mph: Math.round(kmh * 0.621371) };
   }
   return {};
+}
+
+// Fetch traffic cameras from HERE Browse API
+async function fetchTrafficCameras(lat: number, lng: number, radiusMeters: number, apiKey: string): Promise<SpeedAlert[]> {
+  const alerts: SpeedAlert[] = [];
+  
+  try {
+    // HERE Browse API categories for traffic cameras
+    // 700-7520: Traffic cameras/surveillance
+    // 700-7530: Speed cameras  
+    const browseUrl = new URL('https://browse.search.hereapi.com/v1/browse');
+    browseUrl.searchParams.set('at', `${lat},${lng}`);
+    browseUrl.searchParams.set('limit', '50');
+    browseUrl.searchParams.set('in', `circle:${lat},${lng};r=${radiusMeters}`);
+    // Search for traffic enforcement POIs
+    browseUrl.searchParams.set('categories', '700-7520,700-7530,700-7850-0000');
+    browseUrl.searchParams.set('apiKey', apiKey);
+    
+    console.log('[HERE_SPEED_ALERTS] Fetching traffic cameras from Browse API');
+    
+    const response = await fetch(browseUrl.toString());
+    const data = await response.json();
+    
+    if (response.ok && data.items) {
+      console.log('[HERE_SPEED_ALERTS] Found', data.items.length, 'POIs from Browse API');
+      
+      for (const item of data.items) {
+        const position = item.position;
+        if (!position) continue;
+        
+        // Determine type based on category
+        let alertType: SpeedAlert['type'] = 'speed_camera';
+        const categoryId = item.categories?.[0]?.id || '';
+        const title = (item.title || '').toLowerCase();
+        
+        if (title.includes('red light') || title.includes('semaforo') || title.includes('traffic light')) {
+          alertType = 'red_light_camera';
+        } else if (title.includes('school')) {
+          alertType = 'school_zone';
+        } else if (categoryId === '700-7530') {
+          alertType = 'speed_camera';
+        }
+        
+        alerts.push({
+          id: item.id || `browse-${position.lat}-${position.lng}`,
+          type: alertType,
+          lat: position.lat,
+          lng: position.lng,
+          active: true,
+          name: item.title,
+          description: item.address?.label,
+          source: 'here_browse',
+        });
+      }
+    }
+  } catch (err) {
+    console.error('[HERE_SPEED_ALERTS] Browse API error:', err);
+  }
+  
+  return alerts;
+}
+
+// Fetch school zones from HERE Browse API
+async function fetchSchoolZones(lat: number, lng: number, radiusMeters: number, apiKey: string): Promise<SpeedAlert[]> {
+  const alerts: SpeedAlert[] = [];
+  
+  try {
+    const browseUrl = new URL('https://browse.search.hereapi.com/v1/browse');
+    browseUrl.searchParams.set('at', `${lat},${lng}`);
+    browseUrl.searchParams.set('limit', '30');
+    browseUrl.searchParams.set('in', `circle:${lat},${lng};r=${Math.min(radiusMeters, 5000)}`);
+    // Schools category
+    browseUrl.searchParams.set('categories', '800-8200');
+    browseUrl.searchParams.set('apiKey', apiKey);
+    
+    console.log('[HERE_SPEED_ALERTS] Fetching schools for school zones');
+    
+    const response = await fetch(browseUrl.toString());
+    const data = await response.json();
+    
+    if (response.ok && data.items) {
+      console.log('[HERE_SPEED_ALERTS] Found', data.items.length, 'schools');
+      
+      for (const item of data.items) {
+        const position = item.position;
+        if (!position) continue;
+        
+        alerts.push({
+          id: `school-${item.id || `${position.lat}-${position.lng}`}`,
+          type: 'school_zone',
+          lat: position.lat,
+          lng: position.lng,
+          speedLimitMph: 20,
+          speedLimitKmh: 32,
+          active: true,
+          name: `School Zone: ${item.title}`,
+          description: item.address?.label,
+          source: 'here_browse',
+        });
+      }
+    }
+  } catch (err) {
+    console.error('[HERE_SPEED_ALERTS] School zones fetch error:', err);
+  }
+  
+  return alerts;
 }
 
 serve(async (req) => {
@@ -82,7 +184,7 @@ serve(async (req) => {
     }
 
     const body: SpeedAlertsRequest = await req.json();
-    const { lat, lng, radiusMeters = 10000, routeCoords } = body;
+    const { lat, lng, radiusMeters = 10000 } = body;
 
     if (lat === undefined || lng === undefined) {
       return new Response(
@@ -95,9 +197,16 @@ serve(async (req) => {
 
     const alerts: SpeedAlert[] = [];
 
-    // 1. Fetch traffic incidents from HERE Traffic API
+    // 1. Fetch traffic cameras from Browse API (includes red light cameras)
+    const cameraAlerts = await fetchTrafficCameras(lat, lng, radiusMeters, HERE_API_KEY);
+    alerts.push(...cameraAlerts);
+    
+    // 2. Fetch school zones
+    const schoolAlerts = await fetchSchoolZones(lat, lng, radiusMeters, HERE_API_KEY);
+    alerts.push(...schoolAlerts);
+
+    // 3. Fetch traffic incidents from HERE Traffic API
     try {
-      // Build bounding box from center + radius
       const latDelta = (radiusMeters / 111000);
       const lngDelta = (radiusMeters / (111000 * Math.cos(lat * Math.PI / 180)));
       
@@ -108,7 +217,7 @@ serve(async (req) => {
       incidentsUrl.searchParams.set('locationReferencing', 'shape');
       incidentsUrl.searchParams.set('apiKey', HERE_API_KEY);
       
-      console.log('[HERE_SPEED_ALERTS] Fetching incidents:', incidentsUrl.toString().replace(HERE_API_KEY, '***'));
+      console.log('[HERE_SPEED_ALERTS] Fetching incidents');
       
       const incidentsRes = await fetch(incidentsUrl.toString());
       const incidentsData = await incidentsRes.json();
@@ -122,7 +231,6 @@ serve(async (req) => {
           
           if (!incident || !location) continue;
           
-          // Get position from shape
           const point = location.shape?.links?.[0]?.points?.[0];
           if (!point) continue;
           
@@ -142,16 +250,15 @@ serve(async (req) => {
             startTime: incident.startTime,
             endTime: incident.endTime,
             criticality: incident.criticality,
+            source: 'here_traffic',
           });
         }
-      } else {
-        console.log('[HERE_SPEED_ALERTS] Incidents API response:', incidentsRes.status, incidentsData);
       }
     } catch (err) {
       console.error('[HERE_SPEED_ALERTS] Incidents fetch error:', err);
     }
 
-    // 2. Fetch flow/hazards for additional speed info
+    // 4. Fetch flow for slow traffic zones
     try {
       const flowUrl = new URL('https://data.traffic.hereapi.com/v7/flow');
       const latDelta = (radiusMeters / 111000);
@@ -166,18 +273,15 @@ serve(async (req) => {
       const flowData = await flowRes.json();
       
       if (flowRes.ok && flowData.results) {
-        // Look for speed restrictions or slow traffic zones
         for (const result of flowData.results) {
           const currentFlow = result.currentFlow;
           const location = result.location;
           
           if (!currentFlow || !location) continue;
           
-          // Flag if speed is significantly restricted (under 25 mph / 40 kmh)
           const speedKmh = currentFlow.speed;
           const freeFlowKmh = currentFlow.freeFlow;
           
-          // If current speed is less than 50% of free flow, it's likely an enforcement/congestion zone
           if (speedKmh && freeFlowKmh && speedKmh < freeFlowKmh * 0.5) {
             const point = location.shape?.links?.[0]?.points?.[0];
             if (point) {
@@ -192,6 +296,7 @@ serve(async (req) => {
                 name: 'Slow Traffic Zone',
                 description: `Current: ${Math.round(speedKmh)} km/h, Normal: ${Math.round(freeFlowKmh)} km/h`,
                 criticality: speedKmh < 20 ? 'critical' : 'major',
+                source: 'here_flow',
               });
             }
           }
@@ -201,9 +306,6 @@ serve(async (req) => {
       console.error('[HERE_SPEED_ALERTS] Flow fetch error:', err);
     }
 
-    // 3. Add community-reported alerts (would be from database in production)
-    // For now, we rely on HERE data only
-    
     // Deduplicate by proximity (within 100m)
     const uniqueAlerts: SpeedAlert[] = [];
     for (const alert of alerts) {
@@ -221,6 +323,10 @@ serve(async (req) => {
     }
 
     console.log('[HERE_SPEED_ALERTS] ✅ Returning', uniqueAlerts.length, 'unique alerts');
+    console.log('[HERE_SPEED_ALERTS] Alert types:', uniqueAlerts.map(a => a.type).reduce((acc, t) => {
+      acc[t] = (acc[t] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>));
 
     return new Response(
       JSON.stringify({ 
