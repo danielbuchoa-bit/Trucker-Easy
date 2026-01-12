@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { supabase } from '@/integrations/supabase/client';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -79,6 +80,21 @@ const NavigationScreen = () => {
   const [loading, setLoading] = useState(false);
   const [alertsLoading, setAlertsLoading] = useState(false);
 
+  // Reverse geocode to get address from coordinates
+  const reverseGeocode = async (lat: number, lng: number): Promise<string> => {
+    try {
+      const { data, error } = await supabase.functions.invoke('here_reverse_geocode', {
+        body: { lat, lng }
+      });
+      if (error || !data?.address) {
+        return `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+      }
+      return data.address;
+    } catch {
+      return `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+    }
+  };
+
   // Handle destination passed via router state
   useEffect(() => {
     if (locationState?.destination && !hasAutoStartedRef.current) {
@@ -92,17 +108,26 @@ const NavigationScreen = () => {
       };
       setDestination(destResult);
 
+      // Fetch real address for destination if only coordinates
+      if (!passedDest.address) {
+        reverseGeocode(passedDest.lat, passedDest.lng).then(address => {
+          setDestination(prev => prev ? { ...prev, address } : prev);
+        });
+      }
+
       // Auto-get current location as origin if autoStart
       if (locationState.autoStart && navigator.geolocation) {
         hasAutoStartedRef.current = true;
         navigator.geolocation.getCurrentPosition(
-          (position) => {
+          async (position) => {
+            const { latitude, longitude } = position.coords;
+            const address = await reverseGeocode(latitude, longitude);
             const currentLocation: GeocodeResult = {
               id: 'current-location',
-              title: t.navigation?.useMyLocation || 'Current Location',
-              address: `${position.coords.latitude.toFixed(4)}, ${position.coords.longitude.toFixed(4)}`,
-              lat: position.coords.latitude,
-              lng: position.coords.longitude,
+              title: t.navigation?.useMyLocation || 'Use my location',
+              address,
+              lat: latitude,
+              lng: longitude,
             };
             setOrigin(currentLocation);
           },
@@ -195,18 +220,20 @@ const NavigationScreen = () => {
   const handleUseCurrentLocation = () => {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
-        (position) => {
+        async (position) => {
+          const { latitude, longitude } = position.coords;
+          const address = await reverseGeocode(latitude, longitude);
           const currentLocation: GeocodeResult = {
             id: 'current-location',
-            title: t.navigation?.useMyLocation || 'Current Location',
-            address: `${position.coords.latitude.toFixed(4)}, ${position.coords.longitude.toFixed(4)}`,
-            lat: position.coords.latitude,
-            lng: position.coords.longitude,
+            title: t.navigation?.useMyLocation || 'Use my location',
+            address,
+            lat: latitude,
+            lng: longitude,
           };
           setOrigin(currentLocation);
           toast({
             title: t.navigation?.locationObtained || 'Location obtained',
-            description: currentLocation.address,
+            description: address,
           });
         },
         () => {
