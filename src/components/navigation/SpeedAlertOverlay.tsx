@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import { Camera, AlertTriangle, Shield, Car, Construction, GraduationCap, Scale, Gauge, X, ThumbsUp, ThumbsDown } from 'lucide-react';
 import { SpeedAlertWithDistance, ALERT_TYPE_CONFIG, SpeedAlertType } from '@/types/speedAlerts';
 import { Button } from '@/components/ui/button';
+import TrafficLightIcon from './TrafficLightIcon';
 
 interface SpeedAlertOverlayProps {
   criticalAlert: SpeedAlertWithDistance | null;
@@ -18,7 +19,7 @@ function getAlertIcon(type: SpeedAlertType, className: string) {
     case 'speed_camera':
       return <Camera className={className} />;
     case 'red_light_camera':
-      return <AlertTriangle className={className} />;
+      return <TrafficLightIcon className={className} />;
     case 'average_speed':
       return <Gauge className={className} />;
     case 'mobile_patrol':
