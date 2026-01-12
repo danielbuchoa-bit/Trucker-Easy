@@ -408,21 +408,28 @@ const FacilitiesList: React.FC = () => {
                         </Badge>
                       </div>
 
-                      {agg && (
-                        <div className="flex items-center gap-4 mt-2 text-sm">
-                          <div className="flex items-center gap-1">
-                            <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
-                            <span className="font-medium">{Number(agg.avg_overall).toFixed(1)}</span>
-                            <span className="text-muted-foreground">({agg.review_count})</span>
-                          </div>
-                          {agg.typical_time && (
-                            <div className="flex items-center gap-1 text-muted-foreground">
-                              <Clock className="w-4 h-4" />
-                              <span>{agg.typical_time}</span>
+                      <div className="flex items-center gap-4 mt-2 text-sm">
+                        {agg && agg.review_count > 0 ? (
+                          <>
+                            <div className="flex items-center gap-1">
+                              <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
+                              <span className="font-medium">{Number(agg.avg_overall).toFixed(1)}</span>
+                              <span className="text-muted-foreground">({agg.review_count})</span>
                             </div>
-                          )}
-                        </div>
-                      )}
+                            {agg.typical_time && (
+                              <div className="flex items-center gap-1 text-muted-foreground">
+                                <Clock className="w-4 h-4" />
+                                <span>{agg.typical_time}</span>
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          <div className="flex items-center gap-1 text-muted-foreground">
+                            <Star className="w-4 h-4" />
+                            <span className="text-xs">No ratings yet</span>
+                          </div>
+                        )}
+                      </div>
                     </CardContent>
                   </Card>
                 );
