@@ -11,6 +11,7 @@ import { DiagnosticsProvider } from "./contexts/DiagnosticsContext";
 import { PoiFeedbackProvider } from "./contexts/PoiFeedbackContext";
 import DiagnosticsPanel from "./components/diagnostics/DiagnosticsPanel";
 import LocationPermissionRequest from "./components/location/LocationPermissionRequest";
+import { DriverChatSheet } from "./components/ai/DriverChatSheet";
 import WelcomeScreen from "./pages/Welcome";
 import AuthScreen from "./pages/Auth";
 import OnboardingScreen from "./pages/Onboarding";
@@ -43,6 +44,7 @@ const App = () => (
           <Sonner />
           <DiagnosticsPanel />
           <LocationPermissionRequest />
+          <DriverChatSheet />
           <BrowserRouter>
             <ActiveNavigationProvider>
               <PoiFeedbackProvider>
