@@ -7,6 +7,7 @@ import FacilityRatingPrompt from '@/components/facility/FacilityRatingPrompt';
 import FacilityIdentifyModal from '@/components/facility/FacilityIdentifyModal';
 import DestinationArrivalPrompt from '@/components/facility/DestinationArrivalPrompt';
 import FacilityExitPrompt from '@/components/facility/FacilityExitPrompt';
+import FoodSuggestionPrompt from '@/components/stops/FoodSuggestionPrompt';
 import { useActiveNavigation } from '@/contexts/ActiveNavigationContext';
 
 // Constants for detection
@@ -16,12 +17,33 @@ const FACILITY_GEOFENCE_RADIUS_M = 100; // Default radius for auto-created facil
 const MIN_STAY_FOR_EXIT_PROMPT_MS = 5 * 60 * 1000; // 5 minutes minimum stay to show exit prompt
 const EXIT_DETECTION_DISTANCE_M = 250; // 250m away = exited
 
+// Keywords to identify destination type
+const FUEL_STOP_KEYWORDS = [
+  'pilot', 'flying j', 'loves', 'ta ', 'petro', 'town pump', 'kwik trip',
+  'casey', 'bucees', 'speedway', 'shell', 'chevron', 'exxon', 'mobil', 'bp',
+  'marathon', 'citgo', 'sinclair', 'conoco', 'phillips', 'gas', 'fuel', 'truck stop',
+  'travel center', 'travel plaza', 'rest area', 'service area', 'posto', 'gasolina'
+];
+
+// Destination type based on navigation context
+type DestinationType = 'facility' | 'fuel_stop' | 'unknown';
+
 interface VisitState {
   facilityId: string;
   facility: Facility;
   enteredAt: number;
   wasEasyToFind: boolean | null;
   hasRated: boolean;
+  destinationType: DestinationType;
+}
+
+// Stop state for fuel stops (different from facility visits)
+interface FuelStopVisit {
+  id: string;
+  name: string;
+  lat: number;
+  lng: number;
+  enteredAt: number;
 }
 
 interface FacilityGeofenceContextType {
@@ -29,6 +51,7 @@ interface FacilityGeofenceContextType {
   currentFacility: Facility | null;
   isInsideFacility: boolean;
   facilityAggregates: Record<string, FacilityAggregate>;
+  currentFuelStop: FuelStopVisit | null;
 }
 
 const FacilityGeofenceContext = createContext<FacilityGeofenceContextType | null>(null);
@@ -44,6 +67,13 @@ export const useFacilityGeofence = () => {
 interface FacilityGeofenceProviderProps {
   children: ReactNode;
 }
+
+// Helper to detect destination type from name
+const detectDestinationType = (name: string, address?: string): DestinationType => {
+  const searchText = `${name} ${address || ''}`.toLowerCase();
+  const isFuelStop = FUEL_STOP_KEYWORDS.some(keyword => searchText.includes(keyword));
+  return isFuelStop ? 'fuel_stop' : 'facility';
+};
 
 export const FacilityGeofenceProvider = ({ children }: FacilityGeofenceProviderProps) => {
   // Use active navigation position if navigating, otherwise fallback to geolocation
@@ -71,6 +101,11 @@ export const FacilityGeofenceProvider = ({ children }: FacilityGeofenceProviderP
   const [currentVisit, setCurrentVisit] = useState<VisitState | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   
+  // Fuel stop visit tracking (separate from facilities)
+  const [currentFuelStop, setCurrentFuelStop] = useState<FuelStopVisit | null>(null);
+  const [showFoodSuggestion, setShowFoodSuggestion] = useState(false);
+  const dismissedFoodSuggestions = useRef<Set<string>>(new Set());
+  
   // UI state
   const [showArrivalPrompt, setShowArrivalPrompt] = useState(false);
   const [showExitPrompt, setShowExitPrompt] = useState(false);
@@ -82,6 +117,7 @@ export const FacilityGeofenceProvider = ({ children }: FacilityGeofenceProviderP
   const destinationArrivalStartRef = useRef<number | null>(null);
   const lastDestinationCheckRef = useRef<{ lat: number; lng: number } | null>(null);
   const hasShownArrivalPromptRef = useRef(false);
+  const detectedDestinationType = useRef<DestinationType>('unknown');
   
   // Get current user
   useEffect(() => {
@@ -245,27 +281,54 @@ export const FacilityGeofenceProvider = ({ children }: FacilityGeofenceProviderP
     
     if (!destination || !userId) return;
 
+    // Detect destination type
+    const destType = detectDestinationType(destination.title, destination.address);
+    detectedDestinationType.current = destType;
+    console.log('[GEOFENCE] Destination type detected:', destType, 'for:', destination.title);
+
     // End navigation
     endNavigation();
 
-    // Create or find facility
-    const facility = await createFacilityForDestination();
-    
-    if (facility) {
-      // Start visit tracking
-      setCurrentVisit({
-        facilityId: facility.id,
-        facility,
+    if (destType === 'fuel_stop') {
+      // For fuel stops, start tracking and show food suggestion
+      const fuelStop: FuelStopVisit = {
+        id: `fuel-${destination.lat}-${destination.lng}`,
+        name: destination.title,
+        lat: destination.lat,
+        lng: destination.lng,
         enteredAt: Date.now(),
-        wasEasyToFind,
-        hasRated: false,
-      });
-      setCurrentFacility(facility);
+      };
+      setCurrentFuelStop(fuelStop);
+      
+      // Show food suggestion if not dismissed before
+      if (!dismissedFoodSuggestions.current.has(fuelStop.id)) {
+        setShowFoodSuggestion(true);
+      }
       
       toast({
-        title: 'Chegada registrada!',
-        description: 'Ao sair, você poderá avaliar este local.',
+        title: 'Chegou ao posto!',
+        description: 'Boas sugestões de alimentação para você.',
       });
+    } else {
+      // For facilities (shippers/receivers), create facility and track
+      const facility = await createFacilityForDestination();
+      
+      if (facility) {
+        setCurrentVisit({
+          facilityId: facility.id,
+          facility,
+          enteredAt: Date.now(),
+          wasEasyToFind,
+          hasRated: false,
+          destinationType: destType,
+        });
+        setCurrentFacility(facility);
+        
+        toast({
+          title: 'Chegada registrada!',
+          description: 'Ao sair, você poderá avaliar esta empresa.',
+        });
+      }
     }
   }, [destination, userId, endNavigation, createFacilityForDestination, toast]);
 
@@ -301,6 +364,47 @@ export const FacilityGeofenceProvider = ({ children }: FacilityGeofenceProviderP
       }
     }
   }, [latitude, longitude, currentVisit]);
+
+  // Monitor exit from fuel stop - separate tracking
+  useEffect(() => {
+    if (!currentFuelStop || !latitude || !longitude) return;
+
+    const distanceFromStop = calculateDistance(
+      latitude,
+      longitude,
+      currentFuelStop.lat,
+      currentFuelStop.lng
+    );
+
+    // Check if we've exited the fuel stop zone
+    if (distanceFromStop > EXIT_DETECTION_DISTANCE_M) {
+      const timeSpent = Date.now() - currentFuelStop.enteredAt;
+      
+      console.log('[GEOFENCE] Exited fuel stop:', currentFuelStop.name, 'Time spent:', Math.round(timeSpent / 60000), 'min');
+      
+      // Hide food suggestion if still showing
+      setShowFoodSuggestion(false);
+      
+      // Clear fuel stop visit (POI feedback is handled by PoiFeedbackContext)
+      setCurrentFuelStop(null);
+      
+      // Optional: Show a toast thanking for the visit
+      if (timeSpent >= MIN_STAY_FOR_EXIT_PROMPT_MS) {
+        toast({
+          title: 'Boa viagem!',
+          description: 'Esperamos que tenha encontrado boas opções.',
+        });
+      }
+    }
+  }, [latitude, longitude, currentFuelStop, toast]);
+
+  // Handle food suggestion dismiss
+  const handleDismissFoodSuggestion = useCallback(() => {
+    if (currentFuelStop) {
+      dismissedFoodSuggestions.current.add(currentFuelStop.id);
+    }
+    setShowFoodSuggestion(false);
+  }, [currentFuelStop]);
 
   // Handle exit prompt complete
   const handleExitComplete = useCallback(() => {
@@ -346,6 +450,7 @@ export const FacilityGeofenceProvider = ({ children }: FacilityGeofenceProviderP
               enteredAt: Date.now(),
               wasEasyToFind: null,
               hasRated: false,
+              destinationType: 'facility',
             });
             setCurrentFacility(facility);
             
@@ -390,6 +495,7 @@ export const FacilityGeofenceProvider = ({ children }: FacilityGeofenceProviderP
       enteredAt: Date.now(),
       wasEasyToFind: null,
       hasRated: false,
+      destinationType: 'facility',
     });
     setFacilitiesCache(null);
   };
@@ -401,6 +507,7 @@ export const FacilityGeofenceProvider = ({ children }: FacilityGeofenceProviderP
         currentFacility,
         isInsideFacility: !!currentVisit,
         facilityAggregates,
+        currentFuelStop,
       }}
     >
       {children}
@@ -412,6 +519,20 @@ export const FacilityGeofenceProvider = ({ children }: FacilityGeofenceProviderP
           destinationAddress={destination.address}
           onConfirmArrival={handleArrivalConfirm}
           onDismiss={handleArrivalDismiss}
+        />
+      )}
+      
+      {/* Food Suggestion Prompt for Fuel Stops */}
+      {showFoodSuggestion && currentFuelStop && (
+        <FoodSuggestionPrompt
+          stop={{
+            id: currentFuelStop.id,
+            name: currentFuelStop.name,
+            type: 'truck_stop',
+            lat: currentFuelStop.lat,
+            lng: currentFuelStop.lng,
+          }}
+          onDismiss={handleDismissFoodSuggestion}
         />
       )}
       
