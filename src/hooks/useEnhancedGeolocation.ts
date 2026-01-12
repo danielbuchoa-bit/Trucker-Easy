@@ -6,13 +6,16 @@ const MAX_STORED_AGE_MS = 30 * 60 * 1000; // 30 minutes
 const QUICK_FIX_TIMEOUT = 3000; // 3 seconds for initial low-accuracy fix
 const HIGH_ACCURACY_TIMEOUT = 15000; // 15 seconds for high-accuracy refinement
 
-// Kalman filter constants
-const KALMAN_Q = 3; // Process noise - higher = more responsive, noisier
-const KALMAN_R = 10; // Measurement noise - higher = smoother, slower
+// Kalman filter constants - tuned for highway driving
+const KALMAN_Q = 1.5; // Process noise - lower = smoother position
+const KALMAN_R = 5; // Measurement noise - higher = trust GPS less
 
-// Spike rejection
-const MAX_SPEED_MPS = 60; // ~216 km/h - reject jumps faster than this
-const MIN_FIX_INTERVAL_MS = 200; // Minimum time between updates
+// Spike rejection - tuned for vehicle speed
+const MAX_SPEED_MPS = 55; // ~200 km/h - reject jumps faster than this
+const MIN_FIX_INTERVAL_MS = 100; // Minimum time between updates (10fps max)
+
+// Accuracy weighting
+const HIGH_ACCURACY_THRESHOLD = 15; // meters
 
 export interface EnhancedPosition {
   lat: number;
@@ -84,11 +87,14 @@ export function useEnhancedGeolocation(
     return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   }, []);
 
-  // Initialize/update Kalman filter
+  // Initialize/update Kalman filter with accuracy weighting
   const updateKalman = useCallback((rawLat: number, rawLng: number, accuracy: number): { lat: number; lng: number } => {
     const now = Date.now();
     const dt = (now - lastUpdateRef.current) / 1000; // seconds
     lastUpdateRef.current = now;
+
+    // Weight measurements based on accuracy
+    const accuracyWeight = accuracy <= HIGH_ACCURACY_THRESHOLD ? 0.8 : 0.4;
 
     if (!kalmanRef.current || dt > 10) {
       // Initialize or reset Kalman state
@@ -102,16 +108,19 @@ export function useEnhancedGeolocation(
       return { lat: rawLat, lng: rawLng };
     }
 
-    // Prediction step
+    // Prediction step - process noise increases with time
     const predictedVariance = kalmanRef.current.latVariance + KALMAN_Q * dt;
     
-    // Update step
-    const measurementVariance = accuracy ** 2;
+    // Update step - trust GPS more when accuracy is better
+    const measurementVariance = (accuracy ** 2) / accuracyWeight;
     const kalmanGain = predictedVariance / (predictedVariance + KALMAN_R * measurementVariance);
     
-    const newLat = kalmanRef.current.lat + kalmanGain * (rawLat - kalmanRef.current.lat);
-    const newLng = kalmanRef.current.lng + kalmanGain * (rawLng - kalmanRef.current.lng);
-    const newVariance = (1 - kalmanGain) * predictedVariance;
+    // Clamp kalman gain for stability
+    const clampedGain = Math.min(0.8, Math.max(0.1, kalmanGain));
+    
+    const newLat = kalmanRef.current.lat + clampedGain * (rawLat - kalmanRef.current.lat);
+    const newLng = kalmanRef.current.lng + clampedGain * (rawLng - kalmanRef.current.lng);
+    const newVariance = (1 - clampedGain) * predictedVariance;
 
     kalmanRef.current = {
       lat: newLat,

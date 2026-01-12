@@ -6,7 +6,8 @@ import { useActiveNavigation, type UserPosition } from '@/contexts/ActiveNavigat
 import { useVoiceGuidance } from '@/hooks/useVoiceGuidance';
 import { useRouteSimulation } from '@/hooks/useRouteSimulation';
 import { useArrivalDetection, type DetectedPoi } from '@/hooks/useArrivalDetection';
-import { usePositionInterpolator } from '@/hooks/usePositionInterpolator';
+import { useAdvancedMapMatching, type MatchedPosition } from '@/hooks/useAdvancedMapMatching';
+import { useSmoothCursor, type CursorPosition } from '@/hooks/useSmoothCursor';
 import { useMapPerformance } from '@/hooks/useMapPerformance';
 import { useWeighStationAlerts } from '@/hooks/useWeighStationAlerts';
 import { useSpeedAlerts } from '@/hooks/useSpeedAlerts';
@@ -218,11 +219,42 @@ const ActiveNavigationView = () => {
   // Map performance optimization
   const mapPerf = useMapPerformance();
 
-  // 60fps position interpolator for smooth cursor movement
-  const interpolatedPosition = usePositionInterpolator(userPosition, {
-    enabled: true,
-    adaptiveAlpha: true,
-  });
+  // Advanced map matching - snaps GPS position to route
+  const mapMatching = useAdvancedMapMatching();
+  
+  // Process position through map matching
+  const matchedPosition = useMemo((): MatchedPosition | null => {
+    if (!userPosition || routeCoords.length < 2) return null;
+    
+    return mapMatching.processPosition({
+      lat: userPosition.lat,
+      lng: userPosition.lng,
+      accuracy: userPosition.accuracy,
+      heading: userPosition.heading,
+      speed: userPosition.speed,
+      timestamp: Date.now(),
+    }, routeCoords);
+  }, [userPosition, routeCoords, mapMatching]);
+  
+  // Convert matched position to cursor input
+  const cursorInput = useMemo((): CursorPosition | null => {
+    if (!matchedPosition) return null;
+    return {
+      lat: matchedPosition.snappedLat,
+      lng: matchedPosition.snappedLng,
+      heading: matchedPosition.heading,
+      speed: matchedPosition.speed,
+      timestamp: matchedPosition.timestamp,
+    };
+  }, [matchedPosition]);
+  
+  // 60fps smooth cursor animation
+  const renderCursor = useSmoothCursor(cursorInput, true);
+  
+  // Reset map matching when route changes
+  useEffect(() => {
+    mapMatching.reset();
+  }, [route?.polyline, mapMatching]);
 
   // Weigh station alerts with route-based detection
   const weighStationAlerts = useWeighStationAlerts({
@@ -307,11 +339,11 @@ const ActiveNavigationView = () => {
     
     const dist = progress.distanceToNextManeuver;
     const idx = progress.currentInstructionIndex;
-    const speedMs = interpolatedPosition?.speed ?? userPosition?.speed ?? 0;
+    const speedMs = matchedPosition?.speed ?? userPosition?.speed ?? 0;
 
     // Let the speakInstruction handle the logic with look-ahead
     voice.speakInstruction(currentInstruction, dist, idx, speedMs);
-  }, [currentInstruction, progress, voice, interpolatedPosition?.speed, userPosition?.speed]);
+  }, [currentInstruction, progress, voice, matchedPosition?.speed, userPosition?.speed]);
 
   // Voice for rerouting
   useEffect(() => {
@@ -455,24 +487,25 @@ const ActiveNavigationView = () => {
     }
   }, [routeCoords, mapReady]);
 
-  // Update user marker & camera with smooth interpolated position
+  // Update user marker & camera with smooth cursor animation
   // Use refs to avoid re-render triggers from animation
   const lastCameraUpdateRef = useRef<number>(0);
   const markerUpdateRef = useRef<number>(0);
-  const CAMERA_UPDATE_INTERVAL = 100; // Limit camera updates to 10fps for stability
-  const MARKER_UPDATE_INTERVAL = 50; // Marker at 20fps
+  const CAMERA_UPDATE_INTERVAL = 80; // Limit camera updates to ~12fps for stability
+  const MARKER_UPDATE_INTERVAL = 16; // Marker at ~60fps for smooth animation
   
   useEffect(() => {
-    if (!map.current || !mapReady || !userPosition) return;
+    if (!map.current || !mapReady) return;
+    
+    // Prefer smooth cursor, fallback to matched position, then raw userPosition
+    const displayLat = renderCursor?.lat ?? matchedPosition?.snappedLat ?? userPosition?.lat;
+    const displayLng = renderCursor?.lng ?? matchedPosition?.snappedLng ?? userPosition?.lng;
+    const displayHeading = renderCursor?.heading ?? matchedPosition?.heading ?? userPosition?.heading ?? 0;
+    const displaySpeed = matchedPosition?.speed ?? userPosition?.speed ?? 0;
+    
+    if (displayLat === undefined || displayLng === undefined) return;
 
     const now = performance.now();
-    
-    // Use interpolated render position for smooth visual
-    const displayLat = interpolatedPosition?.renderLat ?? userPosition.lat;
-    const displayLng = interpolatedPosition?.renderLng ?? userPosition.lng;
-    const displayHeading = interpolatedPosition?.renderHeading ?? userPosition.heading ?? 0;
-    const displaySpeed = interpolatedPosition?.speed ?? userPosition.speed ?? 0;
-
     const speedKmh = displaySpeed * 3.6;
 
     // Store heading for fallback
@@ -480,13 +513,13 @@ const ActiveNavigationView = () => {
       lastAppliedBearingRef.current = displayHeading;
     }
 
-    // Update marker position (throttled to 20fps)
+    // Update marker position at high frequency for smooth animation
     if (now - markerUpdateRef.current >= MARKER_UPDATE_INTERVAL) {
       markerUpdateRef.current = now;
       
       if (userMarker.current) {
         userMarker.current.setLngLat([displayLng, displayLat]);
-      } else {
+      } else if (map.current) {
         const el = createTruckCursorElement(52);
         el.style.pointerEvents = 'none';
 
@@ -505,10 +538,10 @@ const ActiveNavigationView = () => {
     if (now - debugInfo.lastUpdate > 500) {
       setDebugInfo({
         speed: speedKmh,
-        gpsAccuracy: userPosition.accuracy,
+        gpsAccuracy: userPosition?.accuracy ?? null,
         calculatedBearing: displayHeading,
         routeBearing: null,
-        gpsHeading: null,
+        gpsHeading: userPosition?.heading ?? null,
         appliedCameraBearing: displayHeading ?? lastAppliedBearingRef.current,
         headingSource: isSimulating ? 'simulation' : displayHeading !== null ? 'calculated' : 'none',
         lastUpdate: now,
@@ -516,7 +549,7 @@ const ActiveNavigationView = () => {
     }
 
     // COURSE-UP camera: rotate map so that direction of travel is UP
-    // Use easeTo for smooth transitions (throttled to 10fps for stability)
+    // Use easeTo for smooth transitions (throttled for stability)
     if (followUser && now - lastCameraUpdateRef.current >= CAMERA_UPDATE_INTERVAL) {
       lastCameraUpdateRef.current = now;
       
@@ -536,7 +569,7 @@ const ActiveNavigationView = () => {
       });
     }
 
-  }, [userPosition, interpolatedPosition, mapReady, followUser, isSimulating]);
+  }, [userPosition, renderCursor, matchedPosition, mapReady, followUser, isSimulating]);
 
   // Destination marker
   useEffect(() => {
