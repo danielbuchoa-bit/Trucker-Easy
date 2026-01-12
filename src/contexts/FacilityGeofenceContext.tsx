@@ -1,11 +1,28 @@
-import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useGeolocation, calculateDistance } from '@/hooks/useGeolocation';
 import { useToast } from '@/hooks/use-toast';
 import type { Facility, FacilityAggregate } from '@/types/collaborative';
 import FacilityRatingPrompt from '@/components/facility/FacilityRatingPrompt';
 import FacilityIdentifyModal from '@/components/facility/FacilityIdentifyModal';
+import DestinationArrivalPrompt from '@/components/facility/DestinationArrivalPrompt';
+import FacilityExitPrompt from '@/components/facility/FacilityExitPrompt';
 import { useActiveNavigation } from '@/contexts/ActiveNavigationContext';
+
+// Constants for detection
+const DESTINATION_ARRIVAL_RADIUS_M = 150; // 150m from destination to trigger arrival
+const DESTINATION_ARRIVAL_DWELL_MS = 10000; // 10 seconds stopped at destination
+const FACILITY_GEOFENCE_RADIUS_M = 100; // Default radius for auto-created facilities
+const MIN_STAY_FOR_EXIT_PROMPT_MS = 5 * 60 * 1000; // 5 minutes minimum stay to show exit prompt
+const EXIT_DETECTION_DISTANCE_M = 250; // 250m away = exited
+
+interface VisitState {
+  facilityId: string;
+  facility: Facility;
+  enteredAt: number;
+  wasEasyToFind: boolean | null;
+  hasRated: boolean;
+}
 
 interface FacilityGeofenceContextType {
   nearbyFacilities: Facility[];
@@ -30,27 +47,42 @@ interface FacilityGeofenceProviderProps {
 
 export const FacilityGeofenceProvider = ({ children }: FacilityGeofenceProviderProps) => {
   // Use active navigation position if navigating, otherwise fallback to geolocation
-  const { userPosition: navPosition, isNavigating } = useActiveNavigation();
+  const { 
+    userPosition: navPosition, 
+    isNavigating, 
+    destination, 
+    endNavigation,
+    progress 
+  } = useActiveNavigation();
   const { latitude: geoLat, longitude: geoLng } = useGeolocation({ watchPosition: true });
+  const { toast } = useToast();
   
   // Prefer navigation position when navigating (works with simulation too)
   const latitude = isNavigating && navPosition ? navPosition.lat : geoLat;
   const longitude = isNavigating && navPosition ? navPosition.lng : geoLng;
   
-  const { toast } = useToast();
-  
+  // Facility state
   const [nearbyFacilities, setNearbyFacilities] = useState<Facility[]>([]);
   const [currentFacility, setCurrentFacility] = useState<Facility | null>(null);
-  const [insideFacilityId, setInsideFacilityId] = useState<string | null>(null);
-  const [enteredAt, setEnteredAt] = useState<number | null>(null);
-  const [hasRatedCurrent, setHasRatedCurrent] = useState(false);
+  const [facilityAggregates, setFacilityAggregates] = useState<Record<string, FacilityAggregate>>({});
+  const [facilitiesCache, setFacilitiesCache] = useState<{ data: Facility[]; timestamp: number } | null>(null);
+  
+  // Visit tracking
+  const [currentVisit, setCurrentVisit] = useState<VisitState | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
+  
+  // UI state
+  const [showArrivalPrompt, setShowArrivalPrompt] = useState(false);
+  const [showExitPrompt, setShowExitPrompt] = useState(false);
   const [showIdentifyModal, setShowIdentifyModal] = useState(false);
   const [showRatingPrompt, setShowRatingPrompt] = useState(false);
   const [promptType, setPromptType] = useState<'arrival' | 'exit'>('arrival');
-  const [facilityAggregates, setFacilityAggregates] = useState<Record<string, FacilityAggregate>>({});
-  const [userId, setUserId] = useState<string | null>(null);
-  const [facilitiesCache, setFacilitiesCache] = useState<{ data: Facility[]; timestamp: number } | null>(null);
-
+  
+  // Refs for tracking
+  const destinationArrivalStartRef = useRef<number | null>(null);
+  const lastDestinationCheckRef = useRef<{ lat: number; lng: number } | null>(null);
+  const hasShownArrivalPromptRef = useRef(false);
+  
   // Get current user
   useEffect(() => {
     const getUser = async () => {
@@ -112,9 +144,182 @@ export const FacilityGeofenceProvider = ({ children }: FacilityGeofenceProviderP
     }
   }, []);
 
-  // Monitor geofence for facilities
+  // Create facility for navigation destination if it doesn't exist
+  const createFacilityForDestination = useCallback(async (): Promise<Facility | null> => {
+    if (!destination || !userId) return null;
+
+    try {
+      // Check if facility already exists near destination
+      const facilities = await fetchNearbyFacilities();
+      const existingFacility = facilities.find(f => {
+        const distance = calculateDistance(destination.lat, destination.lng, f.lat, f.lng);
+        return distance < FACILITY_GEOFENCE_RADIUS_M;
+      });
+
+      if (existingFacility) {
+        return existingFacility;
+      }
+
+      // Create new facility
+      const { data, error } = await supabase
+        .from('facilities')
+        .insert({
+          name: destination.title,
+          address: destination.address,
+          lat: destination.lat,
+          lng: destination.lng,
+          facility_type: 'receiver', // Default to receiver
+          geofence_radius_m: FACILITY_GEOFENCE_RADIUS_M,
+          created_by: userId,
+          verified: false,
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      // Invalidate cache
+      setFacilitiesCache(null);
+      
+      console.log('[GEOFENCE] Created facility for destination:', destination.title);
+      return data as unknown as Facility;
+    } catch (error) {
+      console.error('Error creating facility:', error);
+      return null;
+    }
+  }, [destination, userId, fetchNearbyFacilities]);
+
+  // Monitor destination arrival when navigating
   useEffect(() => {
-    if (!latitude || !longitude || !userId) return;
+    if (!isNavigating || !destination || !latitude || !longitude || !userId) {
+      destinationArrivalStartRef.current = null;
+      return;
+    }
+
+    // Don't re-trigger if we already showed prompt for this destination
+    if (hasShownArrivalPromptRef.current && 
+        lastDestinationCheckRef.current?.lat === destination.lat &&
+        lastDestinationCheckRef.current?.lng === destination.lng) {
+      return;
+    }
+
+    const distanceToDestination = calculateDistance(latitude, longitude, destination.lat, destination.lng);
+    const now = Date.now();
+
+    // Check if we're close to destination
+    if (distanceToDestination <= DESTINATION_ARRIVAL_RADIUS_M) {
+      // Start or continue dwell timer
+      if (destinationArrivalStartRef.current === null) {
+        destinationArrivalStartRef.current = now;
+        console.log('[GEOFENCE] Entered destination zone:', destination.title);
+      } else {
+        const dwellTime = now - destinationArrivalStartRef.current;
+        
+        // Check if we've been here long enough
+        if (dwellTime >= DESTINATION_ARRIVAL_DWELL_MS && !showArrivalPrompt && !currentVisit) {
+          console.log('[GEOFENCE] Destination arrival confirmed:', destination.title);
+          lastDestinationCheckRef.current = { lat: destination.lat, lng: destination.lng };
+          hasShownArrivalPromptRef.current = true;
+          setShowArrivalPrompt(true);
+        }
+      }
+    } else {
+      // Reset if we leave the zone
+      destinationArrivalStartRef.current = null;
+    }
+  }, [isNavigating, destination, latitude, longitude, userId, showArrivalPrompt, currentVisit]);
+
+  // Reset arrival prompt flag when destination changes
+  useEffect(() => {
+    if (destination) {
+      if (lastDestinationCheckRef.current?.lat !== destination.lat ||
+          lastDestinationCheckRef.current?.lng !== destination.lng) {
+        hasShownArrivalPromptRef.current = false;
+      }
+    }
+  }, [destination]);
+
+  // Handle arrival confirmation
+  const handleArrivalConfirm = useCallback(async (wasEasyToFind: boolean | null) => {
+    setShowArrivalPrompt(false);
+    
+    if (!destination || !userId) return;
+
+    // End navigation
+    endNavigation();
+
+    // Create or find facility
+    const facility = await createFacilityForDestination();
+    
+    if (facility) {
+      // Start visit tracking
+      setCurrentVisit({
+        facilityId: facility.id,
+        facility,
+        enteredAt: Date.now(),
+        wasEasyToFind,
+        hasRated: false,
+      });
+      setCurrentFacility(facility);
+      
+      toast({
+        title: 'Chegada registrada!',
+        description: 'Ao sair, você poderá avaliar este local.',
+      });
+    }
+  }, [destination, userId, endNavigation, createFacilityForDestination, toast]);
+
+  // Handle arrival dismiss
+  const handleArrivalDismiss = useCallback(() => {
+    setShowArrivalPrompt(false);
+  }, []);
+
+  // Monitor exit from facility
+  useEffect(() => {
+    if (!currentVisit || !latitude || !longitude) return;
+
+    const distanceFromFacility = calculateDistance(
+      latitude, 
+      longitude, 
+      currentVisit.facility.lat, 
+      currentVisit.facility.lng
+    );
+
+    // Check if we've exited the facility zone
+    if (distanceFromFacility > EXIT_DETECTION_DISTANCE_M) {
+      const timeSpent = Date.now() - currentVisit.enteredAt;
+      
+      console.log('[GEOFENCE] Exited facility:', currentVisit.facility.name, 'Time spent:', Math.round(timeSpent / 60000), 'min');
+      
+      // Only show exit prompt if stayed long enough and hasn't rated
+      if (timeSpent >= MIN_STAY_FOR_EXIT_PROMPT_MS && !currentVisit.hasRated) {
+        setShowExitPrompt(true);
+      } else {
+        // Just clear the visit
+        setCurrentVisit(null);
+        setCurrentFacility(null);
+      }
+    }
+  }, [latitude, longitude, currentVisit]);
+
+  // Handle exit prompt complete
+  const handleExitComplete = useCallback(() => {
+    setShowExitPrompt(false);
+    setCurrentVisit(null);
+    setCurrentFacility(null);
+    toast({ title: 'Obrigado!', description: 'Sua avaliação ajuda outros motoristas.' });
+  }, [toast]);
+
+  // Handle exit prompt dismiss
+  const handleExitDismiss = useCallback(() => {
+    setShowExitPrompt(false);
+    setCurrentVisit(null);
+    setCurrentFacility(null);
+  }, []);
+
+  // Monitor geofence for manually approaching facilities (not from navigation)
+  useEffect(() => {
+    if (!latitude || !longitude || !userId || isNavigating || currentVisit) return;
 
     const checkGeofence = async () => {
       const facilities = await fetchNearbyFacilities();
@@ -133,45 +338,24 @@ export const FacilityGeofenceProvider = ({ children }: FacilityGeofenceProviderP
         const distance = calculateDistance(latitude, longitude, facility.lat, facility.lng);
         
         if (distance <= facility.geofence_radius_m) {
-          // Entered a facility
-          if (!insideFacilityId) {
-            setInsideFacilityId(facility.id);
+          // Entered a facility manually (not from navigation)
+          if (!currentVisit) {
+            setCurrentVisit({
+              facilityId: facility.id,
+              facility,
+              enteredAt: Date.now(),
+              wasEasyToFind: null,
+              hasRated: false,
+            });
             setCurrentFacility(facility);
-            setEnteredAt(Date.now());
-            setHasRatedCurrent(false);
             
-            // Show arrival prompt after 2-3 minutes of being stationary
+            // Show rating prompt after 2 minutes
             setTimeout(() => {
-              if (!hasRatedCurrent) {
-                setPromptType('arrival');
-                setShowRatingPrompt(true);
-              }
-            }, 2 * 60 * 1000); // 2 minutes
+              setPromptType('arrival');
+              setShowRatingPrompt(true);
+            }, 2 * 60 * 1000);
           }
           return;
-        }
-      }
-
-      // Check if we need to identify an unknown location (no facility found but stopped)
-      const wasInside = !!insideFacilityId;
-      
-      // If we were inside a facility and now we're outside
-      if (insideFacilityId) {
-        const facility = nearby.find(f => f.id === insideFacilityId);
-        if (facility) {
-          const distance = calculateDistance(latitude, longitude, facility.lat, facility.lng);
-          
-          if (distance > facility.geofence_radius_m) {
-            // Check if we stayed long enough (>10 min) and haven't rated
-            const timeSpent = Date.now() - (enteredAt || 0);
-            if (timeSpent > 10 * 60 * 1000 && !hasRatedCurrent) {
-              setPromptType('exit');
-              setShowRatingPrompt(true);
-            }
-            
-            setInsideFacilityId(null);
-            setEnteredAt(null);
-          }
         }
       }
     };
@@ -180,24 +364,33 @@ export const FacilityGeofenceProvider = ({ children }: FacilityGeofenceProviderP
     const interval = setInterval(checkGeofence, 30000); // Check every 30 seconds
     
     return () => clearInterval(interval);
-  }, [latitude, longitude, userId, insideFacilityId, enteredAt, hasRatedCurrent, fetchNearbyFacilities, fetchAggregates]);
+  }, [latitude, longitude, userId, isNavigating, currentVisit, fetchNearbyFacilities, fetchAggregates]);
 
+  // Handle rating prompt complete
   const handleRatingComplete = () => {
     setShowRatingPrompt(false);
-    setHasRatedCurrent(true);
-    toast({ title: 'Thank you!', description: 'Your review helps other drivers.' });
+    if (currentVisit) {
+      setCurrentVisit({ ...currentVisit, hasRated: true });
+    }
+    toast({ title: 'Obrigado!', description: 'Sua avaliação ajuda outros motoristas.' });
   };
 
+  // Handle rating prompt dismiss
   const handleRatingDismiss = () => {
     setShowRatingPrompt(false);
   };
 
+  // Handle identify modal complete
   const handleIdentifyComplete = (facility: Facility) => {
     setShowIdentifyModal(false);
     setCurrentFacility(facility);
-    setInsideFacilityId(facility.id);
-    setEnteredAt(Date.now());
-    // Refresh facilities cache
+    setCurrentVisit({
+      facilityId: facility.id,
+      facility,
+      enteredAt: Date.now(),
+      wasEasyToFind: null,
+      hasRated: false,
+    });
     setFacilitiesCache(null);
   };
 
@@ -206,12 +399,34 @@ export const FacilityGeofenceProvider = ({ children }: FacilityGeofenceProviderP
       value={{
         nearbyFacilities,
         currentFacility,
-        isInsideFacility: !!insideFacilityId,
+        isInsideFacility: !!currentVisit,
         facilityAggregates,
       }}
     >
       {children}
       
+      {/* Destination Arrival Prompt */}
+      {showArrivalPrompt && destination && (
+        <DestinationArrivalPrompt
+          destinationName={destination.title}
+          destinationAddress={destination.address}
+          onConfirmArrival={handleArrivalConfirm}
+          onDismiss={handleArrivalDismiss}
+        />
+      )}
+      
+      {/* Facility Exit Prompt */}
+      {showExitPrompt && currentVisit && (
+        <FacilityExitPrompt
+          facility={currentVisit.facility}
+          timeSpentMs={Date.now() - currentVisit.enteredAt}
+          wasEasyToFind={currentVisit.wasEasyToFind}
+          onComplete={handleExitComplete}
+          onDismiss={handleExitDismiss}
+        />
+      )}
+      
+      {/* Legacy Rating Prompt (for manual geofence entry) */}
       {showRatingPrompt && currentFacility && (
         <FacilityRatingPrompt
           facility={currentFacility}
@@ -221,10 +436,11 @@ export const FacilityGeofenceProvider = ({ children }: FacilityGeofenceProviderP
         />
       )}
       
-      {showIdentifyModal && (
+      {/* Identify Unknown Location Modal */}
+      {showIdentifyModal && latitude && longitude && (
         <FacilityIdentifyModal
-          lat={latitude || 0}
-          lng={longitude || 0}
+          lat={latitude}
+          lng={longitude}
           onComplete={handleIdentifyComplete}
           onClose={() => setShowIdentifyModal(false)}
         />
