@@ -109,14 +109,16 @@ const FoodSuggestionPrompt: React.FC<FoodSuggestionPromptProps> = ({ stop, onDis
   // Load everything on mount
   useEffect(() => {
     const load = async () => {
+      console.log('[FoodSuggestion] Loading for stop:', stop.name);
       setLoading(true);
       await fetchUserProfile();
       const restaurants = await fetchNearbyRestaurants();
+      console.log('[FoodSuggestion] Fetching recommendation with', restaurants.length, 'restaurants');
       await fetchRecommendation(restaurants);
       setLoading(false);
     };
     load();
-  }, [fetchUserProfile, fetchNearbyRestaurants, fetchRecommendation]);
+  }, [stop.id]); // Only re-run if stop changes
 
   return (
     <div className="fixed bottom-20 left-2 right-2 z-50 animate-in slide-in-from-bottom-4 duration-300">

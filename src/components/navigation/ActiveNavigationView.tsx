@@ -27,12 +27,13 @@ import SpeedAlertOverlay from './SpeedAlertOverlay';
 import SpeedAlertDetailsSheet from './SpeedAlertDetailsSheet';
 import ReportAlertButton from './ReportAlertButton';
 import { createTruckCursorElement } from './TruckCursor';
-import { MapPin, Navigation as NavIcon, RotateCcw, Layers, Bug, Plus, Route } from 'lucide-react';
+import { MapPin, Navigation as NavIcon, RotateCcw, Layers, Bug, Plus, Route, Utensils } from 'lucide-react';
 import WeighStationOverlay from '@/components/weighstation/WeighStationOverlay';
 import WeighStationAlert from '@/components/weighstation/WeighStationAlert';
 import WeighStationBottomSheet from '@/components/weighstation/WeighStationBottomSheet';
 import WeighStationQuestionnaire from '@/components/weighstation/WeighStationQuestionnaire';
 import { useGeofence } from '@/contexts/GeofenceContext';
+import { usePoiFeedback } from '@/contexts/PoiFeedbackContext';
 import { Button } from '@/components/ui/button';
 import { useLanguage } from '@/i18n/LanguageContext';
 
@@ -161,6 +162,9 @@ const ActiveNavigationView = () => {
 
   const voice = useVoiceGuidance();
   const voiceRef = useRef(voice);
+  
+  // Food suggestion context
+  const { currentVisitedPoi, isShowingFoodSuggestion } = usePoiFeedback();
 
   useEffect(() => {
     voiceRef.current = voice;
@@ -788,6 +792,21 @@ const ActiveNavigationView = () => {
         >
           <Plus className="w-5 h-5" />
         </Button>
+        
+        {/* Food suggestions indicator - shows when at a POI */}
+        {currentVisitedPoi && !isShowingFoodSuggestion && (
+          <Button
+            variant="default"
+            size="icon"
+            className="rounded-full shadow-lg w-12 h-12 bg-green-600 hover:bg-green-700"
+            onClick={() => {
+              // Force show food suggestions by navigating to stop advisor
+              window.location.href = '/stop-advisor';
+            }}
+          >
+            <Utensils className="w-5 h-5" />
+          </Button>
+        )}
         
         {/* Debug toggle button */}
         <Button
