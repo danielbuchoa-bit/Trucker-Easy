@@ -388,52 +388,78 @@ const HomeScreen = () => {
               const BrandLogo = getBrandLogo(place.name);
               
               return (
-                <button
+                <div
                   key={place.id}
-                  onClick={() => navigate(`/place/${place.id}`)}
-                  className="w-full flex items-center gap-4 p-4 bg-card rounded-xl border border-border hover:border-primary/50 transition-all text-left"
+                  className="w-full flex items-center gap-4 p-4 bg-card rounded-xl border border-border hover:border-primary/50 transition-all"
                 >
-                  <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0 overflow-hidden">
-                    {BrandLogo ? (
-                      <BrandLogo className="w-8 h-8" />
-                    ) : (
-                      <MapPin className="w-6 h-6 text-primary" />
+                  <button
+                    onClick={() => navigate(`/place/${place.id}`)}
+                    className="flex items-center gap-4 flex-1 min-w-0 text-left"
+                  >
+                    <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0 overflow-hidden">
+                      {BrandLogo ? (
+                        <BrandLogo className="w-8 h-8" />
+                      ) : (
+                        <MapPin className="w-6 h-6 text-primary" />
+                      )}
+                    </div>
+
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-semibold text-foreground truncate">{place.name}</h3>
+                      <div className="flex items-center gap-2 mt-1">
+                        <span className="text-sm text-muted-foreground">{place.distance}</span>
+                        {place.parking && (
+                          <>
+                            <span className="text-muted-foreground">•</span>
+                            <div className="flex items-center gap-1.5">
+                              <div className={`w-2 h-2 rounded-full ${getParkingColor(place.parking)}`} />
+                              <span className="text-sm text-muted-foreground">{getParkingLabel(place.parking)}</span>
+                            </div>
+                          </>
+                        )}
+                        {place.status && (
+                          <>
+                            <span className="text-muted-foreground">•</span>
+                            <span
+                              className={`text-sm ${place.status === 'open' ? 'text-status-open' : 'text-status-closed'}`}
+                            >
+                              {place.status === 'open' ? t.place.weighOpen : t.place.weighClosed}
+                            </span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    {place.rating && (
+                      <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                        <span className="text-primary">★</span>
+                        <span>{place.rating}</span>
+                      </div>
                     )}
-                  </div>
+                  </button>
 
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-semibold text-foreground truncate">{place.name}</h3>
-                    <div className="flex items-center gap-2 mt-1">
-                      <span className="text-sm text-muted-foreground">{place.distance}</span>
-                      {place.parking && (
-                        <>
-                          <span className="text-muted-foreground">•</span>
-                          <div className="flex items-center gap-1.5">
-                            <div className={`w-2 h-2 rounded-full ${getParkingColor(place.parking)}`} />
-                            <span className="text-sm text-muted-foreground">{getParkingLabel(place.parking)}</span>
-                          </div>
-                        </>
-                      )}
-                      {place.status && (
-                        <>
-                          <span className="text-muted-foreground">•</span>
-                          <span
-                            className={`text-sm ${place.status === 'open' ? 'text-status-open' : 'text-status-closed'}`}
-                          >
-                            {place.status === 'open' ? t.place.weighOpen : t.place.weighClosed}
-                          </span>
-                        </>
-                      )}
-                    </div>
-                  </div>
-
-                  {place.rating && (
-                    <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                      <span className="text-primary">★</span>
-                      <span>{place.rating}</span>
-                    </div>
-                  )}
-                </button>
+                  {/* Navigate Button */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      navigate('/navigation', {
+                        state: {
+                          destination: {
+                            lat: place.lat,
+                            lng: place.lng,
+                            name: place.name,
+                            address: place.address,
+                          },
+                          autoStart: true,
+                        },
+                      });
+                    }}
+                    className="w-12 h-12 rounded-full bg-primary flex items-center justify-center flex-shrink-0 hover:bg-primary/90 transition-colors"
+                    aria-label={`Navigate to ${place.name}`}
+                  >
+                    <Navigation className="w-5 h-5 text-primary-foreground" />
+                  </button>
+                </div>
               );
             })}
           </div>

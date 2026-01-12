@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect, useRef } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import {
   ArrowLeft,
   Navigation,
@@ -41,11 +41,26 @@ import BottomNav from '@/components/navigation/BottomNav';
 import { useToast } from '@/hooks/use-toast';
 import { useActiveNavigation } from '@/contexts/ActiveNavigationContext';
 
+interface NavigationLocationState {
+  destination?: {
+    lat: number;
+    lng: number;
+    name: string;
+    address?: string;
+  };
+  autoStart?: boolean;
+}
+
 const NavigationScreen = () => {
   const { t } = useLanguage();
   const navigate = useNavigate();
+  const location = useLocation();
   const { toast } = useToast();
   const { isNavigating, startNavigation } = useActiveNavigation();
+  const hasAutoStartedRef = useRef(false);
+
+  // Get passed destination from router state
+  const locationState = location.state as NavigationLocationState | null;
 
   // Location state
   const [origin, setOrigin] = useState<GeocodeResult | null>(null);
@@ -63,6 +78,53 @@ const NavigationScreen = () => {
   const [weatherAlerts, setWeatherAlerts] = useState<WeatherAlertsResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [alertsLoading, setAlertsLoading] = useState(false);
+
+  // Handle destination passed via router state
+  useEffect(() => {
+    if (locationState?.destination && !hasAutoStartedRef.current) {
+      const passedDest = locationState.destination;
+      const destResult: GeocodeResult = {
+        id: `poi-${passedDest.lat}-${passedDest.lng}`,
+        title: passedDest.name,
+        address: passedDest.address || `${passedDest.lat.toFixed(4)}, ${passedDest.lng.toFixed(4)}`,
+        lat: passedDest.lat,
+        lng: passedDest.lng,
+      };
+      setDestination(destResult);
+
+      // Auto-get current location as origin if autoStart
+      if (locationState.autoStart && navigator.geolocation) {
+        hasAutoStartedRef.current = true;
+        navigator.geolocation.getCurrentPosition(
+          (position) => {
+            const currentLocation: GeocodeResult = {
+              id: 'current-location',
+              title: t.navigation?.useMyLocation || 'Current Location',
+              address: `${position.coords.latitude.toFixed(4)}, ${position.coords.longitude.toFixed(4)}`,
+              lat: position.coords.latitude,
+              lng: position.coords.longitude,
+            };
+            setOrigin(currentLocation);
+          },
+          () => {
+            toast({
+              title: t.navigation?.error || 'Error',
+              description: t.navigation?.locationError || 'Could not get current location',
+              variant: 'destructive',
+            });
+          }
+        );
+      }
+    }
+  }, [locationState, t, toast]);
+
+  // Auto-calculate route when origin and destination are set from POI navigation
+  useEffect(() => {
+    if (origin && destination && locationState?.autoStart && !route && !loading) {
+      handleCalculateRoute();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [origin, destination]);
 
   const handleCalculateRoute = async () => {
     if (!origin || !destination) {
