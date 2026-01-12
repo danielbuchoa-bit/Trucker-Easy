@@ -1,15 +1,21 @@
 import { useState } from 'react';
 import { useLanguage } from '@/i18n/LanguageContext';
-import { ParkingSquare, Scale, AlertTriangle, CloudRain, Check, MapPin } from 'lucide-react';
+import { ParkingSquare, Scale, AlertTriangle, CloudRain, Check, MapPin, Loader2 } from 'lucide-react';
 import BottomNav from '@/components/navigation/BottomNav';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
+import { supabase } from '@/integrations/supabase/client';
+import { useGeolocation } from '@/hooks/useGeolocation';
+import { REPORT_TYPE_TTL } from '@/types/collaborative';
+import type { Json } from '@/integrations/supabase/types';
 
 const ReportScreen = () => {
   const { t } = useLanguage();
   const navigate = useNavigate();
+  const { latitude, longitude, loading: locationLoading } = useGeolocation();
   const [selectedReport, setSelectedReport] = useState<string | null>(null);
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   const reportTypes = [
     {
@@ -17,10 +23,11 @@ const ReportScreen = () => {
       icon: ParkingSquare,
       label: t.report.parking,
       color: 'bg-blue-500/10 text-blue-400',
+      dbType: 'parking',
       options: [
-        { id: 'available', label: t.place.available, color: 'bg-parking-available' },
-        { id: 'limited', label: t.place.limited, color: 'bg-parking-limited' },
-        { id: 'full', label: t.place.full, color: 'bg-parking-full' },
+        { id: 'plenty', label: t.place.available, color: 'bg-parking-available', dbValue: 'plenty' },
+        { id: 'few_spots', label: t.place.limited, color: 'bg-parking-limited', dbValue: 'few_spots' },
+        { id: 'full', label: t.place.full, color: 'bg-parking-full', dbValue: 'full' },
       ],
     },
     {
@@ -28,9 +35,10 @@ const ReportScreen = () => {
       icon: Scale,
       label: t.report.weighStation,
       color: 'bg-purple-500/10 text-purple-400',
+      dbType: 'weigh_station',
       options: [
-        { id: 'open', label: t.place.weighOpen, color: 'bg-status-open' },
-        { id: 'closed', label: t.place.weighClosed, color: 'bg-status-closed' },
+        { id: 'open', label: t.place.weighOpen, color: 'bg-status-open', dbValue: 'open' },
+        { id: 'closed', label: t.place.weighClosed, color: 'bg-status-closed', dbValue: 'closed' },
       ],
     },
     {
@@ -38,11 +46,12 @@ const ReportScreen = () => {
       icon: AlertTriangle,
       label: t.report.hazard,
       color: 'bg-red-500/10 text-red-400',
+      dbType: 'road_condition',
       options: [
-        { id: 'accident', label: 'Accident', color: 'bg-red-500' },
-        { id: 'roadwork', label: 'Road Work', color: 'bg-orange-500' },
-        { id: 'debris', label: 'Debris', color: 'bg-yellow-500' },
-        { id: 'police', label: 'Police', color: 'bg-blue-500' },
+        { id: 'accident', label: 'Accident', color: 'bg-red-500', dbValue: 'accident' },
+        { id: 'roadwork', label: 'Road Work', color: 'bg-orange-500', dbValue: 'roadwork' },
+        { id: 'debris', label: 'Debris', color: 'bg-yellow-500', dbValue: 'debris' },
+        { id: 'police', label: 'Police', color: 'bg-blue-500', dbValue: 'police' },
       ],
     },
     {
@@ -50,24 +59,114 @@ const ReportScreen = () => {
       icon: CloudRain,
       label: t.report.conditions,
       color: 'bg-cyan-500/10 text-cyan-400',
+      dbType: 'road_condition',
       options: [
-        { id: 'rain', label: 'Rain', color: 'bg-blue-400' },
-        { id: 'snow', label: 'Snow', color: 'bg-gray-300' },
-        { id: 'ice', label: 'Ice', color: 'bg-cyan-300' },
-        { id: 'fog', label: 'Fog', color: 'bg-gray-400' },
+        { id: 'rain', label: 'Rain', color: 'bg-blue-400', dbValue: 'rain' },
+        { id: 'snow', label: 'Snow', color: 'bg-gray-300', dbValue: 'ice_snow' },
+        { id: 'ice', label: 'Ice', color: 'bg-cyan-300', dbValue: 'ice_snow' },
+        { id: 'fog', label: 'Fog', color: 'bg-gray-400', dbValue: 'fog' },
       ],
     },
   ];
 
-  const handleSubmit = () => {
-    if (selectedReport && selectedOption) {
+  const handleSubmit = async () => {
+    if (!selectedReport || !selectedOption) return;
+
+    if (!latitude || !longitude) {
+      toast.error('Location required');
+      return;
+    }
+
+    setSubmitting(true);
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        toast.error('Please sign in');
+        setSubmitting(false);
+        return;
+      }
+
+      // Check rate limit
+      const { data: canReport, error: checkError } = await supabase.rpc('can_create_report', {
+        p_user_id: user.id,
+      });
+
+      if (checkError) {
+        console.error('Rate limit check error:', checkError);
+        throw checkError;
+      }
+
+      if (!canReport) {
+        toast.error('Rate limit reached. Maximum 10 reports per hour.');
+        setSubmitting(false);
+        return;
+      }
+
+      const currentReportType = reportTypes.find(r => r.id === selectedReport);
+      const currentOption = currentReportType?.options.find(o => o.id === selectedOption);
+
+      if (!currentReportType || !currentOption) {
+        toast.error('Invalid report type');
+        setSubmitting(false);
+        return;
+      }
+
+      const dbType = currentReportType.dbType;
+      const subtype = currentOption.dbValue;
+
+      // Calculate TTL based on report type
+      let ttl = REPORT_TYPE_TTL[dbType as keyof typeof REPORT_TYPE_TTL] || 2 * 60 * 60 * 1000;
+      if (subtype === 'ice_snow') {
+        ttl = REPORT_TYPE_TTL.ice_snow || 4 * 60 * 60 * 1000;
+      }
+
+      const expiresAt = new Date(Date.now() + ttl).toISOString();
+
+      // Build details
+      let details: Json = {};
+      if (dbType === 'parking') {
+        details = { parking_status: subtype };
+      } else if (dbType === 'weigh_station') {
+        details = { status: subtype };
+      } else if (dbType === 'road_condition') {
+        details = { condition: subtype };
+      }
+
+      const { error } = await supabase.from('road_reports').insert({
+        user_id: user.id,
+        report_type: dbType,
+        subtype,
+        lat: latitude,
+        lng: longitude,
+        details,
+        expires_at: expiresAt,
+      });
+
+      if (error) {
+        console.error('Insert error:', error);
+        throw error;
+      }
+
       toast.success(t.report.thanks);
       setSelectedReport(null);
       setSelectedOption(null);
+    } catch (error) {
+      console.error('Error submitting report:', error);
+      toast.error('Failed to submit report');
     }
+
+    setSubmitting(false);
   };
 
   const currentReportType = reportTypes.find(r => r.id === selectedReport);
+
+  // Format location display
+  const getLocationDisplay = () => {
+    if (locationLoading) return 'Getting location...';
+    if (!latitude || !longitude) return 'Location unavailable';
+    return `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
+  };
 
   return (
     <div className="min-h-screen bg-background pb-20">
@@ -83,11 +182,15 @@ const ReportScreen = () => {
       <div className="mx-4 mt-4 p-4 bg-card rounded-xl border border-border">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-            <MapPin className="w-5 h-5 text-primary" />
+            {locationLoading ? (
+              <Loader2 className="w-5 h-5 text-primary animate-spin" />
+            ) : (
+              <MapPin className="w-5 h-5 text-primary" />
+            )}
           </div>
           <div>
             <p className="text-sm text-muted-foreground">{t.report.currentLocation}</p>
-            <p className="font-medium text-foreground">I-40 E, Mile Marker 142</p>
+            <p className="font-medium text-foreground">{getLocationDisplay()}</p>
           </div>
         </div>
       </div>
@@ -150,10 +253,17 @@ const ReportScreen = () => {
           {/* Submit Button */}
           <button
             onClick={handleSubmit}
-            disabled={!selectedOption}
-            className="w-full mt-6 h-14 bg-primary text-primary-foreground rounded-xl font-semibold text-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all hover:bg-primary/90"
+            disabled={!selectedOption || submitting || !latitude || !longitude}
+            className="w-full mt-6 h-14 bg-primary text-primary-foreground rounded-xl font-semibold text-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all hover:bg-primary/90 flex items-center justify-center gap-2"
           >
-            {t.report.submit}
+            {submitting ? (
+              <>
+                <Loader2 className="w-5 h-5 animate-spin" />
+                Submitting...
+              </>
+            ) : (
+              t.report.submit
+            )}
           </button>
         </div>
       )}
