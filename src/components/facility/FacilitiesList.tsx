@@ -454,14 +454,13 @@ const FacilitiesList: React.FC = () => {
                             </div>
                             <Button
                               size="sm"
-                              variant="outline"
-                              className="h-7 text-xs"
+                              className="h-7 text-xs bg-primary/90 hover:bg-primary text-primary-foreground animate-pulse hover:animate-none shadow-[0_0_10px_hsl(var(--primary)/0.4)]"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 navigate(`/facility/${facility.id}`);
                               }}
                             >
-                              <Star className="w-3 h-3 mr-1" />
+                              <Star className="w-3 h-3 mr-1 fill-current" />
                               Rate
                             </Button>
                           </div>
