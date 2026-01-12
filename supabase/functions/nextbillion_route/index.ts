@@ -200,47 +200,83 @@ serve(async (req) => {
       return 0;
     };
     
-    // Generate human-readable instruction from modifier and maneuver type
-    function generateInstruction(step: any): string {
-      const type = step.maneuver?.type || '';
-      const modifier = step.maneuver?.modifier || '';
-      const roadName = step.name || step.ref || '';
-      const exit = step.maneuver?.exit;
-      
-      // Handle different maneuver types
-      if (type === 'depart') {
-        return roadName ? `Head towards ${roadName}` : 'Depart';
-      }
-      if (type === 'arrive') {
-        return 'Arrive at destination';
-      }
-      if (type === 'roundabout' || type === 'rotary') {
-        return exit ? `Take exit ${exit} from roundabout` : 'Enter roundabout';
-      }
-      if (type === 'off ramp' || type === 'exit') {
-        return exit ? `Take exit ${exit}${roadName ? ` onto ${roadName}` : ''}` : `Exit${roadName ? ` onto ${roadName}` : ''}`;
-      }
-      if (type === 'on ramp' || type === 'merge') {
-        return roadName ? `Merge onto ${roadName}` : 'Merge';
-      }
-      if (type === 'fork') {
-        const direction = modifier === 'left' ? 'left' : modifier === 'right' ? 'right' : '';
-        return `Keep ${direction}${roadName ? ` onto ${roadName}` : ''}`.trim();
-      }
-      
-      // Standard turn instructions
-      let action = 'Continue';
-      if (modifier === 'left') action = 'Turn left';
-      else if (modifier === 'right') action = 'Turn right';
-      else if (modifier === 'slight left') action = 'Slight left';
-      else if (modifier === 'slight right') action = 'Slight right';
-      else if (modifier === 'sharp left') action = 'Sharp left';
-      else if (modifier === 'sharp right') action = 'Sharp right';
-      else if (modifier === 'uturn') action = 'Make a U-turn';
-      else if (modifier === 'straight') action = 'Continue straight';
-      
-      return roadName ? `${action} onto ${roadName}` : action;
+  // Validate if a roundabout instruction is real based on step metadata
+  function isValidRoundabout(step: any): boolean {
+    const type = step.maneuver?.type || '';
+    
+    // Only check for roundabout/rotary types
+    if (type !== 'roundabout' && type !== 'rotary') return true;
+    
+    // Roundabouts should have exit info
+    const hasExit = step.maneuver?.exit !== undefined && step.maneuver?.exit !== null;
+    
+    // Roundabouts typically have longer distances (at least 20 meters to traverse)
+    const distance = typeof step.distance === 'object' ? step.distance?.value : step.distance;
+    const hasReasonableDistance = distance > 15;
+    
+    // If instruction mentions "roundabout" or "rotary" explicitly, trust it
+    const instruction = (step.maneuver?.instruction || step.html_instructions || '').toLowerCase();
+    const mentionsRoundabout = instruction.includes('roundabout') || instruction.includes('rotary') || instruction.includes('traffic circle');
+    
+    // Valid if: has exit OR has reasonable distance OR explicitly mentions roundabout
+    return hasExit || hasReasonableDistance || mentionsRoundabout;
+  }
+  
+  // Generate human-readable instruction from modifier and maneuver type
+  function generateInstruction(step: any): string {
+    const type = step.maneuver?.type || '';
+    const modifier = step.maneuver?.modifier || '';
+    const roadName = step.name || step.ref || '';
+    const exit = step.maneuver?.exit;
+    
+    // Handle different maneuver types
+    if (type === 'depart') {
+      return roadName ? `Head towards ${roadName}` : 'Depart';
     }
+    if (type === 'arrive') {
+      return 'Arrive at destination';
+    }
+    
+    // Validate roundabout - if invalid, treat as regular turn
+    if (type === 'roundabout' || type === 'rotary') {
+      if (!isValidRoundabout(step)) {
+        // Convert to regular turn based on modifier
+        if (modifier.includes('left')) {
+          return roadName ? `Turn left onto ${roadName}` : 'Turn left';
+        } else if (modifier.includes('right')) {
+          return roadName ? `Turn right onto ${roadName}` : 'Turn right';
+        } else if (modifier.includes('straight')) {
+          return roadName ? `Continue straight onto ${roadName}` : 'Continue straight';
+        }
+        return roadName ? `Continue onto ${roadName}` : 'Continue';
+      }
+      return exit ? `Take exit ${exit} from roundabout` : 'Enter roundabout';
+    }
+    
+    if (type === 'off ramp' || type === 'exit') {
+      return exit ? `Take exit ${exit}${roadName ? ` onto ${roadName}` : ''}` : `Exit${roadName ? ` onto ${roadName}` : ''}`;
+    }
+    if (type === 'on ramp' || type === 'merge') {
+      return roadName ? `Merge onto ${roadName}` : 'Merge';
+    }
+    if (type === 'fork') {
+      const direction = modifier === 'left' ? 'left' : modifier === 'right' ? 'right' : '';
+      return `Keep ${direction}${roadName ? ` onto ${roadName}` : ''}`.trim();
+    }
+    
+    // Standard turn instructions
+    let action = 'Continue';
+    if (modifier === 'left') action = 'Turn left';
+    else if (modifier === 'right') action = 'Turn right';
+    else if (modifier === 'slight left') action = 'Slight left';
+    else if (modifier === 'slight right') action = 'Slight right';
+    else if (modifier === 'sharp left') action = 'Sharp left';
+    else if (modifier === 'sharp right') action = 'Sharp right';
+    else if (modifier === 'uturn') action = 'Make a U-turn';
+    else if (modifier === 'straight') action = 'Continue straight';
+    
+    return roadName ? `${action} onto ${roadName}` : action;
+  }
     
     // Extract exit number from various sources
     function extractExitInfo(step: any): string | null {
@@ -279,12 +315,27 @@ serve(async (req) => {
         const exitInfo = extractExitInfo(step);
         const generatedInstruction = generateInstruction(step);
         
+        // Determine the actual maneuver type (may be corrected for invalid roundabouts)
+        let maneuverType = step.maneuver?.type || '';
+        const isRoundaboutType = maneuverType === 'roundabout' || maneuverType === 'rotary';
+        
+        // If it's a roundabout but invalid, change the type to 'turn'
+        if (isRoundaboutType && !isValidRoundabout(step)) {
+          const modifier = step.maneuver?.modifier || '';
+          if (modifier.includes('left') || modifier.includes('right')) {
+            maneuverType = 'turn';
+          } else {
+            maneuverType = 'continue';
+          }
+          console.log('[NEXTBILLION_ROUTE] Corrected invalid roundabout to:', maneuverType);
+        }
+        
         instructions.push({
           instruction: step.maneuver?.instruction || step.html_instructions || generatedInstruction,
           duration: extractValue(step.duration),
           distance: extractValue(step.distance),
           length: extractValue(step.distance), // Alias for compatibility
-          maneuverType: step.maneuver?.type || '',
+          maneuverType: maneuverType,
           modifier: step.maneuver?.modifier || '',
           roadName: step.name || step.ref || '',
           // Geometry for this step

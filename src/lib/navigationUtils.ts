@@ -168,9 +168,28 @@ export function calculateNavigationProgress(
 }
 
 /**
- * Get maneuver icon name based on instruction text.
+ * Get maneuver icon name based on instruction text and maneuver type.
+ * Prioritizes explicit maneuver type over text parsing when available.
  */
-export function getManeuverIcon(instruction: string): string {
+export function getManeuverIcon(instruction: string, maneuverType?: string): string {
+  // If maneuverType is provided and not roundabout (which may be corrected), use it
+  if (maneuverType) {
+    const type = maneuverType.toLowerCase();
+    
+    // Skip roundabout/rotary detection from type - rely on instruction text
+    // This prevents showing roundabout icon when type was corrected but text wasn't
+    if (type === 'turn') {
+      const lower = instruction.toLowerCase();
+      if (lower.includes('left')) return 'turn-left';
+      if (lower.includes('right')) return 'turn-right';
+      return 'straight';
+    }
+    if (type === 'merge' || type === 'on ramp') return 'merge';
+    if (type === 'off ramp' || type === 'exit') return 'exit';
+    if (type === 'arrive') return 'destination';
+    if (type === 'depart' || type === 'continue') return 'straight';
+  }
+  
   const lower = instruction.toLowerCase();
 
   if (lower.includes('left')) return 'turn-left';
@@ -178,7 +197,8 @@ export function getManeuverIcon(instruction: string): string {
   if (lower.includes('u-turn') || lower.includes('uturn')) return 'u-turn';
   if (lower.includes('merge')) return 'merge';
   if (lower.includes('exit')) return 'exit';
-  if (lower.includes('roundabout') || lower.includes('rotary')) return 'roundabout';
+  // Only show roundabout if explicitly mentioned in instruction
+  if (lower.includes('roundabout') || lower.includes('rotary') || lower.includes('traffic circle')) return 'roundabout';
   if (lower.includes('arrive') || lower.includes('destination')) return 'destination';
   if (lower.includes('continue') || lower.includes('straight')) return 'straight';
 
