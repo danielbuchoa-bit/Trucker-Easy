@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Building2, Star, Clock, Search, Loader2, Plus, MapPin, Navigation } from 'lucide-react';
+import { Building2, Star, Clock, Search, Loader2, Plus, MapPin, Navigation, MessageSquare } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -24,11 +24,18 @@ interface GeocodedResult {
   country?: string;
 }
 
+interface LatestTip {
+  facility_id: string;
+  tips: string;
+  created_at: string;
+}
+
 const FacilitiesList: React.FC = () => {
   const navigate = useNavigate();
   const { latitude, longitude } = useGeolocation();
   const [facilities, setFacilities] = useState<Facility[]>([]);
   const [aggregates, setAggregates] = useState<Record<string, FacilityAggregate>>({});
+  const [latestTips, setLatestTips] = useState<Record<string, LatestTip>>({});
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [searching, setSearching] = useState(false);
@@ -46,9 +53,14 @@ const FacilitiesList: React.FC = () => {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [facilitiesRes, aggregatesRes] = await Promise.all([
+        const [facilitiesRes, aggregatesRes, tipsRes] = await Promise.all([
           supabase.from('facilities').select('*').limit(100),
           supabase.from('facility_aggregates').select('*'),
+          supabase.from('facility_reviews')
+            .select('facility_id, tips, created_at')
+            .not('tips', 'is', null)
+            .order('created_at', { ascending: false })
+            .limit(100),
         ]);
 
         if (facilitiesRes.data) {
@@ -62,6 +74,17 @@ const FacilitiesList: React.FC = () => {
             map[a.facility_id] = a;
           });
           setAggregates(map);
+        }
+
+        if (tipsRes.data) {
+          const tipsMap: Record<string, LatestTip> = {};
+          // Only keep the latest tip per facility
+          tipsRes.data.forEach((tip) => {
+            if (!tipsMap[tip.facility_id]) {
+              tipsMap[tip.facility_id] = tip as LatestTip;
+            }
+          });
+          setLatestTips(tipsMap);
         }
       } catch (error) {
         console.error('Error fetching facilities:', error);
@@ -444,6 +467,18 @@ const FacilitiesList: React.FC = () => {
                           </div>
                         )}
                       </div>
+
+                      {/* Latest Tip Preview */}
+                      {latestTips[facility.id] && (
+                        <div className="mt-3 pt-3 border-t border-border/50">
+                          <div className="flex items-start gap-2">
+                            <MessageSquare className="w-4 h-4 text-muted-foreground flex-shrink-0 mt-0.5" />
+                            <p className="text-xs text-muted-foreground line-clamp-2 italic">
+                              "{latestTips[facility.id].tips}"
+                            </p>
+                          </div>
+                        </div>
+                      )}
                     </CardContent>
                   </Card>
                 );
