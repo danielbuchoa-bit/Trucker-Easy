@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { useLanguage } from '@/i18n/LanguageContext';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
@@ -48,6 +49,7 @@ interface NavigationLocationState {
     lng: number;
     name: string;
     address?: string;
+    type?: string;
   };
   autoStart?: boolean;
 }
@@ -66,6 +68,7 @@ const NavigationScreen = () => {
   // Location state
   const [origin, setOrigin] = useState<GeocodeResult | null>(null);
   const [destination, setDestination] = useState<GeocodeResult | null>(null);
+  const [destinationType, setDestinationType] = useState<string | null>(null);
   const [transportMode, setTransportMode] = useState<'truck' | 'car'>('truck');
   const [avoidTolls, setAvoidTolls] = useState(false);
   const [avoidFerries, setAvoidFerries] = useState(false);
@@ -107,6 +110,9 @@ const NavigationScreen = () => {
         lng: passedDest.lng,
       };
       setDestination(destResult);
+      if (passedDest.type) {
+        setDestinationType(passedDest.type);
+      }
 
       // Fetch real address for destination if only coordinates
       if (!passedDest.address) {
@@ -326,12 +332,25 @@ const NavigationScreen = () => {
             <div className="flex items-center gap-3 p-3 bg-card border border-border rounded-lg">
               <MapPin className="w-4 h-4 text-red-500 shrink-0" />
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium truncate">{destination.title}</p>
+                <div className="flex items-center gap-2">
+                  <p className="text-sm font-medium truncate">{destination.title}</p>
+                  {destinationType && (
+                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-5 shrink-0">
+                      {destinationType === 'truck_stop' && '🚛 Truck Stop'}
+                      {destinationType === 'gas_station' && '⛽ Gas Station'}
+                      {destinationType === 'fueling-station' && '⛽ Fuel'}
+                      {destinationType === 'rest_area' && '🅿️ Rest Area'}
+                      {destinationType === 'restaurant' && '🍔 Restaurant'}
+                      {destinationType === 'travel_center' && '🏪 Travel Center'}
+                      {!['truck_stop', 'gas_station', 'fueling-station', 'rest_area', 'restaurant', 'travel_center'].includes(destinationType) && destinationType}
+                    </Badge>
+                  )}
+                </div>
                 <p className="text-xs text-muted-foreground truncate">
                   {destination.address}
                 </p>
               </div>
-              <Button variant="ghost" size="sm" onClick={() => setDestination(null)}>
+              <Button variant="ghost" size="sm" onClick={() => { setDestination(null); setDestinationType(null); }}>
                 ✕
               </Button>
             </div>
