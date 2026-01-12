@@ -50,6 +50,7 @@ const FacilitiesList: React.FC = () => {
   const [geocodedResults, setGeocodedResults] = useState<GeocodedResult[]>([]);
   const [showGeoResults, setShowGeoResults] = useState(false);
   const [searchPerformed, setSearchPerformed] = useState(false);
+  const [showNewOnly, setShowNewOnly] = useState(false);
 
   // Manual entry modal state
   const [showManualEntry, setShowManualEntry] = useState(false);
@@ -270,12 +271,22 @@ const FacilitiesList: React.FC = () => {
     }
   };
 
+  // Count new facilities for badge
+  const newFacilitiesCount = facilities.filter(f => isNewFacility(f.created_at)).length;
+
   const filteredFacilities = facilities
-    .filter(f => 
-      !searchQuery || 
-      f.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (f.address && f.address.toLowerCase().includes(searchQuery.toLowerCase()))
-    )
+    .filter(f => {
+      // Filter by new only if toggle is on
+      if (showNewOnly && !isNewFacility(f.created_at)) return false;
+      
+      // Filter by search query
+      if (searchQuery && 
+          !f.name.toLowerCase().includes(searchQuery.toLowerCase()) &&
+          !(f.address && f.address.toLowerCase().includes(searchQuery.toLowerCase()))) {
+        return false;
+      }
+      return true;
+    })
     .sort((a, b) => {
       const distA = getDistance(a);
       const distB = getDistance(b);
@@ -319,6 +330,32 @@ const FacilitiesList: React.FC = () => {
           {searching ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
         </Button>
       </div>
+
+      {/* Filter: New Facilities */}
+      {newFacilitiesCount > 0 && (
+        <div className="flex items-center gap-2">
+          <Button
+            variant={showNewOnly ? "default" : "outline"}
+            size="sm"
+            onClick={() => setShowNewOnly(!showNewOnly)}
+            className={showNewOnly ? "bg-emerald-600 hover:bg-emerald-700" : ""}
+          >
+            <Sparkles className="w-3.5 h-3.5 mr-1.5" />
+            Novos
+            <Badge 
+              variant="secondary" 
+              className={`ml-1.5 h-5 px-1.5 text-[10px] ${showNewOnly ? 'bg-white/20 text-white' : ''}`}
+            >
+              {newFacilitiesCount}
+            </Badge>
+          </Button>
+          {showNewOnly && (
+            <span className="text-xs text-muted-foreground">
+              Últimos 7 dias
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Geocoded Results */}
       {showGeoResults && (
