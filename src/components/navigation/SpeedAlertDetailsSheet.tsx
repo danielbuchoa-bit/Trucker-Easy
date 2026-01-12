@@ -24,6 +24,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { SpeedAlertWithDistance, SpeedAlertType, ALERT_TYPE_CONFIG } from '@/types/speedAlerts';
 import { toast } from 'sonner';
+import TrafficLightIcon from './TrafficLightIcon';
 
 interface SpeedAlertDetailsSheetProps {
   alert: SpeedAlertWithDistance | null;
@@ -41,7 +42,7 @@ function getAlertIcon(type: SpeedAlertType) {
     case 'speed_camera':
       return <Camera {...iconProps} />;
     case 'red_light_camera':
-      return <AlertTriangle {...iconProps} />;
+      return <TrafficLightIcon className="w-6 h-6" />;
     case 'mobile_patrol':
       return <Car {...iconProps} />;
     case 'enforcement_zone':
