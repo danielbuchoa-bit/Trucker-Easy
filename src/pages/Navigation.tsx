@@ -89,10 +89,10 @@ const NavigationScreen = () => {
       const { data, error } = await supabase.functions.invoke('here_reverse_geocode', {
         body: { lat, lng }
       });
-      if (error || !data?.address) {
+      if (error || !data?.label) {
         return `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
       }
-      return data.address;
+      return data.label;
     } catch {
       return `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
     }
