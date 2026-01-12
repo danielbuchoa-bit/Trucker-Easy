@@ -1,6 +1,8 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Building2, Star, Clock, Search, Loader2, Plus, MapPin, Navigation, MessageSquare, Sparkles } from 'lucide-react';
+import { Building2, Star, Clock, Search, Loader2, Plus, MapPin, Navigation, MessageSquare, Sparkles, Calendar } from 'lucide-react';
+import { formatDistanceToNow } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -468,6 +470,10 @@ const FacilitiesList: React.FC = () => {
                                   {formatDistance(distance)}
                                 </span>
                               )}
+                              <span className="text-xs text-muted-foreground flex items-center gap-1">
+                                <Calendar className="w-3 h-3" />
+                                {formatDistanceToNow(new Date(facility.created_at), { addSuffix: true, locale: ptBR })}
+                              </span>
                             </div>
                           </div>
                         </div>
