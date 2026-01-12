@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Building2, Star, Clock, Search, Loader2, Plus, MapPin, Navigation, MessageSquare } from 'lucide-react';
+import { Building2, Star, Clock, Search, Loader2, Plus, MapPin, Navigation, MessageSquare, Sparkles } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -12,6 +12,14 @@ import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+
+// Helper to check if facility was created in the last 7 days
+const isNewFacility = (createdAt: string): boolean => {
+  const createdDate = new Date(createdAt);
+  const sevenDaysAgo = new Date();
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+  return createdDate > sevenDaysAgo;
+};
 
 interface GeocodedResult {
   id: string;
@@ -426,9 +434,17 @@ const FacilitiesList: React.FC = () => {
                             </div>
                           </div>
                         </div>
-                        <Badge className={getTypeColor(facility.facility_type)}>
-                          {facility.facility_type}
-                        </Badge>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <Badge className={getTypeColor(facility.facility_type)}>
+                            {facility.facility_type}
+                          </Badge>
+                          {isNewFacility(facility.created_at) && (
+                            <Badge className="bg-emerald-500/90 text-white text-[10px] px-1.5 py-0 h-5 animate-pulse">
+                              <Sparkles className="w-3 h-3 mr-0.5" />
+                              Novo
+                            </Badge>
+                          )}
+                        </div>
                       </div>
 
                       <div className="flex items-center gap-4 mt-2 text-sm">
