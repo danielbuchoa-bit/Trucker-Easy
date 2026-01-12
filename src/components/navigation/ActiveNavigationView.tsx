@@ -27,6 +27,7 @@ import LaneGuidancePanel from './LaneGuidancePanel';
 import SpeedAlertOverlay from './SpeedAlertOverlay';
 import SpeedAlertDetailsSheet from './SpeedAlertDetailsSheet';
 import ReportAlertButton from './ReportAlertButton';
+import TrafficLightOverlay from './TrafficLightOverlay';
 import { createTruckCursorElement } from './TruckCursor';
 import { MapPin, Navigation as NavIcon, RotateCcw, Layers, Bug, Plus, Route, Utensils } from 'lucide-react';
 import WeighStationOverlay from '@/components/weighstation/WeighStationOverlay';
@@ -730,6 +731,9 @@ const ActiveNavigationView = () => {
         currentSpeedMph={speedMph ?? 0}
         onDismiss={speedAlerts.dismissAlert}
       />
+
+      {/* Traffic Light Overlay - Shows red light cameras with distance */}
+      <TrafficLightOverlay alerts={speedAlerts.alerts} />
 
       {/* Report Alert Button */}
       <ReportAlertButton onReport={speedAlerts.reportAlert} />
