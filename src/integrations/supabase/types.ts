@@ -100,21 +100,27 @@ export type Database = {
         Row: {
           id: string
           joined_at: string
+          last_read_at: string | null
           nickname: string | null
+          notifications_enabled: boolean | null
           room_id: string
           user_id: string
         }
         Insert: {
           id?: string
           joined_at?: string
+          last_read_at?: string | null
           nickname?: string | null
+          notifications_enabled?: boolean | null
           room_id: string
           user_id: string
         }
         Update: {
           id?: string
           joined_at?: string
+          last_read_at?: string | null
           nickname?: string | null
+          notifications_enabled?: boolean | null
           room_id?: string
           user_id?: string
         }
