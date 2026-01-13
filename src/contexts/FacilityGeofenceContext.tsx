@@ -3,9 +3,10 @@ import { supabase } from '@/integrations/supabase/client';
 import { useGeolocation, calculateDistance } from '@/hooks/useGeolocation';
 import { useToast } from '@/hooks/use-toast';
 import type { Facility, FacilityAggregate } from '@/types/collaborative';
-import FacilityRatingPrompt from '@/components/facility/FacilityRatingPrompt';
+import UnifiedRatingPrompt, { detectLocationType } from '@/components/facility/UnifiedRatingPrompt';
 import FacilityIdentifyModal from '@/components/facility/FacilityIdentifyModal';
 import DestinationArrivalPrompt from '@/components/facility/DestinationArrivalPrompt';
+import TruckStopExitPrompt from '@/components/poi/TruckStopExitPrompt';
 import FacilityExitPrompt from '@/components/facility/FacilityExitPrompt';
 import FoodSuggestionPrompt from '@/components/stops/FoodSuggestionPrompt';
 import { useActiveNavigation } from '@/contexts/ActiveNavigationContext';
@@ -104,6 +105,8 @@ export const FacilityGeofenceProvider = ({ children }: FacilityGeofenceProviderP
   // Fuel stop visit tracking (separate from facilities)
   const [currentFuelStop, setCurrentFuelStop] = useState<FuelStopVisit | null>(null);
   const [showFoodSuggestion, setShowFoodSuggestion] = useState(false);
+  const [showFuelStopExitPrompt, setShowFuelStopExitPrompt] = useState(false);
+  const [exitingFuelStop, setExitingFuelStop] = useState<FuelStopVisit | null>(null);
   const dismissedFoodSuggestions = useRef<Set<string>>(new Set());
   
   // UI state
@@ -385,18 +388,16 @@ export const FacilityGeofenceProvider = ({ children }: FacilityGeofenceProviderP
       // Hide food suggestion if still showing
       setShowFoodSuggestion(false);
       
-      // Clear fuel stop visit (POI feedback is handled by PoiFeedbackContext)
-      setCurrentFuelStop(null);
-      
-      // Optional: Show a toast thanking for the visit
+      // Show exit prompt for fuel stops if stayed long enough
       if (timeSpent >= MIN_STAY_FOR_EXIT_PROMPT_MS) {
-        toast({
-          title: 'Boa viagem!',
-          description: 'Esperamos que tenha encontrado boas opções.',
-        });
+        setExitingFuelStop(currentFuelStop);
+        setShowFuelStopExitPrompt(true);
       }
+      
+      // Clear current fuel stop visit
+      setCurrentFuelStop(null);
     }
-  }, [latitude, longitude, currentFuelStop, toast]);
+  }, [latitude, longitude, currentFuelStop]);
 
   // Handle food suggestion dismiss
   const handleDismissFoodSuggestion = useCallback(() => {
@@ -406,7 +407,7 @@ export const FacilityGeofenceProvider = ({ children }: FacilityGeofenceProviderP
     setShowFoodSuggestion(false);
   }, [currentFuelStop]);
 
-  // Handle exit prompt complete
+  // Handle exit prompt complete (facility)
   const handleExitComplete = useCallback(() => {
     setShowExitPrompt(false);
     setCurrentVisit(null);
@@ -414,11 +415,24 @@ export const FacilityGeofenceProvider = ({ children }: FacilityGeofenceProviderP
     toast({ title: 'Obrigado!', description: 'Sua avaliação ajuda outros motoristas.' });
   }, [toast]);
 
-  // Handle exit prompt dismiss
+  // Handle exit prompt dismiss (facility)
   const handleExitDismiss = useCallback(() => {
     setShowExitPrompt(false);
     setCurrentVisit(null);
     setCurrentFacility(null);
+  }, []);
+
+  // Handle fuel stop exit prompt complete
+  const handleFuelStopExitComplete = useCallback(() => {
+    setShowFuelStopExitPrompt(false);
+    setExitingFuelStop(null);
+    toast({ title: 'Obrigado!', description: 'Sua avaliação ajuda outros motoristas.' });
+  }, [toast]);
+
+  // Handle fuel stop exit prompt dismiss
+  const handleFuelStopExitDismiss = useCallback(() => {
+    setShowFuelStopExitPrompt(false);
+    setExitingFuelStop(null);
   }, []);
 
   // Monitor geofence for manually approaching facilities (not from navigation)
@@ -536,7 +550,19 @@ export const FacilityGeofenceProvider = ({ children }: FacilityGeofenceProviderP
         />
       )}
       
-      {/* Facility Exit Prompt */}
+      {/* Truck Stop / Fuel Stop Exit Prompt */}
+      {showFuelStopExitPrompt && exitingFuelStop && (
+        <TruckStopExitPrompt
+          poiId={exitingFuelStop.id}
+          poiName={exitingFuelStop.name}
+          poiType="truck_stop"
+          timeSpentMs={Date.now() - exitingFuelStop.enteredAt}
+          onComplete={handleFuelStopExitComplete}
+          onDismiss={handleFuelStopExitDismiss}
+        />
+      )}
+      
+      {/* Facility Exit Prompt (for shippers/receivers) */}
       {showExitPrompt && currentVisit && (
         <FacilityExitPrompt
           facility={currentVisit.facility}
@@ -547,9 +573,9 @@ export const FacilityGeofenceProvider = ({ children }: FacilityGeofenceProviderP
         />
       )}
       
-      {/* Legacy Rating Prompt (for manual geofence entry) */}
+      {/* Unified Rating Prompt (detects facility vs truck stop) */}
       {showRatingPrompt && currentFacility && (
-        <FacilityRatingPrompt
+        <UnifiedRatingPrompt
           facility={currentFacility}
           promptType={promptType}
           onComplete={handleRatingComplete}
