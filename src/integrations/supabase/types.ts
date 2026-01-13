@@ -69,6 +69,10 @@ export type Database = {
           content: string
           created_at: string
           id: string
+          image_url: string | null
+          location_lat: number | null
+          location_lng: number | null
+          location_name: string | null
           room_id: string
           user_id: string
         }
@@ -76,6 +80,10 @@ export type Database = {
           content: string
           created_at?: string
           id?: string
+          image_url?: string | null
+          location_lat?: number | null
+          location_lng?: number | null
+          location_name?: string | null
           room_id: string
           user_id: string
         }
@@ -83,6 +91,10 @@ export type Database = {
           content?: string
           created_at?: string
           id?: string
+          image_url?: string | null
+          location_lat?: number | null
+          location_lng?: number | null
+          location_name?: string | null
           room_id?: string
           user_id?: string
         }
