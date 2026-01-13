@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useLanguage } from '@/i18n/LanguageContext';
-import { ParkingSquare, Scale, AlertTriangle, CloudRain, Check, MapPin, Loader2, Fuel, Building2, UtensilsCrossed } from 'lucide-react';
+import { ParkingSquare, Scale, AlertTriangle, CloudRain, Check, MapPin, Loader2, Fuel, Building2, UtensilsCrossed, Edit2, X, ChevronDown } from 'lucide-react';
 import BottomNav from '@/components/navigation/BottomNav';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -10,6 +10,16 @@ import { useNearbyPoi } from '@/hooks/useNearbyPoi';
 import { useNearbyRestaurants } from '@/hooks/useNearbyRestaurants';
 import { REPORT_TYPE_TTL } from '@/types/collaborative';
 import type { Json } from '@/integrations/supabase/types';
+import { Input } from '@/components/ui/input';
+
+// Common restaurant chains for quick selection
+const COMMON_RESTAURANTS = [
+  "Arby's", "Subway", "McDonald's", "Wendy's", "Taco Bell",
+  "Burger King", "Popeyes", "Dunkin'", "Starbucks", "Pizza Hut",
+  "Denny's", "IHOP", "Hardee's", "Carl's Jr", "Chester's Chicken",
+  "Godfather's Pizza", "Iron Skillet", "Country Pride", "Dairy Queen",
+  "Cinnabon", "Auntie Anne's", "Huddle House", "Waffle House"
+];
 
 const ReportScreen = () => {
   const { t } = useLanguage();
@@ -20,6 +30,11 @@ const ReportScreen = () => {
   const [selectedReport, setSelectedReport] = useState<string | null>(null);
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  
+  // Manual restaurant selection
+  const [showRestaurantSelector, setShowRestaurantSelector] = useState(false);
+  const [manualRestaurant, setManualRestaurant] = useState<string | null>(null);
+  const [customRestaurantInput, setCustomRestaurantInput] = useState('');
 
   // Fetch nearby restaurants when POI is available
   useEffect(() => {
@@ -27,6 +42,13 @@ const ReportScreen = () => {
       fetchNearbyRestaurants(latitude, longitude, poi.name);
     }
   }, [poi, latitude, longitude, fetchNearbyRestaurants]);
+
+  // Get the current restaurant name (manual override or detected)
+  const getCurrentRestaurant = () => {
+    if (manualRestaurant) return manualRestaurant;
+    if (restaurantResult?.restaurants?.[0]) return restaurantResult.restaurants[0].name;
+    return null;
+  };
 
   const reportTypes = [
     {
@@ -228,9 +250,9 @@ const ReportScreen = () => {
         </div>
 
         {/* Restaurant Info */}
-        {poi && !restaurantLoading && restaurantResult && (
+        {poi && !restaurantLoading && !showRestaurantSelector && (
           <div className="mt-3 pt-3 border-t border-border">
-            {restaurantResult.restaurants.length > 0 ? (
+            {getCurrentRestaurant() ? (
               <div className="flex items-center gap-2">
                 <div className="w-8 h-8 rounded-full bg-orange-500/10 flex items-center justify-center flex-shrink-0">
                   <UtensilsCrossed className="w-4 h-4 text-orange-500" />
@@ -238,16 +260,23 @@ const ReportScreen = () => {
                 <div className="min-w-0 flex-1">
                   <p className="text-xs text-muted-foreground">Restaurant</p>
                   <p className="text-sm font-medium text-foreground truncate">
-                    {restaurantResult.restaurants[0].name}
+                    {getCurrentRestaurant()}
                   </p>
-                  {restaurantResult.restaurants.length > 1 && (
+                  {!manualRestaurant && restaurantResult && restaurantResult.restaurants.length > 1 && (
                     <p className="text-xs text-muted-foreground">
                       +{restaurantResult.restaurants.length - 1} more nearby
                     </p>
                   )}
                 </div>
+                <button
+                  onClick={() => setShowRestaurantSelector(true)}
+                  className="p-2 rounded-lg hover:bg-muted/50 transition-colors"
+                  title="Change restaurant"
+                >
+                  <Edit2 className="w-4 h-4 text-muted-foreground" />
+                </button>
               </div>
-            ) : restaurantResult.fallback ? (
+            ) : restaurantResult?.fallback ? (
               <div className="flex items-center gap-2">
                 <div className="w-8 h-8 rounded-full bg-muted/50 flex items-center justify-center flex-shrink-0">
                   <UtensilsCrossed className="w-4 h-4 text-muted-foreground" />
@@ -258,13 +287,103 @@ const ReportScreen = () => {
                     Convenience Store
                   </p>
                 </div>
+                <button
+                  onClick={() => setShowRestaurantSelector(true)}
+                  className="p-2 rounded-lg hover:bg-muted/50 transition-colors"
+                  title="Add restaurant"
+                >
+                  <Edit2 className="w-4 h-4 text-muted-foreground" />
+                </button>
               </div>
-            ) : null}
+            ) : (
+              <button
+                onClick={() => setShowRestaurantSelector(true)}
+                className="flex items-center gap-2 text-sm text-primary"
+              >
+                <UtensilsCrossed className="w-4 h-4" />
+                <span>Add restaurant at this location</span>
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Restaurant Selector */}
+        {poi && showRestaurantSelector && (
+          <div className="mt-3 pt-3 border-t border-border space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-medium text-foreground">Select Restaurant</p>
+              <button
+                onClick={() => {
+                  setShowRestaurantSelector(false);
+                  setCustomRestaurantInput('');
+                }}
+                className="p-1 rounded hover:bg-muted/50"
+              >
+                <X className="w-4 h-4 text-muted-foreground" />
+              </button>
+            </div>
+
+            {/* Custom input */}
+            <div className="flex gap-2">
+              <Input
+                placeholder="Type restaurant name..."
+                value={customRestaurantInput}
+                onChange={(e) => setCustomRestaurantInput(e.target.value.slice(0, 50))}
+                className="flex-1 h-9 text-sm"
+                maxLength={50}
+              />
+              <button
+                onClick={() => {
+                  const trimmed = customRestaurantInput.trim();
+                  if (trimmed) {
+                    setManualRestaurant(trimmed);
+                    setShowRestaurantSelector(false);
+                    setCustomRestaurantInput('');
+                    toast.success(`Restaurant set to ${trimmed}`);
+                  }
+                }}
+                disabled={!customRestaurantInput.trim()}
+                className="px-3 h-9 bg-primary text-primary-foreground rounded-md text-sm font-medium disabled:opacity-50"
+              >
+                Set
+              </button>
+            </div>
+
+            {/* Quick select */}
+            <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto">
+              {COMMON_RESTAURANTS.map((name) => (
+                <button
+                  key={name}
+                  onClick={() => {
+                    setManualRestaurant(name);
+                    setShowRestaurantSelector(false);
+                    toast.success(`Restaurant set to ${name}`);
+                  }}
+                  className="px-2 py-1 text-xs bg-muted/50 hover:bg-muted rounded-full text-foreground transition-colors"
+                >
+                  {name}
+                </button>
+              ))}
+            </div>
+
+            {/* Clear selection */}
+            {manualRestaurant && (
+              <button
+                onClick={() => {
+                  setManualRestaurant(null);
+                  setShowRestaurantSelector(false);
+                  toast.info('Using auto-detected restaurant');
+                }}
+                className="text-xs text-muted-foreground hover:text-foreground"
+              >
+                Clear manual selection (use auto-detect)
+              </button>
+            )}
           </div>
         )}
 
         {/* Restaurant Loading */}
-        {poi && restaurantLoading && (
+        {poi && restaurantLoading && !showRestaurantSelector && (
           <div className="mt-3 pt-3 border-t border-border">
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 rounded-full bg-muted/50 flex items-center justify-center flex-shrink-0">
