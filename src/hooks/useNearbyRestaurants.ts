@@ -31,20 +31,27 @@ interface NearbyRestaurantsResult {
 }
 
 // ============ CONSTANTS ============
-const SEARCH_RADII = [150, 300, 500]; // meters
+const SEARCH_RADII = [100, 200, 350]; // meters - smaller radius to find restaurants INSIDE truck stops
 const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
-const CACHE_VERSION = 'v2'; // bump to invalidate old cached results
+const CACHE_VERSION = 'v3'; // bump to invalidate old cached results
 
-// Known food brands for detection
+// Known food brands for detection - expanded list
 const KNOWN_FOOD_BRANDS = [
+  // Fast food chains commonly in truck stops
   "mcdonald", "burger king", "wendy", "subway", "taco bell", "hardee", "carl's jr",
   "popeyes", "chick-fil-a", "arby", "dairy queen", "sonic", "denny", "ihop",
   "waffle house", "cracker barrel", "pizza hut", "domino", "papa john",
   "dunkin", "starbucks", "tim horton", "krispy kreme", "cinnabon",
-  "chester", "godfather", "hot stuff", "iron skillet", "country pride"
+  "chester", "godfather", "hot stuff", "iron skillet", "country pride",
+  // Additional chains
+  "panda express", "fazoli", "sbarro", "auntie anne", "taco john",
+  "bojangle", "zaxby", "huddle house", "shoney", "golden corral",
+  "long john silver", "captain d", "whataburger", "in-n-out", "five guys",
+  "jimmy john", "firehouse sub", "jersey mike", "quizno", "blimpie",
+  "little caesar", "marcos pizza", "hunt brothers"
 ];
 
-// HERE category IDs for food places
+// HERE category IDs for food places - more comprehensive
 const FOOD_CATEGORIES = [
   '100-1000-0000', // Restaurant
   '100-1000-0001', // Casual Dining
@@ -52,10 +59,11 @@ const FOOD_CATEGORIES = [
   '100-1000-0003', // Take Out & Delivery
   '100-1000-0004', // Food Court
   '100-1000-0005', // Bistro
-  '100-1000-0006', // Fast Food
+  '100-1000-0006', // Fast Food - KEY for truck stop restaurants
   '100-1000-0007', // Coffee Shop
   '100-1000-0008', // Cafeteria
   '100-1000-0009', // Bakery
+  '100-1100-0000', // Coffee/Tea - for Starbucks, Dunkin, etc.
 ];
 
 // ============ TRUCK STOP OFFERINGS CATALOG ============
@@ -115,15 +123,18 @@ function isFoodPlace(item: any): boolean {
   const categories = item.categories || [];
   for (const cat of categories) {
     const catId = cat.id || '';
-    // Restaurant and food categories start with 100-1000
+    // Restaurant and food categories start with 100-1000 or 100-1100
     if (catId.startsWith('100-1000') || catId.startsWith('100-1100')) {
       return true;
     }
   }
 
-  // Check name against known food brands
+  // Check name against known food brands - this is KEY for finding restaurants in truck stops
   const nameNormalized = normalizeName(item.name || item.title || '');
-  return KNOWN_FOOD_BRANDS.some((brand) => nameNormalized.includes(normalizeName(brand)));
+  const chainName = normalizeName(item.chainName || item.chains?.[0]?.name || '');
+  const searchText = nameNormalized + ' ' + chainName;
+  
+  return KNOWN_FOOD_BRANDS.some((brand) => searchText.includes(normalizeName(brand)));
 }
 
 function detectTruckStopBrand(stopName: string): string {
@@ -200,7 +211,7 @@ export function useNearbyRestaurants() {
 
       // Try each radius until we find results
       for (const radius of SEARCH_RADII) {
-        console.log(`[useNearbyRestaurants] Searching radius ${radius}m`);
+        console.log(`[useNearbyRestaurants] Searching radius ${radius}m for stop: ${stopName}`);
         
         const { data, error: fnError } = await supabase.functions.invoke('here_browse_pois', {
           body: {
@@ -208,7 +219,7 @@ export function useNearbyRestaurants() {
             lng: stopLng,
             radiusMeters: radius,
             categories: FOOD_CATEGORIES,
-            limit: 20,
+            limit: 30, // Fetch more to filter
           },
         });
 
@@ -218,9 +229,18 @@ export function useNearbyRestaurants() {
         }
 
         const pois = data?.pois || [];
+        console.log(`[useNearbyRestaurants] Raw POIs returned: ${pois.length}`);
         
         // Filter for actual food places
-        const foodPlaces = pois.filter((item: any) => isFoodPlace(item));
+        const foodPlaces = pois.filter((item: any) => {
+          const isFood = isFoodPlace(item);
+          if (isFood) {
+            console.log(`[useNearbyRestaurants] ✅ Found food: ${item.name} (distance: ${item.distance}m)`);
+          }
+          return isFood;
+        });
+        
+        console.log(`[useNearbyRestaurants] After food filter: ${foodPlaces.length} places`);
         
         if (foodPlaces.length > 0) {
           restaurants = foodPlaces
@@ -238,6 +258,7 @@ export function useNearbyRestaurants() {
           
           // Dedupe by normalized name
           restaurants = dedupeByName(restaurants);
+          console.log(`[useNearbyRestaurants] Deduped restaurants: ${restaurants.map(r => r.name).join(', ')}`);
           break;
         }
       }

@@ -89,6 +89,24 @@ const TRUCK_STOP_BRANDS = [
   'travel plaza', 'travel center', 'truck plaza',
 ];
 
+// Known restaurant/fast food brands - for better restaurant detection
+const RESTAURANT_BRANDS = [
+  // Fast food commonly in truck stops
+  "mcdonald", "burger king", "wendy", "subway", "taco bell", "hardee", "carl's jr",
+  "popeyes", "chick-fil-a", "arby", "dairy queen", "sonic", "denny", "ihop",
+  "waffle house", "cracker barrel", "pizza hut", "domino", "papa john",
+  "dunkin", "starbucks", "tim horton", "krispy kreme", "cinnabon",
+  "chester", "godfather", "hot stuff", "iron skillet", "country pride",
+  // Additional chains
+  "panda express", "fazoli", "sbarro", "auntie anne", "taco john",
+  "bojangle", "zaxby", "huddle house", "shoney", "golden corral",
+  "long john silver", "captain d", "whataburger", "in-n-out", "five guys",
+  "jimmy john", "firehouse sub", "jersey mike", "quizno", "blimpie",
+  "little caesar", "marcos pizza", "hunt brothers", "checkers", "rally",
+  "culver", "jack in the box", "del taco", "el pollo loco", "wingstop",
+  "buffalo wild", "applebee", "chili's", "outback", "texas roadhouse"
+];
+
 // Words that DISQUALIFY a place from being a truck stop
 const EXCLUSION_KEYWORDS = [
   'auto body', 'body shop', 'collision', 'repair shop', 'mechanic',
@@ -368,11 +386,16 @@ serve(async (req) => {
         if (searchText.includes(brand)) return 'truck_stop';
       }
       
+      // Check for restaurants by brand name
+      for (const brand of RESTAURANT_BRANDS) {
+        if (searchText.includes(brand)) return 'restaurant';
+      }
+      
       // Check remaining categories
       for (const cat of categories || []) {
         const id = cat.id || '';
         if (id.includes('7600')) return 'fuel';
-        if (id.includes('1000')) return 'restaurant';
+        if (id.includes('1000') || id.includes('1100')) return 'restaurant';
       }
       
       return 'fuel';
