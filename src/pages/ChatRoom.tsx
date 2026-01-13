@@ -9,6 +9,9 @@ import NicknameModal from '@/components/chat/NicknameModal';
 import { useChatContext } from '@/contexts/ChatContext';
 import MentionInput from '@/components/chat/MentionInput';
 import MentionHighlight, { isUserMentioned } from '@/components/chat/MentionHighlight';
+import ChatMediaInput from '@/components/chat/ChatMediaInput';
+import ChatMediaPreview from '@/components/chat/ChatMediaPreview';
+import ChatMessageMedia from '@/components/chat/ChatMessageMedia';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -31,6 +34,10 @@ interface ChatMessage {
   user_id: string;
   user_nickname?: string;
   user_phone?: string;
+  image_url?: string | null;
+  location_lat?: number | null;
+  location_lng?: number | null;
+  location_name?: string | null;
 }
 
 interface UserProfile {
@@ -66,6 +73,12 @@ const ChatRoomScreen = () => {
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [onlineCount, setOnlineCount] = useState(0);
   const [roomMembers, setRoomMembers] = useState<RoomMember[]>([]);
+  const [pendingImage, setPendingImage] = useState<string | null>(null);
+  const [pendingLocation, setPendingLocation] = useState<{
+    lat: number;
+    lng: number;
+    name: string;
+  } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Set last active room
@@ -419,16 +432,23 @@ const ChatRoomScreen = () => {
   };
 
   const handleSend = async () => {
-    if (!message.trim() || !roomId || !currentUserId || sending) return;
+    const hasContent = message.trim() || pendingImage || pendingLocation;
+    if (!hasContent || !roomId || !currentUserId || sending) return;
     
     setSending(true);
+    
+    const contentText = message.trim() || (pendingImage ? '📷 Foto' : (pendingLocation ? '📍 Localização' : ''));
     
     const { error } = await supabase
       .from('chat_messages')
       .insert({
         room_id: roomId,
         user_id: currentUserId,
-        content: message.trim(),
+        content: contentText,
+        image_url: pendingImage || null,
+        location_lat: pendingLocation?.lat || null,
+        location_lng: pendingLocation?.lng || null,
+        location_name: pendingLocation?.name || null,
       });
 
     if (error) {
@@ -440,9 +460,19 @@ const ChatRoomScreen = () => {
       });
     } else {
       setMessage('');
+      setPendingImage(null);
+      setPendingLocation(null);
     }
     
     setSending(false);
+  };
+
+  const handleImageSelected = (url: string) => {
+    setPendingImage(url);
+  };
+
+  const handleLocationSelected = (lat: number, lng: number, name: string) => {
+    setPendingLocation({ lat, lng, name });
   };
 
   const getUserDisplayName = (userId: string) => {
@@ -616,6 +646,13 @@ const ChatRoomScreen = () => {
                         isOwnMessage={isMe}
                       />
                     </p>
+                    <ChatMessageMedia
+                      imageUrl={msg.image_url}
+                      locationLat={msg.location_lat}
+                      locationLng={msg.location_lng}
+                      locationName={msg.location_name}
+                      isOwnMessage={isMe}
+                    />
                     <p className={`text-xs mt-1 ${isMe ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>
                       {formatMessageTime(msg.created_at)}
                     </p>
@@ -626,9 +663,22 @@ const ChatRoomScreen = () => {
             <div ref={messagesEndRef} />
           </div>
 
+          {/* Media Preview */}
+          <ChatMediaPreview
+            imageUrl={pendingImage || undefined}
+            location={pendingLocation || undefined}
+            onRemoveImage={() => setPendingImage(null)}
+            onRemoveLocation={() => setPendingLocation(null)}
+          />
+
           {/* Input */}
           <div className="sticky bottom-0 bg-background border-t border-border p-4 safe-bottom">
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <ChatMediaInput
+                onImageSelected={handleImageSelected}
+                onLocationSelected={handleLocationSelected}
+                disabled={sending}
+              />
               <MentionInput
                 value={message}
                 onChange={setMessage}
@@ -639,7 +689,7 @@ const ChatRoomScreen = () => {
               />
               <button
                 onClick={handleSend}
-                disabled={!message.trim() || sending}
+                disabled={(!message.trim() && !pendingImage && !pendingLocation) || sending}
                 className="w-12 h-12 bg-primary rounded-full flex items-center justify-center text-primary-foreground disabled:opacity-50"
               >
                 {sending ? (
