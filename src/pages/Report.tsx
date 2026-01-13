@@ -1,12 +1,13 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useLanguage } from '@/i18n/LanguageContext';
-import { ParkingSquare, Scale, AlertTriangle, CloudRain, Check, MapPin, Loader2, Fuel, Building2 } from 'lucide-react';
+import { ParkingSquare, Scale, AlertTriangle, CloudRain, Check, MapPin, Loader2, Fuel, Building2, UtensilsCrossed } from 'lucide-react';
 import BottomNav from '@/components/navigation/BottomNav';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import { useGeolocation } from '@/hooks/useGeolocation';
 import { useNearbyPoi } from '@/hooks/useNearbyPoi';
+import { useNearbyRestaurants } from '@/hooks/useNearbyRestaurants';
 import { REPORT_TYPE_TTL } from '@/types/collaborative';
 import type { Json } from '@/integrations/supabase/types';
 
@@ -15,9 +16,17 @@ const ReportScreen = () => {
   const navigate = useNavigate();
   const { latitude, longitude, loading: locationLoading } = useGeolocation();
   const { poi, loading: poiLoading } = useNearbyPoi(latitude, longitude);
+  const { fetchNearbyRestaurants, result: restaurantResult, loading: restaurantLoading } = useNearbyRestaurants();
   const [selectedReport, setSelectedReport] = useState<string | null>(null);
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  // Fetch nearby restaurants when POI is available
+  useEffect(() => {
+    if (poi && latitude && longitude) {
+      fetchNearbyRestaurants(latitude, longitude, poi.name);
+    }
+  }, [poi, latitude, longitude, fetchNearbyRestaurants]);
 
   const reportTypes = [
     {
@@ -191,7 +200,7 @@ const ReportScreen = () => {
 
       {/* Current Location */}
       <div className="mx-4 mt-4 p-4 bg-card rounded-xl border border-border">
-        <div className="flex items-center gap-3">
+        <div className="flex items-start gap-3">
           <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
             {isLoadingLocation ? (
               <Loader2 className="w-5 h-5 text-primary animate-spin" />
@@ -217,6 +226,54 @@ const ReportScreen = () => {
             )}
           </div>
         </div>
+
+        {/* Restaurant Info */}
+        {poi && !restaurantLoading && restaurantResult && (
+          <div className="mt-3 pt-3 border-t border-border">
+            {restaurantResult.restaurants.length > 0 ? (
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-full bg-orange-500/10 flex items-center justify-center flex-shrink-0">
+                  <UtensilsCrossed className="w-4 h-4 text-orange-500" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs text-muted-foreground">Restaurant</p>
+                  <p className="text-sm font-medium text-foreground truncate">
+                    {restaurantResult.restaurants[0].name}
+                  </p>
+                  {restaurantResult.restaurants.length > 1 && (
+                    <p className="text-xs text-muted-foreground">
+                      +{restaurantResult.restaurants.length - 1} more nearby
+                    </p>
+                  )}
+                </div>
+              </div>
+            ) : restaurantResult.fallback ? (
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-full bg-muted/50 flex items-center justify-center flex-shrink-0">
+                  <UtensilsCrossed className="w-4 h-4 text-muted-foreground" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs text-muted-foreground">Food Options</p>
+                  <p className="text-sm font-medium text-foreground">
+                    Convenience Store
+                  </p>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        )}
+
+        {/* Restaurant Loading */}
+        {poi && restaurantLoading && (
+          <div className="mt-3 pt-3 border-t border-border">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-full bg-muted/50 flex items-center justify-center flex-shrink-0">
+                <Loader2 className="w-4 h-4 text-muted-foreground animate-spin" />
+              </div>
+              <p className="text-xs text-muted-foreground">Finding restaurants...</p>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Report Types */}
