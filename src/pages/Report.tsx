@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { useLanguage } from '@/i18n/LanguageContext';
-import { ParkingSquare, Scale, AlertTriangle, CloudRain, Check, MapPin, Loader2 } from 'lucide-react';
+import { ParkingSquare, Scale, AlertTriangle, CloudRain, Check, MapPin, Loader2, Fuel, Building2 } from 'lucide-react';
 import BottomNav from '@/components/navigation/BottomNav';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import { useGeolocation } from '@/hooks/useGeolocation';
+import { useNearbyPoi } from '@/hooks/useNearbyPoi';
 import { REPORT_TYPE_TTL } from '@/types/collaborative';
 import type { Json } from '@/integrations/supabase/types';
 
@@ -13,6 +14,7 @@ const ReportScreen = () => {
   const { t } = useLanguage();
   const navigate = useNavigate();
   const { latitude, longitude, loading: locationLoading } = useGeolocation();
+  const { poi, loading: poiLoading } = useNearbyPoi(latitude, longitude);
   const [selectedReport, setSelectedReport] = useState<string | null>(null);
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -161,12 +163,21 @@ const ReportScreen = () => {
 
   const currentReportType = reportTypes.find(r => r.id === selectedReport);
 
-  // Format location display
-  const getLocationDisplay = () => {
-    if (locationLoading) return 'Getting location...';
-    if (!latitude || !longitude) return 'Location unavailable';
-    return `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
+  // Get POI icon based on type
+  const getPoiIcon = () => {
+    if (!poi) return <MapPin className="w-5 h-5 text-primary" />;
+    const type = poi.type.toLowerCase();
+    if (type.includes('fuel') || type.includes('gas')) {
+      return <Fuel className="w-5 h-5 text-primary" />;
+    }
+    if (type.includes('truck') || type.includes('travel')) {
+      return <Building2 className="w-5 h-5 text-primary" />;
+    }
+    return <MapPin className="w-5 h-5 text-primary" />;
   };
+
+  // Check if still loading location info
+  const isLoadingLocation = locationLoading || poiLoading;
 
   return (
     <div className="min-h-screen bg-background pb-20">
@@ -181,16 +192,29 @@ const ReportScreen = () => {
       {/* Current Location */}
       <div className="mx-4 mt-4 p-4 bg-card rounded-xl border border-border">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-            {locationLoading ? (
+          <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+            {isLoadingLocation ? (
               <Loader2 className="w-5 h-5 text-primary animate-spin" />
             ) : (
-              <MapPin className="w-5 h-5 text-primary" />
+              getPoiIcon()
             )}
           </div>
-          <div>
+          <div className="min-w-0 flex-1">
             <p className="text-sm text-muted-foreground">{t.report.currentLocation}</p>
-            <p className="font-medium text-foreground">{getLocationDisplay()}</p>
+            {isLoadingLocation ? (
+              <p className="font-medium text-foreground">Getting location...</p>
+            ) : !latitude || !longitude ? (
+              <p className="font-medium text-foreground">Location unavailable</p>
+            ) : poi ? (
+              <>
+                <p className="font-medium text-foreground truncate">{poi.name}</p>
+                {poi.address && (
+                  <p className="text-xs text-muted-foreground truncate">{poi.address}</p>
+                )}
+              </>
+            ) : (
+              <p className="font-medium text-foreground">{`${latitude.toFixed(4)}, ${longitude.toFixed(4)}`}</p>
+            )}
           </div>
         </div>
       </div>
