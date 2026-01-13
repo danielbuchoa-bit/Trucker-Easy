@@ -33,6 +33,7 @@ import FacilityRatingScreen from "./pages/FacilityRating";
 import FacilityDetailScreen from "./pages/FacilityDetail";
 import FoodPreferencesScreen from "./pages/FoodPreferences";
 import FavoriteMealsScreen from "./pages/FavoriteMeals";
+import SubscriptionScreen from "./pages/Subscription";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -74,6 +75,7 @@ const App = () => (
                         <Route path="/facility/:id" element={<FacilityDetailScreen />} />
                         <Route path="/food-preferences" element={<FoodPreferencesScreen />} />
                         <Route path="/favorite-meals" element={<FavoriteMealsScreen />} />
+                        <Route path="/subscription" element={<SubscriptionScreen />} />
                         <Route path="*" element={<NotFound />} />
                       </Routes>
                     </FacilityGeofenceProvider>
