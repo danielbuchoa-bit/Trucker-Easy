@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { useLanguage } from '@/i18n/LanguageContext';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Send, MoreVertical, Users, Flag, Loader2, LogOut, Edit2, Bell, BellOff, Circle } from 'lucide-react';
@@ -7,6 +7,8 @@ import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
 import NicknameModal from '@/components/chat/NicknameModal';
 import { useChatContext } from '@/contexts/ChatContext';
+import MentionInput from '@/components/chat/MentionInput';
+import MentionHighlight, { isUserMentioned } from '@/components/chat/MentionHighlight';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -37,6 +39,12 @@ interface UserProfile {
   phone: string | null;
 }
 
+interface RoomMember {
+  user_id: string;
+  nickname: string | null;
+  full_name?: string | null;
+}
+
 const ChatRoomScreen = () => {
   const { t } = useLanguage();
   const navigate = useNavigate();
@@ -57,6 +65,7 @@ const ChatRoomScreen = () => {
   const [myNickname, setMyNickname] = useState<string | null>(null);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [onlineCount, setOnlineCount] = useState(0);
+  const [roomMembers, setRoomMembers] = useState<RoomMember[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Set last active room
@@ -90,6 +99,7 @@ const ChatRoomScreen = () => {
   useEffect(() => {
     if (isMember && roomId) {
       fetchMessages();
+      fetchRoomMembers();
       const unsubscribe = subscribeToMessages();
       markRoomAsRead(roomId);
       
@@ -203,6 +213,37 @@ const ChatRoomScreen = () => {
       setMemberNicknames(prev => ({ ...prev, ...nicknamesMap }));
     }
   };
+
+  // Fetch all room members for mentions
+  const fetchRoomMembers = useCallback(async () => {
+    if (!roomId) return;
+
+    const { data: members } = await supabase
+      .from('chat_room_members')
+      .select('user_id, nickname')
+      .eq('room_id', roomId);
+
+    if (members) {
+      // Get profile info for members
+      const userIds = members.map(m => m.user_id);
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('id, full_name')
+        .in('id', userIds);
+
+      const profileMap = new Map(
+        (profiles || []).map(p => [p.id, p.full_name])
+      );
+
+      const membersWithNames: RoomMember[] = members.map(m => ({
+        user_id: m.user_id,
+        nickname: m.nickname,
+        full_name: profileMap.get(m.user_id) || null,
+      }));
+
+      setRoomMembers(membersWithNames);
+    }
+  }, [roomId]);
 
   const subscribeToMessages = () => {
     if (!roomId) return;
@@ -564,8 +605,16 @@ const ChatRoomScreen = () => {
                         </button>
                       </div>
                     )}
-                    <p className={`text-sm ${isMe ? 'text-primary-foreground' : 'text-foreground'}`}>
-                      {msg.content}
+                    <p className={`text-sm ${isMe ? 'text-primary-foreground' : 'text-foreground'} ${
+                      !isMe && myNickname && isUserMentioned(msg.content, myNickname) 
+                        ? 'bg-primary/5 -mx-1 px-1 py-0.5 rounded border-l-2 border-primary' 
+                        : ''
+                    }`}>
+                      <MentionHighlight 
+                        content={msg.content} 
+                        currentUserName={myNickname || undefined}
+                        isOwnMessage={isMe}
+                      />
                     </p>
                     <p className={`text-xs mt-1 ${isMe ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>
                       {formatMessageTime(msg.created_at)}
@@ -580,13 +629,13 @@ const ChatRoomScreen = () => {
           {/* Input */}
           <div className="sticky bottom-0 bg-background border-t border-border p-4 safe-bottom">
             <div className="flex items-center gap-3">
-              <input
-                type="text"
+              <MentionInput
                 value={message}
-                onChange={(e) => setMessage(e.target.value)}
+                onChange={setMessage}
                 onKeyPress={(e) => e.key === 'Enter' && handleSend()}
                 placeholder={t.community.typeMessage}
-                className="flex-1 h-12 px-4 bg-card border border-border rounded-full text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                members={roomMembers.filter(m => m.user_id !== currentUserId)}
+                disabled={sending}
               />
               <button
                 onClick={handleSend}
