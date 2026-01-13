@@ -1,11 +1,19 @@
 import { useState, useRef, useEffect } from 'react';
 import { useLanguage } from '@/i18n/LanguageContext';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Send, MoreVertical, Users, Flag, Loader2, LogOut, Edit2 } from 'lucide-react';
+import { ArrowLeft, Send, MoreVertical, Users, Flag, Loader2, LogOut, Edit2, Bell, BellOff, Circle } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
 import NicknameModal from '@/components/chat/NicknameModal';
+import { useChatContext } from '@/contexts/ChatContext';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 interface ChatRoom {
   id: string;
@@ -34,6 +42,8 @@ const ChatRoomScreen = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const { id: roomId } = useParams();
+  const { setLastActiveRoomId, markRoomAsRead, refreshMyRooms, currentUserId } = useChatContext();
+  
   const [message, setMessage] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [room, setRoom] = useState<ChatRoom | null>(null);
@@ -41,16 +51,34 @@ const ChatRoomScreen = () => {
   const [sending, setSending] = useState(false);
   const [isMember, setIsMember] = useState(false);
   const [joining, setJoining] = useState(false);
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [userProfiles, setUserProfiles] = useState<Record<string, UserProfile>>({});
   const [memberNicknames, setMemberNicknames] = useState<Record<string, string>>({});
   const [showNicknameModal, setShowNicknameModal] = useState(false);
   const [myNickname, setMyNickname] = useState<string | null>(null);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+  const [onlineCount, setOnlineCount] = useState(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // Set last active room
   useEffect(() => {
-    checkAuth();
-  }, []);
+    if (roomId) {
+      setLastActiveRoomId(roomId);
+    }
+  }, [roomId, setLastActiveRoomId]);
+
+  // Check auth and redirect if needed
+  useEffect(() => {
+    if (currentUserId === null) {
+      // Still loading
+    } else if (!currentUserId) {
+      toast({
+        title: 'Login necessário',
+        description: 'Você precisa estar logado para acessar o chat.',
+        variant: 'destructive',
+      });
+      navigate('/auth');
+    }
+  }, [currentUserId, navigate, toast]);
 
   useEffect(() => {
     if (roomId && currentUserId) {
@@ -62,27 +90,21 @@ const ChatRoomScreen = () => {
   useEffect(() => {
     if (isMember && roomId) {
       fetchMessages();
-      subscribeToMessages();
+      const unsubscribe = subscribeToMessages();
+      markRoomAsRead(roomId);
+      
+      // Setup presence
+      setupPresence();
+
+      return () => {
+        if (unsubscribe) unsubscribe();
+      };
     }
   }, [isMember, roomId]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
-
-  const checkAuth = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user) {
-      setCurrentUserId(user.id);
-    } else {
-      toast({
-        title: 'Login necessário',
-        description: 'Você precisa estar logado para acessar o chat.',
-        variant: 'destructive',
-      });
-      navigate('/auth');
-    }
-  };
 
   const fetchRoom = async () => {
     if (!roomId) return;
@@ -106,7 +128,7 @@ const ChatRoomScreen = () => {
     
     const { data } = await supabase
       .from('chat_room_members')
-      .select('id, nickname')
+      .select('id, nickname, notifications_enabled')
       .eq('room_id', roomId)
       .eq('user_id', currentUserId)
       .maybeSingle();
@@ -114,6 +136,9 @@ const ChatRoomScreen = () => {
     setIsMember(!!data);
     if (data?.nickname) {
       setMyNickname(data.nickname);
+    }
+    if (data?.notifications_enabled !== undefined) {
+      setNotificationsEnabled(data.notifications_enabled);
     }
     setLoading(false);
   };
@@ -136,7 +161,6 @@ const ChatRoomScreen = () => {
     if (messagesData) {
       setMessages(messagesData);
       
-      // Fetch user profiles for message authors
       const userIds = [...new Set(messagesData.map(m => m.user_id))];
       await fetchUserProfiles(userIds);
       await fetchMemberNicknames(userIds);
@@ -197,7 +221,6 @@ const ChatRoomScreen = () => {
           const newMessage = payload.new as ChatMessage;
           setMessages(prev => [...prev, newMessage]);
           
-          // Fetch profile for new message author if not cached
           if (!userProfiles[newMessage.user_id]) {
             await fetchUserProfiles([newMessage.user_id]);
             await fetchMemberNicknames([newMessage.user_id]);
@@ -205,6 +228,36 @@ const ChatRoomScreen = () => {
         }
       )
       .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  };
+
+  const setupPresence = () => {
+    if (!roomId || !currentUserId) return;
+
+    const channel = supabase.channel(`presence-${roomId}`, {
+      config: {
+        presence: {
+          key: currentUserId,
+        },
+      },
+    });
+
+    channel
+      .on('presence', { event: 'sync' }, () => {
+        const state = channel.presenceState();
+        setOnlineCount(Object.keys(state).length);
+      })
+      .subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') {
+          await channel.track({
+            user_id: currentUserId,
+            online_at: new Date().toISOString(),
+          });
+        }
+      });
 
     return () => {
       supabase.removeChannel(channel);
@@ -240,6 +293,7 @@ const ChatRoomScreen = () => {
       setMemberNicknames(prev => ({ ...prev, [currentUserId]: nickname }));
       setIsMember(true);
       setShowNicknameModal(false);
+      await refreshMyRooms();
       toast({
         title: 'Bem-vindo!',
         description: `Você entrou como "${nickname}".`,
@@ -276,6 +330,30 @@ const ChatRoomScreen = () => {
     }
   };
 
+  const handleToggleNotifications = async () => {
+    if (!roomId || !currentUserId) return;
+
+    const newValue = !notificationsEnabled;
+    
+    const { error } = await supabase
+      .from('chat_room_members')
+      .update({ notifications_enabled: newValue })
+      .eq('room_id', roomId)
+      .eq('user_id', currentUserId);
+
+    if (error) {
+      console.error('Error updating notifications:', error);
+    } else {
+      setNotificationsEnabled(newValue);
+      toast({
+        title: newValue ? 'Notificações ativadas' : 'Notificações desativadas',
+        description: newValue 
+          ? 'Você receberá alertas de novas mensagens.'
+          : 'Você não receberá alertas desta sala.',
+      });
+    }
+  };
+
   const handleLeaveRoom = async () => {
     if (!roomId || !currentUserId) return;
     
@@ -290,10 +368,12 @@ const ChatRoomScreen = () => {
     } else {
       setIsMember(false);
       setMessages([]);
+      await refreshMyRooms();
       toast({
         title: 'Você saiu',
         description: 'Você saiu da sala de chat.',
       });
+      navigate('/community?tab=chat');
     }
   };
 
@@ -325,7 +405,6 @@ const ChatRoomScreen = () => {
   };
 
   const getUserDisplayName = (userId: string) => {
-    // Priority: nickname > full_name > phone > anonymous
     const nickname = memberNicknames[userId];
     if (nickname) return nickname;
     
@@ -344,7 +423,7 @@ const ChatRoomScreen = () => {
     }
   };
 
-  if (loading) {
+  if (loading || currentUserId === null) {
     return (
       <div className="h-screen flex items-center justify-center bg-background">
         <Loader2 className="w-8 h-8 animate-spin text-primary" />
@@ -359,7 +438,7 @@ const ChatRoomScreen = () => {
         <div className="flex items-center justify-between p-4">
           <div className="flex items-center gap-3">
             <button
-              onClick={() => navigate(-1)}
+              onClick={() => navigate('/community?tab=chat')}
               className="w-10 h-10 bg-card border border-border rounded-full flex items-center justify-center"
             >
               <ArrowLeft className="w-5 h-5 text-foreground" />
@@ -370,36 +449,58 @@ const ChatRoomScreen = () => {
               </div>
               <div>
                 <h1 className="font-semibold text-foreground">{room?.name || 'Chat'}</h1>
-                <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                  <Users className="w-3 h-3" />
-                  <span>{room?.member_count.toLocaleString() || 0} members</span>
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <div className="flex items-center gap-1">
+                    <Users className="w-3 h-3" />
+                    <span>{room?.member_count.toLocaleString() || 0}</span>
+                  </div>
+                  {isMember && onlineCount > 0 && (
+                    <div className="flex items-center gap-1 text-green-500">
+                      <Circle className="w-2 h-2 fill-current" />
+                      <span>{onlineCount} online</span>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            {isMember && (
-              <>
-                <button
-                  onClick={() => setShowNicknameModal(true)}
-                  className="w-10 h-10 flex items-center justify-center text-muted-foreground hover:text-primary"
-                  title="Editar apelido"
-                >
-                  <Edit2 className="w-5 h-5" />
+          
+          {isMember && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className="w-10 h-10 flex items-center justify-center text-muted-foreground hover:text-foreground">
+                  <MoreVertical className="w-5 h-5" />
                 </button>
-                <button
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuItem onClick={() => setShowNicknameModal(true)}>
+                  <Edit2 className="w-4 h-4 mr-2" />
+                  Editar apelido
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleToggleNotifications}>
+                  {notificationsEnabled ? (
+                    <>
+                      <BellOff className="w-4 h-4 mr-2" />
+                      Desativar notificações
+                    </>
+                  ) : (
+                    <>
+                      <Bell className="w-4 h-4 mr-2" />
+                      Ativar notificações
+                    </>
+                  )}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem 
                   onClick={handleLeaveRoom}
-                  className="w-10 h-10 flex items-center justify-center text-muted-foreground hover:text-destructive"
-                  title="Sair da sala"
+                  className="text-destructive focus:text-destructive"
                 >
-                  <LogOut className="w-5 h-5" />
-                </button>
-              </>
-            )}
-            <button className="w-10 h-10 flex items-center justify-center text-muted-foreground">
-              <MoreVertical className="w-5 h-5" />
-            </button>
-          </div>
+                  <LogOut className="w-4 h-4 mr-2" />
+                  Sair da sala
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </div>
       </div>
 
