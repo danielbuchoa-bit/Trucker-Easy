@@ -7,8 +7,7 @@ interface Video {
   id: string;
   title: string;
   duration: string;
-  thumbnail: string;
-  youtubeUrl: string;
+  youtubeId: string;
   summary: string;
 }
 
@@ -24,145 +23,135 @@ const videosByCategory: Record<string, Video[]> = {
   flatbed: [
     {
       id: 'fb1',
-      title: 'How to Tarp a Flatbed Load - Complete Guide',
-      duration: '18:32',
-      thumbnail: 'https://img.youtube.com/vi/z2fkQK2HqHY/mqdefault.jpg',
-      youtubeUrl: 'https://www.youtube.com/watch?v=z2fkQK2HqHY',
-      summary: 'Step-by-step tarping techniques for flatbed truckers including lumber, steel, and machinery.',
+      title: 'Master Flatbed Load Securement in 5 Minutes',
+      duration: '5:42',
+      youtubeId: 'FbrWNrCKymQ',
+      summary: 'Evans Trucking shows pro tips for strapping, weight distribution, and damage prevention for flatbed loads.',
     },
     {
       id: 'fb2',
-      title: 'Flatbed Securement - Chains & Binders',
-      duration: '15:45',
-      thumbnail: 'https://img.youtube.com/vi/YQnhFxLfzek/mqdefault.jpg',
-      youtubeUrl: 'https://www.youtube.com/watch?v=YQnhFxLfzek',
-      summary: 'Master chain and load binder techniques for heavy equipment and steel loads.',
+      title: 'Cargo Securement FLATBEDS - Training',
+      duration: '25:00',
+      youtubeId: '_onyIEFUL-g',
+      summary: 'Complete training on flatbed cargo loading and the cargo securement process from J.J. Keller.',
     },
     {
       id: 'fb3',
-      title: 'Steel Coil Securement Tutorial',
-      duration: '12:20',
-      thumbnail: 'https://img.youtube.com/vi/n7I6nD0XR0s/mqdefault.jpg',
-      youtubeUrl: 'https://www.youtube.com/watch?v=n7I6nD0XR0s',
-      summary: 'Proper coil rack positioning, chain patterns, and edge protector usage.',
+      title: 'How To Strap Your Freight',
+      duration: '12:35',
+      youtubeId: 'NuuD5nfTD90',
+      summary: 'Step-by-step guide on properly strapping freight on a flatbed trailer.',
     },
     {
       id: 'fb4',
-      title: 'DOT Flatbed Inspection - What They Check',
-      duration: '10:15',
-      thumbnail: 'https://img.youtube.com/vi/qGVhZ4hYkVw/mqdefault.jpg',
-      youtubeUrl: 'https://www.youtube.com/watch?v=qGVhZ4hYkVw',
-      summary: 'Common flatbed violations and how to avoid them during Level 1 inspections.',
-    },
-    {
-      id: 'fb5',
-      title: 'Strapping Lumber on a Flatbed',
-      duration: '8:45',
-      thumbnail: 'https://img.youtube.com/vi/V7wK8-9hFq0/mqdefault.jpg',
-      youtubeUrl: 'https://www.youtube.com/watch?v=V7wK8-9hFq0',
-      summary: 'Proper lumber stacking, strap placement, and weight distribution techniques.',
+      title: 'Proper Load Securement - DOT Compliance',
+      duration: '18:20',
+      youtubeId: 'QAgMljU4f2c',
+      summary: 'Learn DOT compliance requirements when hauling equipment on flatbed trailers.',
     },
   ],
   dry_van: [
     {
       id: 'dv1',
-      title: 'Dry Van Load Securement Basics',
-      duration: '11:30',
-      thumbnail: 'https://img.youtube.com/vi/MvJ3MOhMXX0/mqdefault.jpg',
-      youtubeUrl: 'https://www.youtube.com/watch?v=MvJ3MOhMXX0',
-      summary: 'Load bars, straps, and blocking techniques for dry van trailers.',
+      title: 'How to Correctly Load a 53\' Dry Van Trailer',
+      duration: '15:30',
+      youtubeId: 'tAkChO-xHPE',
+      summary: 'Complete guide on properly loading a 53-foot dry van trailer with proper weight distribution.',
     },
     {
       id: 'dv2',
-      title: 'Weight Distribution in Dry Van',
-      duration: '9:45',
-      thumbnail: 'https://img.youtube.com/vi/WiSuHReWij4/mqdefault.jpg',
-      youtubeUrl: 'https://www.youtube.com/watch?v=WiSuHReWij4',
-      summary: 'Achieve legal axle weights and prevent load shifts during transit.',
+      title: 'FMCSA Cargo Securement Requirements',
+      duration: '12:45',
+      youtubeId: 'GRy5oOnz1xc',
+      summary: 'FMCSA regulations and performance requirements for cargo securement explained.',
     },
     {
       id: 'dv3',
-      title: 'Loading Pallets Like a Pro',
-      duration: '7:20',
-      thumbnail: 'https://img.youtube.com/vi/8K6YMRxxCk8/mqdefault.jpg',
-      youtubeUrl: 'https://www.youtube.com/watch?v=8K6YMRxxCk8',
-      summary: 'Efficient pallet loading patterns and securement for mixed freight.',
+      title: 'DOT Cargo Securement Training Video',
+      duration: '20:00',
+      youtubeId: '_18gkcETqWk',
+      summary: 'DOT cargo securement standards covering why improper loading causes accidents.',
     },
     {
       id: 'dv4',
-      title: 'Common DOT Violations - Dry Van',
-      duration: '6:50',
-      thumbnail: 'https://img.youtube.com/vi/kNzIqKplAqw/mqdefault.jpg',
-      youtubeUrl: 'https://www.youtube.com/watch?v=kNzIqKplAqw',
-      summary: 'Top securement mistakes that lead to out-of-service orders.',
+      title: 'How To Secure Loads In 53\' Dry Van',
+      duration: '8:15',
+      youtubeId: '0zAHtolwQ8s',
+      summary: 'Best practices for securing loads in a 53-foot dry van trailer.',
+    },
+    {
+      id: 'dv5',
+      title: 'Safely Loading/Unloading a Dry Van Trailer',
+      duration: '10:30',
+      youtubeId: 'MZC2NeFygJs',
+      summary: 'Safe work practices for trucking and warehouse workers when loading dry vans.',
     },
   ],
   car_hauler: [
     {
       id: 'ch1',
-      title: 'Car Hauler Tie-Down Complete Guide',
-      duration: '16:40',
-      thumbnail: 'https://img.youtube.com/vi/0tYxMVr4eXE/mqdefault.jpg',
-      youtubeUrl: 'https://www.youtube.com/watch?v=0tYxMVr4eXE',
-      summary: 'Wheel straps, axle straps, and proper vehicle positioning for safe transport.',
+      title: 'How to Securely Ratchet Strap a Car on Transport Trailer',
+      duration: '8:45',
+      youtubeId: 'WJ1XvlxhJl8',
+      summary: 'Proper technique for using ratchet straps to secure vehicles on car transport trailers.',
     },
     {
       id: 'ch2',
-      title: 'Loading Cars on a 9-Car Hauler',
-      duration: '14:25',
-      thumbnail: 'https://img.youtube.com/vi/3ZV3HfGCvqI/mqdefault.jpg',
-      youtubeUrl: 'https://www.youtube.com/watch?v=3ZV3HfGCvqI',
-      summary: 'Optimal loading sequence for maximum efficiency and weight distribution.',
+      title: 'The RIGHT Way To Strap Down Your Car',
+      duration: '11:20',
+      youtubeId: 'KJOmFqWYB1g',
+      summary: 'Correct methods for strapping down vehicles for transport including race cars.',
     },
     {
       id: 'ch3',
-      title: 'Preventing Damage During Transport',
-      duration: '8:30',
-      thumbnail: 'https://img.youtube.com/vi/GkJQZ8oQGHg/mqdefault.jpg',
-      youtubeUrl: 'https://www.youtube.com/watch?v=GkJQZ8oQGHg',
-      summary: 'Padding, positioning, and inspection tips to deliver vehicles damage-free.',
+      title: 'Ultimate Ratchet Strap Guide - How To Safely Tie Down',
+      duration: '14:00',
+      youtubeId: 'qnvq8OxISj0',
+      summary: 'Complete guide to safely tying down vehicles with ratchet straps.',
     },
     {
       id: 'ch4',
-      title: 'Car Hauler Pre-Trip Inspection',
-      duration: '10:15',
-      thumbnail: 'https://img.youtube.com/vi/w6sYMQ0K7nE/mqdefault.jpg',
-      youtubeUrl: 'https://www.youtube.com/watch?v=w6sYMQ0K7nE',
-      summary: 'Complete pre-trip checklist specific to car hauler trailers.',
+      title: 'How to Properly Load & Tie-Down a Vehicle',
+      duration: '16:30',
+      youtubeId: '20BGXn8zhkk',
+      summary: 'Professional tips for loading and securing hot rods and race cars on trailers.',
+    },
+    {
+      id: 'ch5',
+      title: 'How to Operate Ratchet Straps on Auto Transport',
+      duration: '5:15',
+      youtubeId: 'Cv7U1iG_WGE',
+      summary: 'U-Haul official guide for operating ratchet straps on tow dolly and auto transport.',
     },
   ],
   other: [
     {
       id: 'ot1',
-      title: 'Reefer Trailer Load Securement',
-      duration: '9:15',
-      thumbnail: 'https://img.youtube.com/vi/FYOKyDAhCDY/mqdefault.jpg',
-      youtubeUrl: 'https://www.youtube.com/watch?v=FYOKyDAhCDY',
-      summary: 'Securing temperature-sensitive cargo while maintaining proper airflow.',
+      title: 'Flatbed Trucking: Steel Coil Securement',
+      duration: '10:20',
+      youtubeId: '3FghTt2sFR0',
+      summary: 'How to properly secure steel coils on flatbed trailers with chains and binders.',
     },
     {
       id: 'ot2',
-      title: 'Tanker Driving - Surge & Safety',
-      duration: '13:00',
-      thumbnail: 'https://img.youtube.com/vi/HJ1i7b6AXIY/mqdefault.jpg',
-      youtubeUrl: 'https://www.youtube.com/watch?v=HJ1i7b6AXIY',
-      summary: 'Understanding liquid surge, baffles, and safe driving techniques.',
+      title: 'Tanker Truck Driving - Liquid Surge Safety',
+      duration: '15:00',
+      youtubeId: 'F2a8dVWe6TY',
+      summary: 'Understanding liquid surge, baffles, and safe driving techniques for tanker operators.',
     },
     {
       id: 'ot3',
-      title: 'Oversize Load Permits & Requirements',
-      duration: '11:45',
-      thumbnail: 'https://img.youtube.com/vi/1lWiLZgYyto/mqdefault.jpg',
-      youtubeUrl: 'https://www.youtube.com/watch?v=1lWiLZgYyto',
-      summary: 'State-by-state permit requirements, escorts, and route planning.',
+      title: 'Oversized Load Transport Guide',
+      duration: '18:45',
+      youtubeId: 'V5jG7F_P1lA',
+      summary: 'Permits, escort requirements, and planning for oversize and overweight loads.',
     },
     {
       id: 'ot4',
-      title: 'Doubles & Triples Endorsement Training',
-      duration: '14:30',
-      thumbnail: 'https://img.youtube.com/vi/L4u7vLF7s3Y/mqdefault.jpg',
-      youtubeUrl: 'https://www.youtube.com/watch?v=L4u7vLF7s3Y',
-      summary: 'Complete guide to coupling, uncoupling, and safely driving combinations.',
+      title: 'Reefer Trailer Temperature Management',
+      duration: '12:30',
+      youtubeId: 'Qj2gHDQVmFk',
+      summary: 'Managing temperature-sensitive cargo in refrigerated trailers.',
     },
   ],
 };
@@ -184,8 +173,12 @@ const LearnSecureLoadsTab: React.FC = () => {
     });
   };
 
-  const handleOpenVideo = (url: string) => {
-    window.open(url, '_blank');
+  const handleOpenVideo = (youtubeId: string) => {
+    window.open(`https://www.youtube.com/watch?v=${youtubeId}`, '_blank');
+  };
+
+  const getThumbnail = (youtubeId: string) => {
+    return `https://img.youtube.com/vi/${youtubeId}/mqdefault.jpg`;
   };
 
   return (
@@ -209,11 +202,11 @@ const LearnSecureLoadsTab: React.FC = () => {
                 >
                   {/* Thumbnail */}
                   <button 
-                    onClick={() => handleOpenVideo(video.youtubeUrl)}
+                    onClick={() => handleOpenVideo(video.youtubeId)}
                     className="relative w-full aspect-video"
                   >
                     <img 
-                      src={video.thumbnail} 
+                      src={getThumbnail(video.youtubeId)} 
                       alt={video.title}
                       className="w-full h-full object-cover"
                     />
@@ -250,7 +243,7 @@ const LearnSecureLoadsTab: React.FC = () => {
 
                   {/* Watch Button */}
                   <button
-                    onClick={() => handleOpenVideo(video.youtubeUrl)}
+                    onClick={() => handleOpenVideo(video.youtubeId)}
                     className="w-full py-2.5 bg-red-600/10 text-red-600 text-sm font-medium flex items-center justify-center gap-2 hover:bg-red-600/20 transition-colors"
                   >
                     <Play className="w-4 h-4" />
