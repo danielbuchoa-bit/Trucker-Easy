@@ -14,6 +14,7 @@ import DiagnosticsPanel from "./components/diagnostics/DiagnosticsPanel";
 import LocationPermissionRequest from "./components/location/LocationPermissionRequest";
 import { DriverChatSheet } from "./components/ai/DriverChatSheet";
 import FloatingChatButton from "./components/chat/FloatingChatButton";
+import { DocumentReminderProvider } from "./components/notifications/DocumentReminderProvider";
 import WelcomeScreen from "./pages/Welcome";
 import AuthScreen from "./pages/Auth";
 import OnboardingScreen from "./pages/Onboarding";
@@ -48,6 +49,7 @@ const App = () => (
           <DiagnosticsPanel />
           <LocationPermissionRequest />
           <DriverChatSheet />
+          <DocumentReminderProvider />
           <BrowserRouter>
             <ChatProvider>
               <ActiveNavigationProvider>
