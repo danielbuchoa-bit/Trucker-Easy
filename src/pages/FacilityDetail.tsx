@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Building2, Star, Clock, Car, Bath, MapPin, Lightbulb, Loader2 } from 'lucide-react';
+import { ArrowLeft, Building2, Star, Clock, Car, Bath, MapPin, Lightbulb, Loader2, PenLine } from 'lucide-react';
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import EnhancedFacilityReviewForm from '@/components/facility/EnhancedFacilityReviewForm';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -19,6 +21,21 @@ const FacilityDetailScreen: React.FC = () => {
   const [aggregate, setAggregate] = useState<FacilityAggregate | null>(null);
   const [reviews, setReviews] = useState<FacilityReview[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showRatingSheet, setShowRatingSheet] = useState(false);
+
+  const handleReviewComplete = () => {
+    setShowRatingSheet(false);
+    // Refresh data after submitting review
+    if (id) {
+      Promise.all([
+        supabase.from('facility_aggregates').select('*').eq('facility_id', id).single(),
+        supabase.from('facility_reviews').select('*').eq('facility_id', id).order('created_at', { ascending: false }).limit(20),
+      ]).then(([aggregateRes, reviewsRes]) => {
+        if (aggregateRes.data) setAggregate(aggregateRes.data as unknown as FacilityAggregate);
+        if (reviewsRes.data) setReviews(reviewsRes.data as unknown as FacilityReview[]);
+      });
+    }
+  };
 
   useEffect(() => {
     const fetchData = async () => {
@@ -204,6 +221,16 @@ const FacilityDetailScreen: React.FC = () => {
           </Card>
         )}
 
+        {/* Rate Button */}
+        <Button 
+          onClick={() => setShowRatingSheet(true)}
+          className="w-full"
+          size="lg"
+        >
+          <PenLine className="w-4 h-4 mr-2" />
+          Avaliar Esta Empresa
+        </Button>
+
         {/* Recent Reviews */}
         <Card>
           <CardHeader className="pb-2">
@@ -260,6 +287,25 @@ const FacilityDetailScreen: React.FC = () => {
           </CardContent>
         </Card>
       </div>
+
+      {/* Rating Sheet */}
+      <Sheet open={showRatingSheet} onOpenChange={setShowRatingSheet}>
+        <SheetContent side="bottom" className="h-[90vh] overflow-y-auto rounded-t-2xl">
+          <SheetHeader>
+            <SheetTitle className="flex items-center gap-2">
+              <Building2 className="w-5 h-5 text-primary" />
+              Avaliar {facility.name}
+            </SheetTitle>
+          </SheetHeader>
+          <div className="mt-4">
+            <EnhancedFacilityReviewForm
+              facility={facility}
+              onComplete={handleReviewComplete}
+              onCancel={() => setShowRatingSheet(false)}
+            />
+          </div>
+        </SheetContent>
+      </Sheet>
 
       <BottomNav activeTab="community" onTabChange={(tab) => navigate(`/${tab}`)} />
     </div>
