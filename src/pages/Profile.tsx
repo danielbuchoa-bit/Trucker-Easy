@@ -1,21 +1,118 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useLanguage } from '@/i18n/LanguageContext';
-import { User, Settings, Globe, Moon, Bell, Shield, HelpCircle, LogOut, ChevronRight, Star, MessageSquare, Flag, Scale, Utensils, Building2, Heart, FileCheck, MapPin, Stethoscope } from 'lucide-react';
+import { User, Settings, Globe, Moon, Bell, Shield, HelpCircle, LogOut, ChevronRight, Star, MessageSquare, Flag, Scale, Utensils, Building2, Heart, FileCheck, MapPin, Stethoscope, Loader2 } from 'lucide-react';
 import BottomNav from '@/components/navigation/BottomNav';
 import { useNavigate } from 'react-router-dom';
 import FindDMVModal from '@/components/compliance/FindDMVModal';
 import MedicalCardModal from '@/components/compliance/MedicalCardModal';
+import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
+
+interface UserProfile {
+  id: string;
+  full_name: string | null;
+  email: string | null;
+  created_at: string;
+}
+
+interface UserStats {
+  reports: number;
+  reviews: number;
+  messages: number;
+}
 
 const ProfileScreen = () => {
   const { t, language, setLanguage } = useLanguage();
   const navigate = useNavigate();
   const [showDMVModal, setShowDMVModal] = useState(false);
   const [showMedicalModal, setShowMedicalModal] = useState(false);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [stats, setStats] = useState<UserStats>({ reports: 0, reviews: 0, messages: 0 });
+  const [loading, setLoading] = useState(true);
 
-  const stats = [
-    { label: t.profile.reports, value: 47, icon: Flag },
-    { label: t.profile.reviews, value: 23, icon: Star },
-    { label: t.profile.messages, value: 156, icon: MessageSquare },
+  useEffect(() => {
+    fetchUserData();
+  }, []);
+
+  const fetchUserData = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user) {
+        setLoading(false);
+        return;
+      }
+
+      // Fetch profile data
+      const { data: profileData } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+
+      if (profileData) {
+        setProfile({
+          id: user.id,
+          full_name: profileData.full_name,
+          email: profileData.email || user.email,
+          created_at: profileData.created_at,
+        });
+      } else {
+        setProfile({
+          id: user.id,
+          full_name: null,
+          email: user.email || null,
+          created_at: user.created_at,
+        });
+      }
+
+      // Fetch stats in parallel
+      const [reportsResult, reviewsResult, messagesResult] = await Promise.all([
+        supabase.from('road_reports').select('id', { count: 'exact', head: true }).eq('user_id', user.id),
+        supabase.from('facility_ratings').select('id', { count: 'exact', head: true }).eq('user_id', user.id),
+        supabase.from('chat_messages').select('id', { count: 'exact', head: true }).eq('user_id', user.id),
+      ]);
+
+      setStats({
+        reports: reportsResult.count || 0,
+        reviews: reviewsResult.count || 0,
+        messages: messagesResult.count || 0,
+      });
+
+    } catch (error) {
+      console.error('Error fetching user data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await supabase.auth.signOut();
+      toast.success('Logged out successfully');
+      navigate('/auth');
+    } catch (error) {
+      console.error('Error logging out:', error);
+      toast.error('Failed to log out');
+    }
+  };
+
+  const getDisplayName = () => {
+    if (profile?.full_name) return profile.full_name;
+    if (profile?.email) return profile.email.split('@')[0];
+    return 'Driver';
+  };
+
+  const getMemberSince = () => {
+    if (!profile?.created_at) return '';
+    const year = new Date(profile.created_at).getFullYear();
+    return `Since ${year}`;
+  };
+
+  const statsDisplay = [
+    { label: t.profile.reports, value: stats.reports, icon: Flag },
+    { label: t.profile.reviews, value: stats.reviews, icon: Star },
+    { label: t.profile.messages, value: stats.messages, icon: MessageSquare },
   ];
 
   const menuItems = [
@@ -68,11 +165,29 @@ const ProfileScreen = () => {
             <User className="w-12 h-12 text-primary" />
           </div>
           
-          <h1 className="text-xl font-bold text-foreground mt-4">John Driver</h1>
-          <p className="text-muted-foreground text-sm">Owner Operator • Since 2020</p>
+          {loading ? (
+            <div className="mt-4 flex items-center justify-center">
+              <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : profile ? (
+            <>
+              <h1 className="text-xl font-bold text-foreground mt-4">{getDisplayName()}</h1>
+              <p className="text-muted-foreground text-sm">{getMemberSince()}</p>
+            </>
+          ) : (
+            <>
+              <h1 className="text-xl font-bold text-foreground mt-4">Guest</h1>
+              <button 
+                onClick={() => navigate('/auth')}
+                className="text-primary text-sm mt-1"
+              >
+                Sign in to view your profile
+              </button>
+            </>
+          )}
           
           <div className="flex justify-center gap-6 mt-6">
-            {stats.map((stat) => {
+            {statsDisplay.map((stat) => {
               const Icon = stat.icon;
               return (
                 <div key={stat.label} className="text-center">
@@ -160,12 +275,17 @@ const ProfileScreen = () => {
         </div>
 
         {/* Logout */}
-        <button className="w-full flex items-center gap-4 p-4 bg-card rounded-xl border border-red-500/30 hover:border-red-500/50 transition-all text-left">
-          <div className="w-10 h-10 rounded-full bg-red-500/10 flex items-center justify-center">
-            <LogOut className="w-5 h-5 text-red-400" />
-          </div>
-          <span className="flex-1 font-medium text-red-400">{t.auth.logout}</span>
-        </button>
+        {profile && (
+          <button 
+            onClick={handleLogout}
+            className="w-full flex items-center gap-4 p-4 bg-card rounded-xl border border-red-500/30 hover:border-red-500/50 transition-all text-left"
+          >
+            <div className="w-10 h-10 rounded-full bg-red-500/10 flex items-center justify-center">
+              <LogOut className="w-5 h-5 text-red-400" />
+            </div>
+            <span className="flex-1 font-medium text-red-400">{t.auth.logout}</span>
+          </button>
+        )}
       </div>
 
       {/* Modals */}
