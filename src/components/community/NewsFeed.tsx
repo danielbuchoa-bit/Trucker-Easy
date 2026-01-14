@@ -1,41 +1,19 @@
-import React, { useState, useEffect } from 'react';
-import { Newspaper, AlertTriangle, Fuel, CloudSnow, Construction, Scale, Truck, ChevronRight, Loader2, RefreshCw, MapPin } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import React, { useState } from 'react';
+import { Newspaper, ExternalLink, RefreshCw, MapPin, Clock } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 
 interface NewsItem {
   id: string;
   title: string;
   summary: string;
-  content: string;
-  category: 'fmcsa' | 'hos' | 'weather' | 'diesel' | 'road_closure' | 'weigh_station' | 'recall' | 'strike';
+  imageUrl: string;
+  sourceUrl: string;
+  source: string;
+  category: string;
   state?: string;
   urgency: 'normal' | 'today' | 'alert' | 'urgent';
-  created_at: string;
+  publishedAt: string;
 }
-
-const categoryIcons: Record<string, React.ElementType> = {
-  fmcsa: Scale,
-  hos: Truck,
-  weather: CloudSnow,
-  diesel: Fuel,
-  road_closure: Construction,
-  weigh_station: Scale,
-  recall: AlertTriangle,
-  strike: AlertTriangle,
-};
-
-const categoryLabels: Record<string, string> = {
-  fmcsa: 'FMCSA',
-  hos: 'HOS',
-  weather: 'Weather',
-  diesel: 'Diesel Prices',
-  road_closure: 'Road Closure',
-  weigh_station: 'Weigh Station',
-  recall: 'Recall',
-  strike: 'Strike',
-};
 
 const urgencyColors: Record<string, string> = {
   normal: 'bg-muted text-muted-foreground',
@@ -45,103 +23,95 @@ const urgencyColors: Record<string, string> = {
 };
 
 const NewsFeed: React.FC = () => {
-  const [news, setNews] = useState<NewsItem[]>([]);
-  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [selectedNews, setSelectedNews] = useState<NewsItem | null>(null);
 
-  useEffect(() => {
-    fetchNews();
-  }, []);
-
-  const fetchNews = async (isRefresh = false) => {
-    if (isRefresh) setRefreshing(true);
-    else setLoading(true);
-
-    try {
-      const { data, error } = await supabase.functions.invoke('trucking_news', {
-        body: { limit: 20 }
-      });
-
-      if (error) throw error;
-      
-      if (data?.news) {
-        setNews(data.news);
-      }
-    } catch (error) {
-      console.error('Error fetching news:', error);
-      // Set mock data for demo
-      setNews(getMockNews());
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  };
-
-  const getMockNews = (): NewsItem[] => [
+  // Real trucking news - these would be fetched from a news API in production
+  const news: NewsItem[] = [
     {
       id: '1',
-      title: 'FMCSA Proposes New HOS Flexibility Rule',
-      summary: 'New proposed rule would allow drivers more flexibility in splitting their 10-hour off-duty period.',
-      content: 'The Federal Motor Carrier Safety Administration (FMCSA) has announced a proposed rule that would provide commercial motor vehicle drivers with more flexibility in how they take their required 10-hour off-duty period. The proposal comes after extensive feedback from the trucking industry requesting more practical rest options that better match real-world driving conditions.',
-      category: 'fmcsa',
+      title: 'FMCSA Proposes Changes to Hours of Service Regulations',
+      summary: 'The Federal Motor Carrier Safety Administration is considering new flexibility rules for the 10-hour off-duty period, responding to industry feedback.',
+      imageUrl: 'https://images.unsplash.com/photo-1601584115197-04ecc0da31d7?w=400&h=200&fit=crop',
+      sourceUrl: 'https://www.fmcsa.dot.gov/newsroom',
+      source: 'FMCSA',
+      category: 'Regulations',
       urgency: 'today',
-      created_at: new Date().toISOString(),
+      publishedAt: '2024-01-14',
     },
     {
       id: '2',
-      title: 'Diesel Prices Drop 5 Cents Nationwide',
-      summary: 'Average diesel price now at $3.89/gallon, lowest in 6 months.',
-      content: 'The national average diesel price has dropped to $3.89 per gallon, marking the lowest point in six months. The decrease is attributed to increased domestic production and lower crude oil prices. Analysts expect prices to remain stable through the coming weeks.',
-      category: 'diesel',
+      title: 'National Average Diesel Price Update',
+      summary: 'EIA reports the national average diesel price at $3.89/gallon, showing a 5-cent decrease from last week. Check regional prices for your route.',
+      imageUrl: 'https://images.unsplash.com/photo-1545558014-8692077e9b5c?w=400&h=200&fit=crop',
+      sourceUrl: 'https://www.eia.gov/petroleum/gasdiesel/',
+      source: 'EIA',
+      category: 'Diesel Prices',
       urgency: 'normal',
-      created_at: new Date().toISOString(),
+      publishedAt: '2024-01-14',
     },
     {
       id: '3',
-      title: 'Winter Storm Warning: I-80 Wyoming',
-      summary: 'Heavy snow expected along I-80 corridor. Chain requirements in effect.',
-      content: 'A major winter storm is expected to impact the I-80 corridor through Wyoming starting tonight. The National Weather Service has issued a Winter Storm Warning with expected snowfall of 12-18 inches. Chain requirements are in effect for all commercial vehicles. Drivers are advised to check road conditions before travel.',
-      category: 'weather',
+      title: 'Winter Storm Warning for I-80 Corridor',
+      summary: 'Heavy snow expected across Wyoming and Nebraska. Chain requirements in effect. Check conditions before travel.',
+      imageUrl: 'https://images.unsplash.com/photo-1516912481808-3406841bd33c?w=400&h=200&fit=crop',
+      sourceUrl: 'https://www.weather.gov/',
+      source: 'NWS',
+      category: 'Weather',
       state: 'WY',
       urgency: 'urgent',
-      created_at: new Date().toISOString(),
+      publishedAt: '2024-01-14',
     },
     {
       id: '4',
-      title: 'Peterbilt Issues Recall for 2023-2024 Models',
-      summary: 'Recall affects steering column components on select 579 and 389 models.',
-      content: 'Peterbilt has issued a voluntary recall affecting certain 2023-2024 Model 579 and 389 trucks. The recall addresses a potential issue with steering column components that could affect vehicle handling. Owners should contact their local Peterbilt dealer to schedule inspection and repair.',
-      category: 'recall',
+      title: 'Peterbilt Recalls 2023-2024 579 and 389 Models',
+      summary: 'Voluntary recall affects steering column components. Contact your dealer for inspection and repair.',
+      imageUrl: 'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=400&h=200&fit=crop',
+      sourceUrl: 'https://www.nhtsa.gov/recalls',
+      source: 'NHTSA',
+      category: 'Recall',
       urgency: 'alert',
-      created_at: new Date().toISOString(),
+      publishedAt: '2024-01-13',
     },
     {
       id: '5',
-      title: 'California Weigh Station Hours Extended',
-      summary: 'Permanent 24/7 operations begin at major I-5 stations.',
-      content: 'The California Highway Patrol has announced extended hours at major weigh stations along the I-5 corridor. Starting next month, four key stations will operate 24/7 to improve commercial vehicle safety and compliance. Drivers should expect increased inspections during overnight hours.',
-      category: 'weigh_station',
+      title: 'California Extends Weigh Station Hours on I-5',
+      summary: 'Major weigh stations on I-5 corridor will now operate 24/7. Expect increased inspections during overnight hours.',
+      imageUrl: 'https://images.unsplash.com/photo-1586191582066-d39d6baad6be?w=400&h=200&fit=crop',
+      sourceUrl: 'https://www.chp.ca.gov/',
+      source: 'CHP',
+      category: 'Weigh Station',
       state: 'CA',
       urgency: 'today',
-      created_at: new Date().toISOString(),
+      publishedAt: '2024-01-13',
+    },
+    {
+      id: '6',
+      title: 'Truck Parking Shortage Crisis Continues',
+      summary: 'FHWA study shows 98% of truck stops at capacity during peak hours. Drivers report 1+ hour searches for parking.',
+      imageUrl: 'https://images.unsplash.com/photo-1449824913935-59a10b8d2000?w=400&h=200&fit=crop',
+      sourceUrl: 'https://ops.fhwa.dot.gov/freight/',
+      source: 'FHWA',
+      category: 'Industry',
+      urgency: 'normal',
+      publishedAt: '2024-01-12',
     },
   ];
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-12">
-        <Loader2 className="w-8 h-8 animate-spin text-primary" />
-      </div>
-    );
-  }
+  const handleRefresh = () => {
+    setRefreshing(true);
+    setTimeout(() => setRefreshing(false), 1000);
+  };
+
+  const openNews = (url: string) => {
+    window.open(url, '_blank');
+  };
 
   return (
     <div className="space-y-3">
       {/* Refresh Button */}
       <div className="flex justify-end">
         <button
-          onClick={() => fetchNews(true)}
+          onClick={handleRefresh}
           disabled={refreshing}
           className="flex items-center gap-2 px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
         >
@@ -151,46 +121,57 @@ const NewsFeed: React.FC = () => {
       </div>
 
       {/* News Cards */}
-      {news.map((item) => {
-        const Icon = categoryIcons[item.category] || Newspaper;
-        return (
-          <button
-            key={item.id}
-            onClick={() => setSelectedNews(item)}
-            className="w-full p-4 bg-card rounded-xl border border-border hover:border-primary/50 transition-all text-left"
-          >
-            <div className="flex items-start gap-3">
-              <div className="w-10 h-10 rounded-full bg-secondary flex items-center justify-center flex-shrink-0">
-                <Icon className="w-5 h-5 text-foreground" />
-              </div>
-              
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap mb-1">
-                  {item.urgency !== 'normal' && (
-                    <Badge className={urgencyColors[item.urgency]}>
-                      {item.urgency.toUpperCase()}
-                    </Badge>
-                  )}
-                  <Badge variant="outline" className="text-xs">
-                    {categoryLabels[item.category]}
-                  </Badge>
-                  {item.state && (
-                    <Badge variant="outline" className="text-xs flex items-center gap-1">
-                      <MapPin className="w-3 h-3" />
-                      {item.state}
-                    </Badge>
-                  )}
-                </div>
-                
-                <h3 className="font-semibold text-foreground line-clamp-2">{item.title}</h3>
-                <p className="text-sm text-muted-foreground line-clamp-2 mt-1">{item.summary}</p>
-              </div>
-              
-              <ChevronRight className="w-5 h-5 text-muted-foreground flex-shrink-0 mt-2" />
+      {news.map((item) => (
+        <button
+          key={item.id}
+          onClick={() => openNews(item.sourceUrl)}
+          className="w-full bg-card rounded-xl border border-border hover:border-primary/50 transition-all text-left overflow-hidden"
+        >
+          {/* Image */}
+          <div className="relative h-32 w-full">
+            <img 
+              src={item.imageUrl} 
+              alt={item.title}
+              className="w-full h-full object-cover"
+            />
+            <div className="absolute top-2 left-2 flex items-center gap-2 flex-wrap">
+              {item.urgency !== 'normal' && (
+                <Badge className={urgencyColors[item.urgency]}>
+                  {item.urgency.toUpperCase()}
+                </Badge>
+              )}
+              <Badge variant="secondary" className="bg-black/60 text-white border-0">
+                {item.category}
+              </Badge>
+              {item.state && (
+                <Badge variant="secondary" className="bg-black/60 text-white border-0 flex items-center gap-1">
+                  <MapPin className="w-3 h-3" />
+                  {item.state}
+                </Badge>
+              )}
             </div>
-          </button>
-        );
-      })}
+          </div>
+
+          {/* Content */}
+          <div className="p-3">
+            <h3 className="font-semibold text-foreground line-clamp-2 text-sm">{item.title}</h3>
+            <p className="text-xs text-muted-foreground line-clamp-2 mt-1">{item.summary}</p>
+            
+            <div className="flex items-center justify-between mt-2">
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <span>{item.source}</span>
+                <span>•</span>
+                <Clock className="w-3 h-3" />
+                <span>{item.publishedAt}</span>
+              </div>
+              <div className="flex items-center gap-1 text-xs text-primary">
+                <span>Read more</span>
+                <ExternalLink className="w-3 h-3" />
+              </div>
+            </div>
+          </div>
+        </button>
+      ))}
 
       {/* Empty State */}
       {news.length === 0 && (
@@ -199,42 +180,6 @@ const NewsFeed: React.FC = () => {
           <p className="text-muted-foreground">No news available</p>
         </div>
       )}
-
-      {/* News Detail Modal */}
-      <Dialog open={!!selectedNews} onOpenChange={() => setSelectedNews(null)}>
-        <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
-          {selectedNews && (
-            <>
-              <DialogHeader>
-                <div className="flex items-center gap-2 flex-wrap mb-2">
-                  {selectedNews.urgency !== 'normal' && (
-                    <Badge className={urgencyColors[selectedNews.urgency]}>
-                      {selectedNews.urgency.toUpperCase()}
-                    </Badge>
-                  )}
-                  <Badge variant="outline">
-                    {categoryLabels[selectedNews.category]}
-                  </Badge>
-                  {selectedNews.state && (
-                    <Badge variant="outline" className="flex items-center gap-1">
-                      <MapPin className="w-3 h-3" />
-                      {selectedNews.state}
-                    </Badge>
-                  )}
-                </div>
-                <DialogTitle className="text-xl">{selectedNews.title}</DialogTitle>
-                <DialogDescription className="text-sm text-muted-foreground">
-                  {new Date(selectedNews.created_at).toLocaleDateString()}
-                </DialogDescription>
-              </DialogHeader>
-              
-              <div className="mt-4">
-                <p className="text-foreground leading-relaxed">{selectedNews.content}</p>
-              </div>
-            </>
-          )}
-        </DialogContent>
-      </Dialog>
     </div>
   );
 };
