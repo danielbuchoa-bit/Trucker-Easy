@@ -197,6 +197,39 @@ export type Database = {
         }
         Relationships: []
       }
+      driver_documents: {
+        Row: {
+          created_at: string
+          document_type: string
+          expiration_date: string | null
+          file_url: string | null
+          id: string
+          reminder_sent: boolean | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          document_type: string
+          expiration_date?: string | null
+          file_url?: string | null
+          id?: string
+          reminder_sent?: boolean | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          document_type?: string
+          expiration_date?: string | null
+          file_url?: string | null
+          id?: string
+          reminder_sent?: boolean | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       driver_food_profiles: {
         Row: {
           allergies: string[] | null

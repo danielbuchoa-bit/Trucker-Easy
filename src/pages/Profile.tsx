@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useLanguage } from '@/i18n/LanguageContext';
-import { User, Settings, Globe, Moon, Bell, Shield, HelpCircle, LogOut, ChevronRight, Star, MessageSquare, Flag, Scale, Utensils, Building2, Heart, FileCheck, MapPin, Stethoscope, Loader2 } from 'lucide-react';
+import { User, Settings, Globe, Moon, Bell, Shield, HelpCircle, LogOut, ChevronRight, Star, MessageSquare, Flag, Scale, Utensils, Building2, Heart, FileCheck, MapPin, Stethoscope, Loader2, FileText } from 'lucide-react';
 import BottomNav from '@/components/navigation/BottomNav';
 import { useNavigate } from 'react-router-dom';
 import FindDMVModal from '@/components/compliance/FindDMVModal';
 import MedicalCardModal from '@/components/compliance/MedicalCardModal';
+import DriverDocumentsModal from '@/components/profile/DriverDocumentsModal';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
@@ -26,12 +27,14 @@ const ProfileScreen = () => {
   const navigate = useNavigate();
   const [showDMVModal, setShowDMVModal] = useState(false);
   const [showMedicalModal, setShowMedicalModal] = useState(false);
+  const [showDocumentsModal, setShowDocumentsModal] = useState(false);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [stats, setStats] = useState<UserStats>({ reports: 0, reviews: 0, messages: 0 });
   const [loading, setLoading] = useState(true);
-
+  const [documentAlerts, setDocumentAlerts] = useState<number>(0);
   useEffect(() => {
     fetchUserData();
+    checkDocumentAlerts();
   }, []);
 
   const fetchUserData = async () => {
@@ -86,6 +89,33 @@ const ProfileScreen = () => {
     }
   };
 
+  const checkDocumentAlerts = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data } = await supabase
+        .from('driver_documents')
+        .select('expiration_date')
+        .eq('user_id', user.id);
+
+      if (data) {
+        const today = new Date();
+        let alerts = 0;
+        data.forEach((doc: any) => {
+          if (doc.expiration_date) {
+            const expDate = new Date(doc.expiration_date);
+            const diffDays = Math.ceil((expDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+            if (diffDays <= 10) alerts++;
+          }
+        });
+        setDocumentAlerts(alerts);
+      }
+    } catch (error) {
+      console.error('Error checking document alerts:', error);
+    }
+  };
+
   const handleLogout = async () => {
     try {
       await supabase.auth.signOut();
@@ -124,6 +154,7 @@ const ProfileScreen = () => {
   ];
 
   const complianceItems = [
+    { id: 'my-documents', icon: FileText, label: 'My Documents (CDL & Medical)', action: 'documents', hasAlert: documentAlerts > 0 },
     { id: 'find-dmv', icon: MapPin, label: 'Find DMV', action: 'dmv' },
     { id: 'medical-card', icon: Stethoscope, label: 'Drug Test & Medical Card', action: 'medical' },
   ];
@@ -147,6 +178,8 @@ const ProfileScreen = () => {
   const handleItemClick = (item: any) => {
     if (item.action === 'language') {
       handleLanguageChange();
+    } else if (item.action === 'documents') {
+      setShowDocumentsModal(true);
     } else if (item.action === 'dmv') {
       setShowDMVModal(true);
     } else if (item.action === 'medical') {
@@ -238,12 +271,22 @@ const ProfileScreen = () => {
                 <button
                   key={item.id}
                   onClick={() => handleItemClick(item)}
-                  className="w-full flex items-center gap-4 p-4 bg-card rounded-xl border border-border hover:border-primary/50 transition-all text-left"
+                  className={`w-full flex items-center gap-4 p-4 bg-card rounded-xl border transition-all text-left ${
+                    item.hasAlert ? 'border-warning/50 bg-warning/5' : 'border-border hover:border-primary/50'
+                  }`}
                 >
-                  <div className="w-10 h-10 rounded-full bg-info/20 flex items-center justify-center">
-                    <Icon className="w-5 h-5 text-info" />
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center relative ${
+                    item.hasAlert ? 'bg-warning/20' : 'bg-info/20'
+                  }`}>
+                    <Icon className={`w-5 h-5 ${item.hasAlert ? 'text-warning' : 'text-info'}`} />
+                    {item.hasAlert && (
+                      <span className="absolute -top-1 -right-1 w-3 h-3 bg-destructive rounded-full animate-pulse" />
+                    )}
                   </div>
                   <span className="flex-1 font-medium text-foreground">{item.label}</span>
+                  {item.hasAlert && (
+                    <span className="text-xs text-warning font-medium">Expiring soon!</span>
+                  )}
                   <ChevronRight className="w-5 h-5 text-muted-foreground" />
                 </button>
               );
@@ -291,6 +334,7 @@ const ProfileScreen = () => {
       {/* Modals */}
       <FindDMVModal isOpen={showDMVModal} onClose={() => setShowDMVModal(false)} />
       <MedicalCardModal isOpen={showMedicalModal} onClose={() => setShowMedicalModal(false)} />
+      <DriverDocumentsModal isOpen={showDocumentsModal} onClose={() => { setShowDocumentsModal(false); checkDocumentAlerts(); }} />
 
       <BottomNav activeTab="profile" onTabChange={(tab) => navigate(`/${tab === 'map' ? 'home' : tab}`)} />
     </div>
