@@ -57,10 +57,10 @@ const TRUCK_STOP_BRANDS = [
   'marathon', 'citgo', 'sinclair', 'conoco', 'phillips 66'
 ];
 
-// Distance thresholds - Truck stops are large areas, need bigger radius
-const ENTER_RADIUS_M = 400; // Enter when within 400m (truck stops are big!)
-const EXIT_RADIUS_M = 600; // Exit when beyond 600m
-const MIN_STAY_TIME_MS = 45000; // Minimum 45 seconds stay to trigger feedback
+// Distance thresholds - More generous for detection
+const ENTER_RADIUS_M = 150; // Enter when within 150m
+const EXIT_RADIUS_M = 250; // Exit when beyond 250m
+const MIN_STAY_TIME_MS = 30000; // Minimum 30 seconds stay to trigger feedback
 
 export const PoiFeedbackProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { latitude, longitude } = useGeolocation({ enableHighAccuracy: true, watchPosition: true });
@@ -285,42 +285,69 @@ export const PoiFeedbackProvider: React.FC<{ children: React.ReactNode }> = ({ c
         currentVisitedPoi.lng
       );
 
+      console.log('[PoiFeedback] Distance from', currentVisitedPoi.name, ':', Math.round(distanceFromVisited), 'm (exit threshold:', EXIT_RADIUS_M, 'm)');
+
       if (distanceFromVisited > EXIT_RADIUS_M) {
         const stayDuration = Date.now() - currentVisitedPoi.enteredAt;
         const poiName = currentVisitedPoi.name;
-        const poiToRate = currentVisitedPoi;
+        const poiToRate = { ...currentVisitedPoi };
         
-        console.log('[PoiFeedback] Left POI:', poiName, 'Stay:', Math.round(stayDuration / 1000), 's');
+        console.log('[PoiFeedback] 🚪 LEFT POI:', poiName, '| Stay:', Math.round(stayDuration / 1000), 's | Min required:', MIN_STAY_TIME_MS / 1000, 's');
+
+        // Clear current visited POI first
+        setCurrentVisitedPoi(null);
+        setIsShowingFoodSuggestion(false);
 
         // Only show feedback if stayed long enough
         if (stayDuration >= MIN_STAY_TIME_MS) {
+          console.log('[PoiFeedback] ✅ Stay time sufficient, checking if can submit feedback...');
+          
           // Don't show if critical maneuver
-          if (!hasCriticalManeuver()) {
-            canSubmitFeedback(poiToRate.id).then((canSubmit) => {
-              if (canSubmit) {
-                // Send push notification
-                sendNotification({
-                  title: '⭐ Avalie sua visita!',
-                  body: `Como foi sua experiência em ${poiName}? Sua avaliação ajuda outros motoristas.`,
-                  tag: `poi-feedback-${poiToRate.id}`,
-                  requireInteraction: true,
+          if (hasCriticalManeuver()) {
+            console.log('[PoiFeedback] ⚠️ Critical maneuver - delaying feedback prompt');
+            return;
+          }
+
+          canSubmitFeedback(poiToRate.id).then((canSubmit) => {
+            console.log('[PoiFeedback] Can submit feedback:', canSubmit);
+            if (canSubmit) {
+              // Send push notification
+              sendNotification({
+                title: '⭐ Avalie sua visita!',
+                body: `Como foi sua experiência em ${poiName}? Sua avaliação ajuda outros motoristas.`,
+                tag: `poi-feedback-${poiToRate.id}`,
+                requireInteraction: true,
+                onClick: () => {
+                  setPendingFeedbackPoi(poiToRate);
+                  setIsShowingFeedback(true);
+                },
+              });
+              
+              // Show the modal directly after a short delay
+              console.log('[PoiFeedback] 📝 Showing rating prompt for:', poiName);
+              toast.info(`Como foi ${poiName}?`, { 
+                description: 'Toque para avaliar',
+                duration: 5000,
+                action: {
+                  label: 'Avaliar',
                   onClick: () => {
                     setPendingFeedbackPoi(poiToRate);
                     setIsShowingFeedback(true);
-                  },
-                });
-                
-                // Also show the modal directly after a short delay
-                setTimeout(() => {
-                  setPendingFeedbackPoi(poiToRate);
-                  setIsShowingFeedback(true);
-                }, 2000);
-              }
-            });
-          }
+                  }
+                }
+              });
+              
+              setTimeout(() => {
+                setPendingFeedbackPoi(poiToRate);
+                setIsShowingFeedback(true);
+              }, 1500);
+            } else {
+              console.log('[PoiFeedback] ❌ User already rated this POI recently');
+            }
+          });
+        } else {
+          console.log('[PoiFeedback] ⏱️ Stay too short:', Math.round(stayDuration / 1000), 's < required', MIN_STAY_TIME_MS / 1000, 's');
         }
-
-        setCurrentVisitedPoi(null);
       }
     }
   }, [latitude, longitude, currentVisitedPoi, fetchNearbyPois, canSubmitFeedback, hasCriticalManeuver, sendNotification]);
