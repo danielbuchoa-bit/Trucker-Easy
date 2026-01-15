@@ -8,105 +8,122 @@ const corsHeaders = {
 
 // Simple in-memory cache (10 minutes TTL)
 const cache = new Map<string, { data: any; timestamp: number }>();
-const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+const CACHE_TTL_MS = 10 * 60 * 1000;
 
 interface WeatherRequest {
   routePolyline: string;
   language?: string;
 }
 
-// Decode HERE flexible polyline to get coordinates
+// Decode HERE flexible polyline format
 function decodeFlexiblePolyline(encoded: string): Array<{ lat: number; lng: number }> {
   const coords: Array<{ lat: number; lng: number }> = [];
   
+  if (!encoded || encoded.length < 2) {
+    return coords;
+  }
+  
   try {
-    // HERE Flexible Polyline format
-    // Skip header byte and decode
-    let index = 0;
-    let lat = 0;
-    let lng = 0;
-    
-    // Skip header (first char indicates precision)
-    const header = encoded.charCodeAt(0) - 45;
-    const precision = Math.pow(10, -(header & 15));
-    index = 1;
-    
-    // Decoding table
-    const decodeChar = (c: string): number => {
-      const code = c.charCodeAt(0);
-      if (code >= 45 && code <= 122) {
-        return code - 45;
+    // HERE Flexible Polyline Encoding
+    // Format: header byte + encoded deltas
+    const DECODING_TABLE = [
+      62, -1, -1, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, -1, -1, -1, -1, -1, -1, -1,
+      0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21,
+      22, 23, 24, 25, -1, -1, -1, -1, 63, -1, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35,
+      36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51
+    ];
+
+    const decodeChar = (char: string): number => {
+      const charCode = char.charCodeAt(0);
+      if (charCode >= 45 && charCode < 45 + DECODING_TABLE.length) {
+        return DECODING_TABLE[charCode - 45];
       }
       return -1;
     };
-    
-    while (index < encoded.length) {
-      // Decode latitude
-      let shift = 0;
+
+    const decodeUnsignedValue = (encoded: string, startIndex: { value: number }): number => {
       let result = 0;
-      let byte: number;
+      let shift = 0;
       
-      do {
-        byte = decodeChar(encoded[index++]);
-        if (byte < 0) break;
-        result |= (byte & 0x1F) << shift;
+      while (startIndex.value < encoded.length) {
+        const value = decodeChar(encoded[startIndex.value++]);
+        if (value < 0) continue;
+        result |= (value & 0x1F) << shift;
+        if ((value & 0x20) === 0) break;
         shift += 5;
-      } while (byte >= 32 && index < encoded.length);
+      }
       
-      const deltaLat = ((result & 1) ? ~(result >> 1) : (result >> 1));
+      return result;
+    };
+
+    const decodeSignedValue = (encoded: string, startIndex: { value: number }): number => {
+      const unsigned = decodeUnsignedValue(encoded, startIndex);
+      return (unsigned & 1) ? ~(unsigned >> 1) : (unsigned >> 1);
+    };
+
+    // Decode header
+    const index = { value: 0 };
+    const header = decodeUnsignedValue(encoded, index);
+    
+    // Extract precision from header
+    const precision = header & 0x0F;
+    const thirdDim = (header >> 4) & 0x07;
+    const thirdDimPrecision = (header >> 7) & 0x0F;
+    
+    const factor = Math.pow(10, precision);
+    
+    let lat = 0;
+    let lng = 0;
+    
+    while (index.value < encoded.length) {
+      const deltaLat = decodeSignedValue(encoded, index);
+      const deltaLng = decodeSignedValue(encoded, index);
+      
+      // Skip third dimension if present
+      if (thirdDim !== 0) {
+        decodeSignedValue(encoded, index);
+      }
+      
       lat += deltaLat;
-      
-      // Decode longitude
-      shift = 0;
-      result = 0;
-      
-      do {
-        byte = decodeChar(encoded[index++]);
-        if (byte < 0) break;
-        result |= (byte & 0x1F) << shift;
-        shift += 5;
-      } while (byte >= 32 && index < encoded.length);
-      
-      const deltaLng = ((result & 1) ? ~(result >> 1) : (result >> 1));
       lng += deltaLng;
       
       coords.push({
-        lat: lat * precision,
-        lng: lng * precision,
+        lat: lat / factor,
+        lng: lng / factor,
       });
     }
+    
+    console.log('[WEATHER] Decoded', coords.length, 'coordinates from polyline');
+    
   } catch (e) {
-    console.error('Error decoding polyline:', e);
+    console.error('[WEATHER] Error decoding polyline:', e);
   }
   
   return coords;
 }
 
-// Sample points along the route (every ~100km or so)
+// Sample points along the route
 function sampleRoutePoints(coords: Array<{ lat: number; lng: number }>, maxPoints: number = 5): Array<{ lat: number; lng: number }> {
   if (coords.length === 0) return [];
   if (coords.length <= maxPoints) return coords;
   
-  const result: Array<{ lat: number; lng: number }> = [];
-  const step = Math.floor(coords.length / (maxPoints - 1));
+  const result: Array<{ lat: number; lng: number }> = [coords[0]];
+  const step = Math.floor((coords.length - 1) / (maxPoints - 1));
   
-  for (let i = 0; i < coords.length; i += step) {
+  for (let i = step; i < coords.length - 1; i += step) {
     result.push(coords[i]);
     if (result.length >= maxPoints - 1) break;
   }
   
-  // Always include the last point
   result.push(coords[coords.length - 1]);
-  
   return result;
 }
 
-// Simple hash function for cache key
+// Simple hash for cache key
 function hashPolyline(polyline: string): string {
   let hash = 0;
   for (let i = 0; i < Math.min(polyline.length, 1000); i++) {
-    const char = polyline.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
+    hash = ((hash << 5) - hash) + polyline.charCodeAt(i);
     hash = hash & hash;
   }
   return hash.toString(36);
@@ -120,7 +137,7 @@ serve(async (req) => {
   try {
     const HERE_API_KEY = Deno.env.get('HERE_API_KEY');
     if (!HERE_API_KEY) {
-      console.error('HERE_API_KEY not configured');
+      console.error('[WEATHER] HERE_API_KEY not configured');
       return new Response(
         JSON.stringify({ error: 'HERE API not configured' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -137,59 +154,73 @@ serve(async (req) => {
       );
     }
 
-    console.log('Weather alerts request for polyline length:', routePolyline.length);
+    console.log('[WEATHER] Request for polyline length:', routePolyline.length);
 
     // Check cache
     const cacheKey = `${hashPolyline(routePolyline)}_${language}`;
     const cached = cache.get(cacheKey);
     if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
-      console.log('Returning cached weather alerts');
+      console.log('[WEATHER] Returning cached alerts');
       return new Response(
         JSON.stringify({ ...cached.data, cached: true }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    // Decode polyline and sample points along the route
+    // Decode polyline and sample points
     const allCoords = decodeFlexiblePolyline(routePolyline);
-    console.log('Decoded coordinates count:', allCoords.length);
     
-    if (allCoords.length === 0) {
-      console.log('Could not decode polyline, using fallback response');
+    // Validate decoded coordinates
+    const validCoords = allCoords.filter(c => 
+      c.lat >= -90 && c.lat <= 90 && 
+      c.lng >= -180 && c.lng <= 180
+    );
+    
+    console.log('[WEATHER] Valid coordinates:', validCoords.length, 'of', allCoords.length);
+    
+    if (validCoords.length === 0) {
+      console.log('[WEATHER] No valid coordinates, returning empty');
       return new Response(
         JSON.stringify({
           alerts: [],
           available: false,
-          message: 'Could not decode route polyline',
+          message: 'Could not decode route coordinates',
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    // Sample a few key points along the route
-    const samplePoints = sampleRoutePoints(allCoords, 5);
-    console.log('Sampled points for weather check:', samplePoints.length);
+    const samplePoints = sampleRoutePoints(validCoords, 5);
+    console.log('[WEATHER] Sampled points:', samplePoints.map(p => `${p.lat.toFixed(4)},${p.lng.toFixed(4)}`));
 
-    // Fetch weather alerts for each sample point
+    // Fetch weather alerts using HERE Weather API V3
     const allAlerts: any[] = [];
     const seenAlerts = new Set<string>();
 
     for (const point of samplePoints) {
       try {
-        // Use HERE Weather API with lat/lng
-        const weatherUrl = `https://weather.ls.hereapi.com/weather/1.0/report.json?product=alerts&latitude=${point.lat}&longitude=${point.lng}&apiKey=${HERE_API_KEY}`;
+        // HERE Weather API V3 - alerts product
+        const weatherParams = new URLSearchParams({
+          apiKey: HERE_API_KEY,
+          products: 'alerts',
+          latitude: point.lat.toString(),
+          longitude: point.lng.toString(),
+          lang: language.split('-')[0], // 'en' from 'en-US'
+        });
+        
+        const weatherUrl = `https://weather.hereapi.com/v3/report?${weatherParams.toString()}`;
         
         const response = await fetch(weatherUrl);
         
         if (!response.ok) {
-          console.log(`Weather API returned ${response.status} for point ${point.lat},${point.lng}`);
+          console.log(`[WEATHER] API returned ${response.status} for ${point.lat.toFixed(4)},${point.lng.toFixed(4)}`);
           continue;
         }
 
         const data = await response.json();
         const alerts = processWeatherAlerts(data);
         
-        // Deduplicate alerts by headline
+        // Deduplicate alerts
         for (const alert of alerts) {
           const key = `${alert.type}_${alert.headline}`;
           if (!seenAlerts.has(key)) {
@@ -198,7 +229,7 @@ serve(async (req) => {
           }
         }
       } catch (pointError) {
-        console.error(`Error fetching weather for point ${point.lat},${point.lng}:`, pointError);
+        console.error(`[WEATHER] Error for point ${point.lat},${point.lng}:`, pointError);
       }
     }
 
@@ -211,7 +242,7 @@ serve(async (req) => {
 
     // Store in cache
     cache.set(cacheKey, { data: result, timestamp: Date.now() });
-    console.log('Weather alerts processed:', result.count, 'from', result.pointsChecked, 'points');
+    console.log('[WEATHER] Processed', result.count, 'alerts from', result.pointsChecked, 'points');
 
     return new Response(
       JSON.stringify(result),
@@ -219,9 +250,8 @@ serve(async (req) => {
     );
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    console.error('Error in here_weather_alerts:', error);
+    console.error('[WEATHER] Error:', error);
     
-    // Return empty alerts instead of error so UI doesn't break
     return new Response(
       JSON.stringify({
         alerts: [],
@@ -238,29 +268,33 @@ function processWeatherAlerts(data: any): any[] {
   const alerts: any[] = [];
   
   try {
-    // HERE Weather API v1 response structure
-    const alertsData = data?.alerts?.alerts || 
-                       data?.weatherAlerts?.alerts ||
-                       data?.alerts ||
-                       [];
+    // HERE Weather API V3 response structure
+    // places[].alerts[].alerts[]
+    const places = data?.places || [];
     
-    if (!Array.isArray(alertsData)) {
-      return alerts;
+    for (const place of places) {
+      const alertsWrapper = place?.alerts;
+      if (!alertsWrapper) continue;
+      
+      const alertsList = alertsWrapper.alerts || [];
+      
+      for (const warning of alertsList) {
+        alerts.push({
+          type: warning.type || warning.phenomenonType || 'weather',
+          severity: warning.severity || 'unknown',
+          headline: warning.description || warning.headline || 'Weather Alert',
+          description: warning.message || warning.text || '',
+          affectedAreas: warning.affectedAreas || [],
+          validFrom: warning.validFromTimeLocal || warning.time?.start || null,
+          validTo: warning.validUntilTimeLocal || warning.time?.end || null,
+        });
+      }
     }
     
-    for (const warning of alertsData) {
-      alerts.push({
-        type: warning.type || warning.phenomenonType || 'weather',
-        severity: warning.severity || warning.severityLevel || 'unknown',
-        headline: warning.description || warning.headline || warning.title || 'Weather Alert',
-        description: warning.message || warning.text || warning.description || '',
-        affectedAreas: warning.affectedAreas || warning.areas || [],
-        validFrom: warning.validTimeStart || warning.timeSegment?.startTime || null,
-        validTo: warning.validTimeEnd || warning.timeSegment?.endTime || null,
-      });
-    }
+    console.log('[WEATHER] Extracted', alerts.length, 'alerts from response');
+    
   } catch (e) {
-    console.error('Error processing weather alerts:', e);
+    console.error('[WEATHER] Error processing alerts:', e);
   }
   
   return alerts;

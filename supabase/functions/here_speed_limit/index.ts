@@ -9,7 +9,7 @@ const corsHeaders = {
 interface SpeedLimitRequest {
   lat: number;
   lng: number;
-  heading?: number; // Optional heading in degrees (0-360)
+  heading?: number;
 }
 
 serve(async (req) => {
@@ -39,83 +39,68 @@ serve(async (req) => {
 
     console.log('[SPEED_LIMIT] Request:', { lat, lng, heading });
 
-    // Use HERE Fleet Telematics API for speed limits
-    // This API provides current road speed limits based on position
-    const params = new URLSearchParams({
-      apiKey: HERE_API_KEY,
-      waypoint: heading !== undefined 
-        ? `${lat},${lng};${heading}` // Include heading for better accuracy
-        : `${lat},${lng}`,
-      mode: 'fastest;truck',
-      linkattributes: 'speedLimit',
-      routeattributes: 'none',
-      maneuverattributes: 'none',
-    });
-
-    // Try Route Match Extension API first (for real-time position matching)
-    const matchUrl = `https://routematch.hereapi.com/v8/match/routelinks?${new URLSearchParams({
-      apiKey: HERE_API_KEY,
-      waypoint: `${lat},${lng}`,
-      attributes: 'SPEED_LIMITS_FCn(*)',
-      routeMode: 'truck',
-    }).toString()}`;
-
-    console.log('[SPEED_LIMIT] Trying Route Match API...');
-    
     let speedLimitMph: number | null = null;
     let roadName: string | null = null;
     let roadClass: string | null = null;
+    let source = 'estimated';
 
+    // Try HERE Route Matching API v8 (correct endpoint)
+    // Uses routematching.hereapi.com (NOT routematch)
     try {
+      const waypoint0 = heading !== undefined 
+        ? `${lat},${lng};${heading}`
+        : `${lat},${lng}`;
+      
+      // Need two waypoints for route matching - use same point twice
+      const waypoint1 = waypoint0;
+      
+      const matchParams = new URLSearchParams({
+        apikey: HERE_API_KEY,
+        waypoint0,
+        waypoint1,
+        mode: 'fastest;truck',
+        routeMatch: '1',
+        attributes: 'SPEED_LIMITS_FCn(*)',
+      });
+
+      const matchUrl = `https://routematching.hereapi.com/v8/match/routelinks?${matchParams.toString()}`;
+      console.log('[SPEED_LIMIT] Trying Route Matching API v8...');
+      
       const matchResponse = await fetch(matchUrl);
       
       if (matchResponse.ok) {
         const matchData = await matchResponse.json();
-        console.log('[SPEED_LIMIT] Route Match response:', JSON.stringify(matchData).slice(0, 500));
+        console.log('[SPEED_LIMIT] Route Matching response:', JSON.stringify(matchData).slice(0, 800));
         
         // Extract speed limit from matched link
-        const link = matchData.response?.route?.[0]?.leg?.[0]?.link?.[0];
+        const route = matchData.response?.route?.[0];
+        const link = route?.leg?.[0]?.link?.[0];
+        
         if (link) {
-          // Speed limit is in km/h, convert to mph
-          const speedLimitKmh = link.speedLimit || link.attributes?.SPEED_LIMITS_FCn?.[0]?.FROM_REF_SPEED_LIMIT;
-          if (speedLimitKmh) {
-            speedLimitMph = Math.round(speedLimitKmh * 0.621371);
+          // SPEED_LIMITS_FCn contains speed limit info
+          const speedLimits = link.attributes?.SPEED_LIMITS_FCn;
+          if (speedLimits && speedLimits.length > 0) {
+            // FROM_REF_SPEED_LIMIT is in km/h
+            const speedLimitKmh = speedLimits[0]?.FROM_REF_SPEED_LIMIT || speedLimits[0]?.TO_REF_SPEED_LIMIT;
+            if (speedLimitKmh) {
+              speedLimitMph = Math.round(speedLimitKmh * 0.621371);
+              source = 'here_routematch';
+              console.log('[SPEED_LIMIT] Got speed from Route Matching:', { speedLimitKmh, speedLimitMph });
+            }
           }
-          roadName = link.roadName || null;
+          
+          roadName = link.roadName || route.leg?.[0]?.roadName || null;
           roadClass = link.functionalClass || null;
         }
+      } else {
+        const errorText = await matchResponse.text();
+        console.log('[SPEED_LIMIT] Route Matching API error:', matchResponse.status, errorText.slice(0, 200));
       }
     } catch (matchError) {
-      console.log('[SPEED_LIMIT] Route Match failed, trying alternative...', matchError);
+      console.log('[SPEED_LIMIT] Route Matching failed:', matchError);
     }
 
-    // If Route Match didn't work, try Discover API with speed limit attributes
-    if (!speedLimitMph) {
-      try {
-        const discoverUrl = `https://discover.search.hereapi.com/v1/discover?${new URLSearchParams({
-          apiKey: HERE_API_KEY,
-          at: `${lat},${lng}`,
-          q: 'road',
-          limit: '1',
-        }).toString()}`;
-
-        console.log('[SPEED_LIMIT] Trying Discover API...');
-        const discoverResponse = await fetch(discoverUrl);
-        
-        if (discoverResponse.ok) {
-          const discoverData = await discoverResponse.json();
-          const item = discoverData.items?.[0];
-          
-          if (item?.address?.street) {
-            roadName = item.address.street;
-          }
-        }
-      } catch (discoverError) {
-        console.log('[SPEED_LIMIT] Discover API error:', discoverError);
-      }
-    }
-
-    // If still no speed limit, estimate based on road type from reverse geocode
+    // Fallback: Use reverse geocode to get road info and estimate speed
     if (!speedLimitMph) {
       try {
         const revGeoUrl = `https://revgeocode.search.hereapi.com/v1/revgeocode?${new URLSearchParams({
@@ -125,6 +110,7 @@ serve(async (req) => {
           lang: 'en-US',
         }).toString()}`;
 
+        console.log('[SPEED_LIMIT] Trying reverse geocode...');
         const revGeoResponse = await fetch(revGeoUrl);
         
         if (revGeoResponse.ok) {
@@ -138,19 +124,18 @@ serve(async (req) => {
             const street = (item.address?.street || '').toLowerCase();
             const label = (item.address?.label || '').toLowerCase();
             
-            if (street.includes('interstate') || street.includes('i-') || label.includes('interstate')) {
+            if (street.includes('interstate') || street.match(/\bi-\d+/) || label.includes('interstate')) {
               speedLimitMph = 70; // Interstate highways
-            } else if (street.includes('highway') || street.includes('hwy') || street.includes('us-') || street.includes('state route')) {
+            } else if (street.includes('highway') || street.includes('hwy') || street.match(/\bus-\d+/) || street.includes('state route')) {
               speedLimitMph = 65; // US/State highways
             } else if (street.includes('expressway') || street.includes('freeway') || street.includes('pkwy') || street.includes('parkway')) {
               speedLimitMph = 55; // Expressways
             } else if (street.includes('avenue') || street.includes('boulevard') || street.includes('blvd')) {
               speedLimitMph = 35; // Major city streets
-            } else if (street.includes('street') || street.includes('road') || street.includes('rd') || street.includes('drive') || street.includes('lane')) {
+            } else if (street.includes('street') || street.includes('road') || street.includes('drive') || street.includes('lane')) {
               speedLimitMph = 30; // Local roads
             } else {
-              // Default based on position (rural areas tend to have higher limits)
-              speedLimitMph = 55;
+              speedLimitMph = 55; // Default for unknown roads
             }
             
             console.log('[SPEED_LIMIT] Estimated from road type:', { street, speedLimitMph });
@@ -163,7 +148,8 @@ serve(async (req) => {
 
     // Final fallback
     if (!speedLimitMph) {
-      speedLimitMph = 55; // Default fallback
+      speedLimitMph = 55;
+      source = 'fallback';
       console.log('[SPEED_LIMIT] Using default fallback: 55 mph');
     }
 
@@ -172,7 +158,7 @@ serve(async (req) => {
       speedLimitKmh: Math.round(speedLimitMph * 1.60934),
       roadName,
       roadClass,
-      source: speedLimitMph === 55 && !roadName ? 'fallback' : 'estimated',
+      source,
     };
 
     console.log('[SPEED_LIMIT] Result:', result);
