@@ -492,8 +492,36 @@ const ActiveNavigationView = () => {
   // Use refs to avoid re-render triggers from animation
   const lastCameraUpdateRef = useRef<number>(0);
   const markerUpdateRef = useRef<number>(0);
-  const CAMERA_UPDATE_INTERVAL = 80; // Limit camera updates to ~12fps for stability
+  const pitchIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const CAMERA_UPDATE_INTERVAL = 50; // 50ms for smooth camera updates (~20fps)
   const MARKER_UPDATE_INTERVAL = 16; // Marker at ~60fps for smooth animation
+  const FIXED_PITCH = 20; // Fixed pitch for navigation view
+  const FIXED_ZOOM = 15; // Fixed zoom level
+  
+  // Keep pitch locked with interval
+  useEffect(() => {
+    if (!map.current || !mapReady || !followUser) {
+      if (pitchIntervalRef.current) {
+        clearInterval(pitchIntervalRef.current);
+        pitchIntervalRef.current = null;
+      }
+      return;
+    }
+    
+    // Set up interval to keep pitch locked at 20 degrees every 50ms
+    pitchIntervalRef.current = setInterval(() => {
+      if (map.current && followUser) {
+        map.current.setPitch(FIXED_PITCH);
+      }
+    }, 50);
+    
+    return () => {
+      if (pitchIntervalRef.current) {
+        clearInterval(pitchIntervalRef.current);
+        pitchIntervalRef.current = null;
+      }
+    };
+  }, [mapReady, followUser]);
   
   useEffect(() => {
     if (!map.current || !mapReady) return;
@@ -549,8 +577,8 @@ const ActiveNavigationView = () => {
       });
     }
 
-    // COURSE-UP camera: rotate map so that direction of travel is UP
-    // Use easeTo for smooth transitions (throttled for stability)
+    // COURSE-UP camera: jumpTo + easeTo pattern for smooth, seamless camera follow
+    // jumpTo for instant center, then easeTo for smooth bearing transition
     if (followUser && now - lastCameraUpdateRef.current >= CAMERA_UPDATE_INTERVAL) {
       lastCameraUpdateRef.current = now;
       
@@ -559,14 +587,20 @@ const ActiveNavigationView = () => {
         bearingAnimationRef.current = null;
       }
 
-      // Smooth camera follow with easeTo
+      const currentCoords: [number, number] = [displayLng, displayLat];
+      const targetBearing = displayHeading ?? lastAppliedBearingRef.current;
+
+      // jumpTo for instant center positioning (no animation delay)
+      map.current.jumpTo({
+        center: currentCoords,
+        zoom: FIXED_ZOOM,
+      });
+
+      // easeTo for smooth bearing rotation with short duration
       map.current.easeTo({
-        center: [displayLng, displayLat],
-        bearing: displayHeading ?? lastAppliedBearingRef.current,
-        pitch: 60,
-        zoom: 17,
-        duration: CAMERA_UPDATE_INTERVAL, // Match the update interval for smooth transitions
-        easing: (t) => t, // Linear easing for consistent movement
+        center: currentCoords,
+        bearing: targetBearing,
+        duration: 50, // 50ms for seamless bearing updates
       });
     }
 
