@@ -1,36 +1,50 @@
 /**
- * Hybrid Routing Service - Collaborative HERE + NextBillion.ai Integration
+ * HERE Service - Geocoding, POIs, Weather Alerts
  * 
- * Architecture:
- * - NextBillion.ai: Primary routing for TRUCKS (superior vehicle restrictions, dimensions, weight limits)
- * - HERE: Primary for CAR routing, geocoding, POIs, weather alerts, and reverse geocoding
+ * IMPORTANT: This service now delegates ROUTING to NavigationEngine.
  * 
- * This hybrid approach leverages the strengths of each provider:
- * - NextBillion excels at truck-specific routing with accurate restrictions
- * - HERE provides excellent geocoding, POI search, and weather data
+ * NavigationEngine handles:
+ * - NextBillion as PRIMARY engine for truck routing
+ * - HERE as FALLBACK only when NextBillion fails
+ * 
+ * This service handles:
+ * - Geocoding (address search)
+ * - Weather alerts along route
+ * - Reverse geocoding
+ * 
+ * @see src/services/NavigationEngine.ts for routing
  */
 import { supabase } from "@/integrations/supabase/client";
+import {
+  NavigationEngine,
+  formatDistance,
+  formatDistanceForVoice,
+  formatDuration,
+  buildVoicePrompt,
+  subscribeToDiagnostics,
+} from './NavigationEngine';
 
-export interface TruckProfile {
-  trailerLengthFt: number;
-  heightFt: number;
-  weightLbs: number;
-  axles: number;
-}
+// Re-export everything from NavigationEngine for backwards compatibility
+export {
+  NavigationEngine,
+  formatDistance,
+  formatDistanceForVoice,
+  formatDuration,
+  buildVoicePrompt,
+  subscribeToDiagnostics,
+  DEFAULT_TRUCK_PROFILE,
+} from './NavigationEngine';
 
-export interface RouteRequest {
-  originLat: number;
-  originLng: number;
-  destLat: number;
-  destLng: number;
-  transportMode?: 'truck' | 'car';
-  avoidTolls?: boolean;
-  avoidFerries?: boolean;
-  avoidHighways?: boolean;
-  truckProfile?: TruckProfile;
-  // Optional waypoints for multi-stop routes
-  waypoints?: Array<{ lat: number; lng: number }>;
-}
+export type {
+  RouteRequest,
+  RouteResponse,
+  RouteInstruction,
+  TruckProfile,
+  ActiveEngine,
+  NavigationEngineState,
+} from './NavigationEngine';
+
+// ============= HERE-SPECIFIC TYPES =============
 
 export interface GeocodeResult {
   id: string;
@@ -41,26 +55,6 @@ export interface GeocodeResult {
   city?: string;
   state?: string;
   country?: string;
-}
-
-export interface RouteResponse {
-  polyline: string;
-  distance: number; // meters
-  duration: number; // seconds
-  instructions: RouteInstruction[];
-  transportMode: string;
-  notices?: any[];
-}
-
-export interface RouteInstruction {
-  instruction: string;
-  duration: number;
-  length: number;
-  direction?: string;
-  action?: string;
-  roadName?: string;
-  exitInfo?: string;
-  offset?: number;
 }
 
 export interface WeatherAlert {
@@ -82,15 +76,8 @@ export interface WeatherAlertsResponse {
   cached?: boolean;
 }
 
-// Default truck profile for 53' trailer
-export const DEFAULT_TRUCK_PROFILE: TruckProfile = {
-  trailerLengthFt: 53,
-  heightFt: 13.6,
-  weightLbs: 80000,
-  axles: 5,
-};
+// ============= DIAGNOSTICS =============
 
-// Diagnostics callback type
 type DiagnosticsCallback = (data: {
   service: string;
   endpoint: string;
@@ -99,23 +86,22 @@ type DiagnosticsCallback = (data: {
   resultCount?: number;
 }) => void;
 
-// Global diagnostics subscribers
-let diagnosticsCallbacks: DiagnosticsCallback[] = [];
+let localDiagnosticsCallbacks: DiagnosticsCallback[] = [];
 
-export const subscribeToDiagnostics = (callback: DiagnosticsCallback) => {
-  diagnosticsCallbacks.push(callback);
+export const subscribeToLocalDiagnostics = (callback: DiagnosticsCallback) => {
+  localDiagnosticsCallbacks.push(callback);
   return () => {
-    diagnosticsCallbacks = diagnosticsCallbacks.filter(cb => cb !== callback);
+    localDiagnosticsCallbacks = localDiagnosticsCallbacks.filter(cb => cb !== callback);
   };
 };
 
+// ============= HERE SERVICE CLASS =============
+
 class HereServiceClass {
-  // Emit diagnostic event to all subscribers
   private emitDiagnostic(data: Parameters<DiagnosticsCallback>[0]) {
-    diagnosticsCallbacks.forEach(cb => cb(data));
+    localDiagnosticsCallbacks.forEach(cb => cb(data));
   }
 
-  // Diagnostic: log API call results
   private logApiResult(service: string, endpoint: string, status: 'success' | 'error', details?: any) {
     const prefix = status === 'success' ? '✅' : '❌';
     console.log(`[HereService] ${prefix} ${service}`, {
@@ -124,7 +110,6 @@ class HereServiceClass {
       ...(details && { details }),
     });
     
-    // Emit to diagnostics panel
     this.emitDiagnostic({
       service,
       endpoint,
@@ -133,12 +118,12 @@ class HereServiceClass {
       resultCount: details?.results || details?.alertCount,
     });
     
-    // Check for auth issues
     if (details?.status === 401 || details?.status === 403) {
       console.error(`[HereService] 🔐 AUTH ERROR: ${service} service may not be enabled in HERE project`);
-      console.error(`[HereService] Check HERE Developer Portal: https://developer.here.com/`);
     }
   }
+
+  // ============= GEOCODING =============
 
   async geocode(query: string): Promise<GeocodeResult[]> {
     console.log('[HereService] Calling: Geocode API', { query });
@@ -161,112 +146,18 @@ class HereServiceClass {
     return data.results as GeocodeResult[];
   }
 
-  async calculateRoute(request: RouteRequest): Promise<RouteResponse> {
-    const isTruck = request.transportMode === 'truck';
-    const routingProvider = isTruck ? 'NextBillion' : 'HERE';
-    
-    console.log(`[HereService] Calling: ${routingProvider} Routing API`, { 
-      origin: `${request.originLat},${request.originLng}`,
-      dest: `${request.destLat},${request.destLng}`,
-      mode: request.transportMode,
-      provider: routingProvider,
-    });
+  // ============= ROUTING (DELEGATED TO NAVIGATION ENGINE) =============
 
-    // Use NextBillion for truck routing, HERE for car routing
-    if (isTruck) {
-      return this.calculateRouteWithNextBillion(request);
-    } else {
-      return this.calculateRouteWithHere(request);
-    }
+  /**
+   * Calculate route using NavigationEngine (NextBillion primary, HERE fallback)
+   * This method is maintained for backwards compatibility
+   */
+  async calculateRoute(request: import('./NavigationEngine').RouteRequest): Promise<import('./NavigationEngine').RouteResponse> {
+    console.log('[HereService] Delegating to NavigationEngine');
+    return NavigationEngine.calculateRoute(request);
   }
 
-  private async calculateRouteWithNextBillion(request: RouteRequest): Promise<RouteResponse> {
-    const truckProfile = request.truckProfile || DEFAULT_TRUCK_PROFILE;
-    
-    const { data, error } = await supabase.functions.invoke('nextbillion_route', {
-      body: {
-        originLat: request.originLat,
-        originLng: request.originLng,
-        destLat: request.destLat,
-        destLng: request.destLng,
-        avoidTolls: request.avoidTolls,
-        avoidHighways: request.avoidHighways,
-        avoidFerries: request.avoidFerries,
-        truckProfile: {
-          trailerLengthFt: truckProfile.trailerLengthFt,
-          heightFt: truckProfile.heightFt,
-          widthFt: 8.5, // Default truck width
-          weightLbs: truckProfile.weightLbs,
-          axles: truckProfile.axles,
-        },
-        waypoints: request.waypoints,
-      },
-    });
-
-    if (error) {
-      this.logApiResult('Routing', 'nextbillion_route', 'error', { message: error.message, status: error.status });
-      throw new Error(error.message || 'Failed to calculate truck route');
-    }
-
-    if (data.error) {
-      this.logApiResult('Routing', 'nextbillion_route', 'error', { message: data.error, status: data.status });
-      throw new Error(data.error);
-    }
-
-    // Map NextBillion response to RouteResponse format
-    const instructions: RouteInstruction[] = (data.instructions || []).map((inst: any, index: number) => ({
-      instruction: inst.instruction || '',
-      duration: inst.duration || 0,
-      length: inst.distance || 0,
-      direction: inst.modifier || '',
-      action: inst.maneuverType || '',
-      roadName: inst.roadName || '',
-      offset: index,
-    }));
-
-    this.logApiResult('Routing', 'nextbillion_route', 'success', { 
-      distance: data.distance, 
-      duration: data.duration,
-      instructions: instructions.length,
-      provider: 'NextBillion',
-    });
-
-    return {
-      polyline: data.polyline,
-      distance: data.distance,
-      duration: data.duration,
-      instructions,
-      transportMode: 'truck',
-    };
-  }
-
-  private async calculateRouteWithHere(request: RouteRequest): Promise<RouteResponse> {
-    const { data, error } = await supabase.functions.invoke('here_route', {
-      body: {
-        ...request,
-        truckProfile: undefined, // Car mode doesn't need truck profile
-      },
-    });
-
-    if (error) {
-      this.logApiResult('Routing', 'here_route', 'error', { message: error.message, status: error.status });
-      throw new Error(error.message || 'Failed to calculate route');
-    }
-
-    if (data.error) {
-      this.logApiResult('Routing', 'here_route', 'error', { message: data.error, status: data.status });
-      throw new Error(data.error);
-    }
-
-    this.logApiResult('Routing', 'here_route', 'success', { 
-      distance: data.distance, 
-      duration: data.duration,
-      instructions: data.instructions?.length || 0,
-      provider: 'HERE',
-    });
-    
-    return data as RouteResponse;
-  }
+  // ============= WEATHER ALERTS =============
 
   async getWeatherAlertsAlongRoute(
     routePolyline: string,
@@ -295,112 +186,22 @@ class HereServiceClass {
     return data as WeatherAlertsResponse;
   }
 
-  // Helper to format distance in miles/feet (US units)
+  // ============= HELPER METHODS (DELEGATED) =============
+
   formatDistance(meters: number, useImperial: boolean = true): string {
-    if (useImperial) {
-      const feet = meters * 3.28084;
-      const miles = meters * 0.000621371;
-      
-      if (miles >= 0.1) {
-        return `${miles.toFixed(1)} mi`;
-      }
-      return `${Math.round(feet)} ft`;
-    }
-    
-    if (meters >= 1000) {
-      return `${(meters / 1000).toFixed(1)} km`;
-    }
-    return `${Math.round(meters)} m`;
+    return formatDistance(meters, useImperial);
   }
 
-  // Helper to format distance for voice (more natural)
   formatDistanceForVoice(meters: number): string {
-    const miles = meters * 0.000621371;
-    
-    if (miles >= 1) {
-      return `${miles.toFixed(1)} miles`;
-    } else if (miles >= 0.25) {
-      // Use fractions for common distances
-      if (miles >= 0.45 && miles <= 0.55) return 'half a mile';
-      if (miles >= 0.20 && miles <= 0.30) return 'a quarter mile';
-      return `${miles.toFixed(1)} miles`;
-    } else {
-      const feet = meters * 3.28084;
-      if (feet >= 100) {
-        return `${Math.round(feet / 100) * 100} feet`;
-      }
-      return `${Math.round(feet)} feet`;
-    }
+    return formatDistanceForVoice(meters);
   }
 
-  // Helper to format duration
   formatDuration(seconds: number): string {
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    
-    if (hours > 0) {
-      return `${hours}h ${minutes}min`;
-    }
-    return `${minutes} min`;
+    return formatDuration(seconds);
   }
 
-  // Build voice prompt for instruction (Google Maps style)
-  buildVoicePrompt(instruction: RouteInstruction, distanceToManeuver: number): string {
-    const distanceText = this.formatDistanceForVoice(distanceToManeuver);
-    const action = instruction.action?.toLowerCase() || '';
-    const roadName = instruction.roadName || '';
-    const exitInfo = instruction.exitInfo || '';
-
-    // Build natural voice prompt
-    let prompt = '';
-
-    if (distanceToManeuver > 50) {
-      prompt = `In ${distanceText}, `;
-    }
-
-    // Determine action type
-    if (action.includes('arrive') || action.includes('destination')) {
-      return distanceToManeuver < 100 
-        ? 'You have arrived at your destination.'
-        : `In ${distanceText}, you will arrive at your destination.`;
-    }
-
-    if (action.includes('turn') && action.includes('left')) {
-      prompt += 'turn left';
-    } else if (action.includes('turn') && action.includes('right')) {
-      prompt += 'turn right';
-    } else if (action.includes('slight') && action.includes('left')) {
-      prompt += 'keep left';
-    } else if (action.includes('slight') && action.includes('right')) {
-      prompt += 'keep right';
-    } else if (action.includes('uturn') || action.includes('u-turn')) {
-      prompt += 'make a U-turn';
-    } else if (action.includes('merge')) {
-      prompt += 'merge';
-    } else if (action.includes('exit') || action.includes('ramp')) {
-      prompt += exitInfo ? `take exit ${exitInfo}` : 'take the exit';
-    } else if (action.includes('roundabout') || action.includes('rotary')) {
-      prompt += 'enter the roundabout';
-    } else if (action.includes('continue') || action.includes('straight')) {
-      prompt += 'continue straight';
-    } else {
-      // Fallback - use instruction text but clean it
-      const cleanInstruction = instruction.instruction
-        .replace(/\d+\.\d+°?\s*(N|S|E|W|north|south|east|west)/gi, '')
-        .replace(/heading\s+\w+/gi, '')
-        .replace(/\s+/g, ' ')
-        .trim();
-      prompt = distanceToManeuver > 50 
-        ? `In ${distanceText}, ${cleanInstruction.toLowerCase()}`
-        : cleanInstruction;
-    }
-
-    // Add road name if available
-    if (roadName && !prompt.includes(roadName)) {
-      prompt += ` onto ${roadName}`;
-    }
-
-    return prompt.charAt(0).toUpperCase() + prompt.slice(1) + '.';
+  buildVoicePrompt(instruction: import('./NavigationEngine').RouteInstruction, distanceToManeuver: number): string {
+    return buildVoicePrompt(instruction, distanceToManeuver);
   }
 }
 
