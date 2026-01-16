@@ -835,6 +835,51 @@ export type Database = {
         }
         Relationships: []
       }
+      trucking_news: {
+        Row: {
+          category: string
+          created_at: string
+          fetched_at: string
+          id: string
+          image_url: string | null
+          published_at: string
+          source: string
+          source_url: string
+          state: string | null
+          summary: string
+          title: string
+          urgency: string
+        }
+        Insert: {
+          category: string
+          created_at?: string
+          fetched_at?: string
+          id?: string
+          image_url?: string | null
+          published_at: string
+          source: string
+          source_url: string
+          state?: string | null
+          summary: string
+          title: string
+          urgency?: string
+        }
+        Update: {
+          category?: string
+          created_at?: string
+          fetched_at?: string
+          id?: string
+          image_url?: string | null
+          published_at?: string
+          source?: string
+          source_url?: string
+          state?: string | null
+          summary?: string
+          title?: string
+          urgency?: string
+        }
+        Relationships: []
+      }
       weigh_station_reports: {
         Row: {
           created_at: string

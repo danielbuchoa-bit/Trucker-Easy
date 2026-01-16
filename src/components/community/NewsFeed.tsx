@@ -1,18 +1,20 @@
-import React, { useState } from 'react';
-import { Newspaper, ExternalLink, RefreshCw, MapPin, Clock } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Newspaper, ExternalLink, RefreshCw, MapPin, Clock, AlertCircle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
 
 interface NewsItem {
   id: string;
   title: string;
   summary: string;
-  imageUrl: string;
-  sourceUrl: string;
+  image_url: string;
+  source_url: string;
   source: string;
   category: string;
   state?: string;
   urgency: 'normal' | 'today' | 'alert' | 'urgent';
-  publishedAt: string;
+  published_at: string;
 }
 
 const urgencyColors: Record<string, string> = {
@@ -24,87 +26,119 @@ const urgencyColors: Record<string, string> = {
 
 const NewsFeed: React.FC = () => {
   const [refreshing, setRefreshing] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [news, setNews] = useState<NewsItem[]>([]);
+  const [error, setError] = useState<string | null>(null);
 
-  // Real trucking news - these would be fetched from a news API in production
-  const news: NewsItem[] = [
-    {
-      id: '1',
-      title: 'FMCSA Proposes Changes to Hours of Service Regulations',
-      summary: 'The Federal Motor Carrier Safety Administration is considering new flexibility rules for the 10-hour off-duty period, responding to industry feedback.',
-      imageUrl: 'https://images.unsplash.com/photo-1601584115197-04ecc0da31d7?w=400&h=200&fit=crop',
-      sourceUrl: 'https://www.fmcsa.dot.gov/newsroom',
-      source: 'FMCSA',
-      category: 'Regulations',
-      urgency: 'today',
-      publishedAt: '2024-01-14',
-    },
-    {
-      id: '2',
-      title: 'National Average Diesel Price Update',
-      summary: 'EIA reports the national average diesel price at $3.89/gallon, showing a 5-cent decrease from last week. Check regional prices for your route.',
-      imageUrl: 'https://images.unsplash.com/photo-1545558014-8692077e9b5c?w=400&h=200&fit=crop',
-      sourceUrl: 'https://www.eia.gov/petroleum/gasdiesel/',
-      source: 'EIA',
-      category: 'Diesel Prices',
-      urgency: 'normal',
-      publishedAt: '2024-01-14',
-    },
-    {
-      id: '3',
-      title: 'Winter Storm Warning for I-80 Corridor',
-      summary: 'Heavy snow expected across Wyoming and Nebraska. Chain requirements in effect. Check conditions before travel.',
-      imageUrl: 'https://images.unsplash.com/photo-1516912481808-3406841bd33c?w=400&h=200&fit=crop',
-      sourceUrl: 'https://www.weather.gov/',
-      source: 'NWS',
-      category: 'Weather',
-      state: 'WY',
-      urgency: 'urgent',
-      publishedAt: '2024-01-14',
-    },
-    {
-      id: '4',
-      title: 'Peterbilt Recalls 2023-2024 579 and 389 Models',
-      summary: 'Voluntary recall affects steering column components. Contact your dealer for inspection and repair.',
-      imageUrl: 'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=400&h=200&fit=crop',
-      sourceUrl: 'https://www.nhtsa.gov/recalls',
-      source: 'NHTSA',
-      category: 'Recall',
-      urgency: 'alert',
-      publishedAt: '2024-01-13',
-    },
-    {
-      id: '5',
-      title: 'California Extends Weigh Station Hours on I-5',
-      summary: 'Major weigh stations on I-5 corridor will now operate 24/7. Expect increased inspections during overnight hours.',
-      imageUrl: 'https://images.unsplash.com/photo-1586191582066-d39d6baad6be?w=400&h=200&fit=crop',
-      sourceUrl: 'https://www.chp.ca.gov/',
-      source: 'CHP',
-      category: 'Weigh Station',
-      state: 'CA',
-      urgency: 'today',
-      publishedAt: '2024-01-13',
-    },
-    {
-      id: '6',
-      title: 'Truck Parking Shortage Crisis Continues',
-      summary: 'FHWA study shows 98% of truck stops at capacity during peak hours. Drivers report 1+ hour searches for parking.',
-      imageUrl: 'https://images.unsplash.com/photo-1449824913935-59a10b8d2000?w=400&h=200&fit=crop',
-      sourceUrl: 'https://ops.fhwa.dot.gov/freight/',
-      source: 'FHWA',
-      category: 'Industry',
-      urgency: 'normal',
-      publishedAt: '2024-01-12',
-    },
-  ];
+  const fetchNews = async (force = false) => {
+    try {
+      setError(null);
+      
+      // First try to get from database
+      const { data: dbNews, error: dbError } = await supabase
+        .from('trucking_news')
+        .select('*')
+        .order('published_at', { ascending: false })
+        .limit(10);
 
-  const handleRefresh = () => {
+      if (dbError) {
+        console.error('[NewsFeed] DB error:', dbError);
+      }
+
+      // If we have news and not forcing refresh, use cached
+      if (dbNews && dbNews.length > 0 && !force) {
+        setNews(dbNews as NewsItem[]);
+        setLoading(false);
+        return;
+      }
+
+      // Fetch fresh news from edge function
+      console.log('[NewsFeed] Fetching fresh news...');
+      const { data, error: fnError } = await supabase.functions.invoke('fetch_trucking_news', {
+        body: {},
+      });
+
+      if (fnError) {
+        console.error('[NewsFeed] Function error:', fnError);
+        throw fnError;
+      }
+
+      if (data?.ok && data?.news) {
+        setNews(data.news as NewsItem[]);
+        if (force) {
+          toast.success(data.cached ? 'Notícias já atualizadas' : 'Notícias atualizadas!');
+        }
+      } else {
+        throw new Error(data?.error || 'Failed to fetch news');
+      }
+    } catch (err) {
+      console.error('[NewsFeed] Error:', err);
+      setError('Não foi possível carregar as notícias');
+      toast.error('Erro ao carregar notícias');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchNews();
+  }, []);
+
+  const handleRefresh = async () => {
     setRefreshing(true);
-    setTimeout(() => setRefreshing(false), 1000);
+    await fetchNews(true);
   };
 
   const openNews = (url: string) => {
     window.open(url, '_blank');
   };
+
+  const formatDate = (dateStr: string) => {
+    const date = new Date(dateStr);
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+
+    if (date.toDateString() === today.toDateString()) {
+      return 'Hoje';
+    } else if (date.toDateString() === yesterday.toDateString()) {
+      return 'Ontem';
+    }
+    return date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+  };
+
+  if (loading) {
+    return (
+      <div className="space-y-3">
+        {[1, 2, 3].map((i) => (
+          <div key={i} className="bg-card rounded-xl border border-border animate-pulse">
+            <div className="h-32 bg-muted rounded-t-xl" />
+            <div className="p-3 space-y-2">
+              <div className="h-4 bg-muted rounded w-3/4" />
+              <div className="h-3 bg-muted rounded w-full" />
+              <div className="h-3 bg-muted rounded w-1/2" />
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  if (error && news.length === 0) {
+    return (
+      <div className="text-center py-12">
+        <AlertCircle className="w-12 h-12 text-destructive mx-auto mb-4" />
+        <p className="text-muted-foreground mb-4">{error}</p>
+        <button
+          onClick={handleRefresh}
+          className="px-4 py-2 bg-primary text-primary-foreground rounded-lg"
+        >
+          Tentar novamente
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-3">
@@ -116,7 +150,7 @@ const NewsFeed: React.FC = () => {
           className="flex items-center gap-2 px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
         >
           <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
-          {refreshing ? 'Updating...' : 'Refresh'}
+          {refreshing ? 'Atualizando...' : 'Atualizar'}
         </button>
       </div>
 
@@ -124,20 +158,23 @@ const NewsFeed: React.FC = () => {
       {news.map((item) => (
         <button
           key={item.id}
-          onClick={() => openNews(item.sourceUrl)}
+          onClick={() => openNews(item.source_url)}
           className="w-full bg-card rounded-xl border border-border hover:border-primary/50 transition-all text-left overflow-hidden"
         >
           {/* Image */}
           <div className="relative h-32 w-full">
             <img 
-              src={item.imageUrl} 
+              src={item.image_url} 
               alt={item.title}
               className="w-full h-full object-cover"
+              onError={(e) => {
+                (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1601584115197-04ecc0da31d7?w=400&h=200&fit=crop';
+              }}
             />
             <div className="absolute top-2 left-2 flex items-center gap-2 flex-wrap">
               {item.urgency !== 'normal' && (
                 <Badge className={urgencyColors[item.urgency]}>
-                  {item.urgency.toUpperCase()}
+                  {item.urgency === 'today' ? 'HOJE' : item.urgency === 'alert' ? 'ALERTA' : 'URGENTE'}
                 </Badge>
               )}
               <Badge variant="secondary" className="bg-black/60 text-white border-0">
@@ -162,10 +199,10 @@ const NewsFeed: React.FC = () => {
                 <span>{item.source}</span>
                 <span>•</span>
                 <Clock className="w-3 h-3" />
-                <span>{item.publishedAt}</span>
+                <span>{formatDate(item.published_at)}</span>
               </div>
               <div className="flex items-center gap-1 text-xs text-primary">
-                <span>Read more</span>
+                <span>Ler mais</span>
                 <ExternalLink className="w-3 h-3" />
               </div>
             </div>
@@ -177,7 +214,13 @@ const NewsFeed: React.FC = () => {
       {news.length === 0 && (
         <div className="text-center py-12">
           <Newspaper className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-          <p className="text-muted-foreground">No news available</p>
+          <p className="text-muted-foreground">Nenhuma notícia disponível</p>
+          <button
+            onClick={handleRefresh}
+            className="mt-4 px-4 py-2 bg-primary text-primary-foreground rounded-lg"
+          >
+            Carregar notícias
+          </button>
         </div>
       )}
     </div>
