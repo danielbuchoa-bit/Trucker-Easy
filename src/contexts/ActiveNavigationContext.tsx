@@ -10,6 +10,7 @@ import {
 import { useWakeLock } from '@/hooks/useWakeLock';
 import { useRerouteController } from '@/hooks/useRerouteController';
 import { HereService, type RouteResponse, type GeocodeResult, DEFAULT_TRUCK_PROFILE, type TruckProfile } from '@/services/HereService';
+import { NavigationEngine, type ActiveEngine } from '@/services/NavigationEngine';
 
 const NAVIGATION_STATE_KEY = 'activeNavigation';
 const DETOUR_STATE_KEY = 'detourStop';
@@ -144,6 +145,9 @@ interface ActiveNavigationContextValue {
   setSimulatedPosition: (position: UserPosition | null) => void;
   setIsSimulating: (simulating: boolean) => void;
   positionError: string | null;
+  // Navigation engine info
+  activeEngine: ActiveEngine;
+  fallbackReason: string | null;
 }
 
 const ActiveNavigationContext = createContext<ActiveNavigationContextValue | undefined>(undefined);
@@ -979,6 +983,9 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
     [effectivePosition, truckProfile]
   );
 
+  // Get engine state
+  const engineState = NavigationEngine.getState();
+
   return (
     <ActiveNavigationContext.Provider
       value={{
@@ -1004,6 +1011,8 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
         setSimulatedPosition,
         setIsSimulating,
         positionError,
+        activeEngine: engineState.activeEngine,
+        fallbackReason: engineState.fallbackReason,
       }}
     >
       {children}
