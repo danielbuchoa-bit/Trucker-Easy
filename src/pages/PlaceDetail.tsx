@@ -208,6 +208,22 @@ const PlaceDetailScreen = () => {
     }
   };
 
+  // Map frontend poi types to valid database values
+  const mapPoiTypeToDbValue = (type: string | undefined): 'fuel' | 'truck_stop' | 'rest_area' => {
+    if (!type) return 'truck_stop';
+    const typeLower = type.toLowerCase();
+    
+    // Map various frontend type names to valid database enum values
+    if (typeLower.includes('fuel') || typeLower.includes('gas') || typeLower.includes('diesel')) {
+      return 'fuel';
+    }
+    if (typeLower.includes('rest') || typeLower === 'rest_area' || typeLower === 'restarea') {
+      return 'rest_area';
+    }
+    // Default to truck_stop for truck stops, travel centers, and unknown types
+    return 'truck_stop';
+  };
+
   const handleSubmitReview = async () => {
     if (rating === 0 || cleanlinessRating === 0 || friendlinessRating === 0) {
       toast.error('Por favor, preencha todas as avaliações');
@@ -225,11 +241,13 @@ const PlaceDetailScreen = () => {
         return;
       }
 
+      const dbPoiType = mapPoiTypeToDbValue(place.type);
+      
       const { error } = await supabase.from('poi_feedback').insert({
         user_id: user.id,
         poi_id: place.id,
         poi_name: place.name,
-        poi_type: place.type || 'truck_stop',
+        poi_type: dbPoiType,
         cleanliness_rating: cleanlinessRating,
         friendliness_rating: friendlinessRating,
         recommendation_rating: rating,
