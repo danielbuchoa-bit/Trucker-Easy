@@ -10,10 +10,24 @@ import { toast } from '@/hooks/use-toast';
 interface TruckStopReviewFormProps {
   poiId: string;
   poiName: string;
-  poiType: 'fuel' | 'truck_stop' | 'rest_area';
+  poiType: string; // Accept any string, will be mapped to valid DB values
   onComplete: () => void;
   onCancel: () => void;
 }
+
+// Map frontend poi types to valid database values
+const mapPoiTypeToDbValue = (type: string | undefined): 'fuel' | 'truck_stop' | 'rest_area' => {
+  if (!type) return 'truck_stop';
+  const typeLower = type.toLowerCase();
+  
+  if (typeLower.includes('fuel') || typeLower.includes('gas') || typeLower.includes('diesel')) {
+    return 'fuel';
+  }
+  if (typeLower.includes('rest') || typeLower === 'rest_area' || typeLower === 'restarea') {
+    return 'rest_area';
+  }
+  return 'truck_stop';
+};
 
 const TruckStopReviewForm: React.FC<TruckStopReviewFormProps> = ({
   poiId,
@@ -42,7 +56,8 @@ const TruckStopReviewForm: React.FC<TruckStopReviewFormProps> = ({
   const [tips, setTips] = useState('');
 
   const getPoiTypeLabel = () => {
-    switch (poiType) {
+    const dbType = mapPoiTypeToDbValue(poiType);
+    switch (dbType) {
       case 'fuel': return 'Posto';
       case 'truck_stop': return 'Truck Stop';
       case 'rest_area': return 'Área de Descanso';
@@ -95,10 +110,12 @@ const TruckStopReviewForm: React.FC<TruckStopReviewFormProps> = ({
         return;
       }
 
+      const dbPoiType = mapPoiTypeToDbValue(poiType);
+      
       const { error } = await supabase.from('poi_feedback').insert({
         poi_id: poiId,
         poi_name: poiName,
-        poi_type: poiType,
+        poi_type: dbPoiType,
         user_id: user.id,
         friendliness_rating: friendlinessRating || overallRating,
         cleanliness_rating: cleanlinessRating || overallRating,
