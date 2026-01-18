@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useLanguage } from '@/i18n/LanguageContext';
-import { User, Settings, Globe, Moon, Bell, Shield, HelpCircle, LogOut, ChevronRight, Star, MessageSquare, Flag, Scale, Utensils, Building2, Heart, FileCheck, MapPin, Stethoscope, Loader2, FileText } from 'lucide-react';
+import { User, Settings, Globe, Moon, Bell, Shield, HelpCircle, LogOut, ChevronRight, Star, MessageSquare, Flag, Scale, Utensils, Building2, Heart, FileCheck, MapPin, Stethoscope, Loader2, FileText, History } from 'lucide-react';
 import BottomNav from '@/components/navigation/BottomNav';
 import { useNavigate } from 'react-router-dom';
 import FindDMVModal from '@/components/compliance/FindDMVModal';
@@ -147,6 +147,7 @@ const ProfileScreen = () => {
 
   const menuItems = [
     { id: 'bypass', icon: Scale, label: t.bypass.history, route: '/bypass-history' },
+    { id: 'rating-history', icon: History, label: 'Minhas Avaliações', route: '/rating-history' },
     { id: 'stop-advisor', icon: Utensils, label: 'Stop Advisor', route: '/stop-advisor' },
     { id: 'facility-rating', icon: Building2, label: 'Facility Rating', route: '/facility-rating' },
     { id: 'food-prefs', icon: Utensils, label: 'Food Preferences', route: '/food-preferences' },
