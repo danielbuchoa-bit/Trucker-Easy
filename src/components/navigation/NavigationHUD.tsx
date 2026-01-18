@@ -18,36 +18,56 @@ function extractExitNumber(instruction: string): string | null {
   return exitMatch ? exitMatch[1] : null;
 }
 
-// Find the next exit in the route
+// Find the next exit in the route - look ahead up to 10 miles
 function findNextExit(
   instructions: RouteInstruction[],
   currentIndex: number
-): { exitNumber: string; distanceToExit: number } | null {
+): { exitNumber: string; distanceToExit: number; roadName?: string } | null {
   if (!instructions || currentIndex < 0) return null;
 
   let accumulatedDistance = 0;
+  const maxLookAheadMeters = 16093; // 10 miles
 
   for (let i = currentIndex; i < instructions.length; i++) {
     const inst = instructions[i];
     
+    // Check for exit info in instruction
     if (inst.exitInfo) {
       return {
         exitNumber: inst.exitInfo,
         distanceToExit: accumulatedDistance,
+        roadName: inst.roadName,
       };
     }
     
+    // Try to extract exit number from instruction text
     const exitNum = extractExitNumber(inst.instruction || '');
     if (exitNum) {
       return {
         exitNumber: exitNum,
         distanceToExit: accumulatedDistance,
+        roadName: inst.roadName,
+      };
+    }
+    
+    // Check if instruction contains exit/ramp keywords
+    const lower = (inst.instruction || '').toLowerCase();
+    if (lower.includes('exit') || lower.includes('ramp') || lower.includes('off ramp')) {
+      // Try to get a meaningful exit identifier
+      const roadMatch = lower.match(/(?:onto|toward)\s+([A-Za-z0-9\-\s\/]+)/i);
+      return {
+        exitNumber: roadMatch ? roadMatch[1].trim() : (inst.roadName || 'Exit'),
+        distanceToExit: accumulatedDistance,
+        roadName: inst.roadName,
       };
     }
 
     if (i > currentIndex) {
       accumulatedDistance += inst.length || 0;
     }
+    
+    // Stop looking if we're too far ahead
+    if (accumulatedDistance > maxLookAheadMeters) break;
   }
 
   return null;
@@ -187,21 +207,29 @@ const NavigationHUD = ({
           </div>
         )}
         
-        {/* Next Exit badge - always visible if there's an upcoming exit */}
-        {nextExit && (
-          <div className="px-3 pb-3">
+      {/* Next Exit badge - always visible if there's an upcoming exit */}
+      {nextExit && (
+        <div className="px-3 pb-3">
+          <div className="flex flex-col gap-1">
             <div className="inline-flex items-center gap-1.5 bg-success text-success-foreground px-3 py-1.5 rounded-lg">
               <LogOut className="w-4 h-4" />
               <span className="text-sm font-bold">Exit {nextExit.exitNumber}</span>
-              {/* Show distance to exit if it's not the current maneuver */}
-              {!isCurrentExit && nextExit.distanceToExit > 0 && (
-                <span className="text-xs opacity-80 ml-1">
-                  • {HereService.formatDistance(distanceToNextManeuver + nextExit.distanceToExit)}
-                </span>
-              )}
+              {/* Show distance to exit */}
+              <span className="text-xs opacity-80 ml-1">
+                • {HereService.formatDistance(
+                  isCurrentExit ? distanceToNextManeuver : (distanceToNextManeuver + nextExit.distanceToExit)
+                )}
+              </span>
             </div>
+            {/* Show road name if available */}
+            {nextExit.roadName && (
+              <span className="text-xs text-muted-foreground pl-1 truncate">
+                → {nextExit.roadName}
+              </span>
+            )}
           </div>
-        )}
+        </div>
+      )}
         
         {/* Repeat button */}
         {onRepeat && (

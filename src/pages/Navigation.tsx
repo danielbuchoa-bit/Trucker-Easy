@@ -15,6 +15,7 @@ import {
   Settings,
 } from 'lucide-react';
 import { useLanguage } from '@/i18n/LanguageContext';
+import PoiRatingPreview from '@/components/poi/PoiRatingPreview';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
@@ -329,30 +330,41 @@ const NavigationScreen = () => {
           </Label>
 
           {destination ? (
-            <div className="flex items-center gap-3 p-3 bg-card border border-border rounded-lg">
-              <MapPin className="w-4 h-4 text-red-500 shrink-0" />
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <p className="text-sm font-medium truncate">{destination.title}</p>
-                  {destinationType && (
-                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-5 shrink-0">
-                      {destinationType === 'truck_stop' && '🚛 Truck Stop'}
-                      {destinationType === 'gas_station' && '⛽ Gas Station'}
-                      {destinationType === 'fueling-station' && '⛽ Fuel'}
-                      {destinationType === 'rest_area' && '🅿️ Rest Area'}
-                      {destinationType === 'restaurant' && '🍔 Restaurant'}
-                      {destinationType === 'travel_center' && '🏪 Travel Center'}
-                      {!['truck_stop', 'gas_station', 'fueling-station', 'rest_area', 'restaurant', 'travel_center'].includes(destinationType) && destinationType}
-                    </Badge>
-                  )}
+            <div className="space-y-2">
+              <div className="flex items-center gap-3 p-3 bg-card border border-border rounded-lg">
+                <MapPin className="w-4 h-4 text-red-500 shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-medium truncate">{destination.title}</p>
+                    {destinationType && (
+                      <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-5 shrink-0">
+                        {destinationType === 'truck_stop' && '🚛 Truck Stop'}
+                        {destinationType === 'gas_station' && '⛽ Gas Station'}
+                        {destinationType === 'fueling-station' && '⛽ Fuel'}
+                        {destinationType === 'rest_area' && '🅿️ Rest Area'}
+                        {destinationType === 'restaurant' && '🍔 Restaurant'}
+                        {destinationType === 'travel_center' && '🏪 Travel Center'}
+                        {!['truck_stop', 'gas_station', 'fueling-station', 'rest_area', 'restaurant', 'travel_center'].includes(destinationType) && destinationType}
+                      </Badge>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground truncate">
+                    {destination.address}
+                  </p>
                 </div>
-                <p className="text-xs text-muted-foreground truncate">
-                  {destination.address}
-                </p>
+                <Button variant="ghost" size="sm" onClick={() => { setDestination(null); setDestinationType(null); }}>
+                  ✕
+                </Button>
               </div>
-              <Button variant="ghost" size="sm" onClick={() => { setDestination(null); setDestinationType(null); }}>
-                ✕
-              </Button>
+              
+              {/* Rating Preview for POI destinations */}
+              {destinationType && ['truck_stop', 'gas_station', 'fueling-station', 'rest_area', 'travel_center'].includes(destinationType) && (
+                <PoiRatingPreview 
+                  poiId={destination.id}
+                  poiName={destination.title}
+                  className="border border-border"
+                />
+              )}
             </div>
           ) : (
             <AddressSearch

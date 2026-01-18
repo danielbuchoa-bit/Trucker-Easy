@@ -121,9 +121,14 @@ const RoadReportButton: React.FC = () => {
       toast({ title: 'Report submitted!', description: 'Thanks for helping other drivers.' });
       setOpen(false);
       resetForm();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error submitting report:', error);
-      toast({ title: 'Failed to submit report', variant: 'destructive' });
+      const errorMessage = error?.message || error?.code || 'Unknown error';
+      toast({ 
+        title: 'Failed to submit report', 
+        description: errorMessage,
+        variant: 'destructive' 
+      });
     }
     
     setSubmitting(false);
