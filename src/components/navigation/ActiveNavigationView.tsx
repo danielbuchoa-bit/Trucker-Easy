@@ -711,31 +711,40 @@ const ActiveNavigationView = () => {
         </div>
       )}
 
-      {/* Lane Guidance Panel - shows when approaching exit */}
-      {route && progress && (
-        <LaneGuidancePanel
-          instruction={currentInstruction}
-          distanceToManeuver={progress.distanceToNextManeuver}
-          instructions={route.instructions}
-          currentInstructionIndex={progress.currentInstructionIndex}
-          visible={true}
-        />
-      )}
+      {/* Determine if current maneuver is an exit/ramp within lane guidance distance */}
+      {(() => {
+        const isExitManeuver = currentInstruction?.instruction?.toLowerCase().includes('exit') ||
+          currentInstruction?.instruction?.toLowerCase().includes('ramp') ||
+          !!currentInstruction?.exitInfo;
+        const isWithinLaneGuidanceDistance = progress && progress.distanceToNextManeuver <= 1609; // 1 mile
+        const showLaneGuidance = isExitManeuver && isWithinLaneGuidanceDistance;
+        
+        return (
+          <>
+            {/* Lane Guidance Panel - shows when approaching exit within 1 mile */}
+            {route && progress && showLaneGuidance && (
+              <LaneGuidancePanel
+                instruction={currentInstruction}
+                distanceToManeuver={progress.distanceToNextManeuver}
+                instructions={route.instructions}
+                currentInstructionIndex={progress.currentInstructionIndex}
+                visible={true}
+              />
+            )}
 
-      {/* HUD - Top Left (Trucker Path style) - hidden when Lane Guidance is showing */}
-      {route && progress && !(
-        currentInstruction?.instruction?.toLowerCase().includes('exit') ||
-        currentInstruction?.instruction?.toLowerCase().includes('ramp') ||
-        currentInstruction?.exitInfo
-      ) && progress.distanceToNextManeuver > 1609 && (
-        <NavigationHUD
-          currentInstruction={currentInstruction}
-          distanceToNextManeuver={progress.distanceToNextManeuver}
-          instructions={route.instructions}
-          currentInstructionIndex={progress.currentInstructionIndex}
-          onRepeat={voice.repeatLastInstruction}
-        />
-      )}
+            {/* HUD - Top Left (Trucker Path style) - shows ALWAYS unless Lane Guidance is showing */}
+            {route && progress && !showLaneGuidance && (
+              <NavigationHUD
+                currentInstruction={currentInstruction}
+                distanceToNextManeuver={progress.distanceToNextManeuver}
+                instructions={route.instructions}
+                currentInstructionIndex={progress.currentInstructionIndex}
+                onRepeat={voice.repeatLastInstruction}
+              />
+            )}
+          </>
+        );
+      })()}
 
       {/* Nearby POIs Overlay - Left side */}
       <NearbyPoisOverlay
