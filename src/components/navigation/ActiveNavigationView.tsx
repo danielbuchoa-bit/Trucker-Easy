@@ -39,6 +39,8 @@ import { useGeofence } from '@/contexts/GeofenceContext';
 import { usePoiFeedback } from '@/contexts/PoiFeedbackContext';
 import { Button } from '@/components/ui/button';
 import { useLanguage } from '@/i18n/LanguageContext';
+import { useRouteStyle, ROUTE_STYLES } from '@/hooks/useRouteStyle';
+import RouteStyleSelector from './RouteStyleSelector';
 
 // === SPEED ALERT ICON HELPER ===
 function getSpeedAlertIconSvg(type: SpeedAlertType): string {
@@ -143,6 +145,7 @@ function bearingDifference(a: number, b: number): number {
 
 const ActiveNavigationView = () => {
   const { t } = useLanguage();
+  const { style: routeStyle, setStyle: setRouteStyle, config: routeStyleConfig } = useRouteStyle();
   const {
     route,
     routeCoords,
@@ -419,12 +422,53 @@ const ActiveNavigationView = () => {
 
         if (!map.current.getSource('nav-route')) {
           map.current.addSource('nav-route', { type: 'geojson', data: geojson });
+          
+          // Route outline layer for contrast
+          map.current.addLayer({
+            id: 'nav-route-outline',
+            type: 'line',
+            source: 'nav-route',
+            layout: { 'line-join': 'round', 'line-cap': 'round' },
+            paint: { 
+              'line-color': ROUTE_STYLES['default'].outline, 
+              'line-width': [
+                'interpolate', ['linear'], ['zoom'],
+                10, 12, 14, 16, 18, 20,
+              ], 
+              'line-opacity': 1,
+            },
+          });
+          
+          // Main route layer
           map.current.addLayer({
             id: 'nav-route',
             type: 'line',
             source: 'nav-route',
             layout: { 'line-join': 'round', 'line-cap': 'round' },
-            paint: { 'line-color': '#3b82f6', 'line-width': 6, 'line-opacity': 0.9 },
+            paint: { 
+              'line-color': ROUTE_STYLES['default'].main, 
+              'line-width': [
+                'interpolate', ['linear'], ['zoom'],
+                10, 8, 14, 12, 18, 16,
+              ], 
+              'line-opacity': 1,
+            },
+          });
+          
+          // Inner highlight layer
+          map.current.addLayer({
+            id: 'nav-route-highlight',
+            type: 'line',
+            source: 'nav-route',
+            layout: { 'line-join': 'round', 'line-cap': 'round' },
+            paint: { 
+              'line-color': ROUTE_STYLES['default'].highlight, 
+              'line-width': [
+                'interpolate', ['linear'], ['zoom'],
+                10, 2, 14, 3, 18, 4,
+              ], 
+              'line-opacity': ROUTE_STYLES['default'].highlightOpacity,
+            },
           });
         }
       };
@@ -488,6 +532,29 @@ const ActiveNavigationView = () => {
       source.setData(geojson);
     }
   }, [routeCoords, mapReady]);
+
+  // Update route style colors when routeStyle changes
+  useEffect(() => {
+    if (!map.current || !mapReady) return;
+    
+    const config = routeStyleConfig;
+    
+    // Update outline layer
+    if (map.current.getLayer('nav-route-outline')) {
+      map.current.setPaintProperty('nav-route-outline', 'line-color', config.outline);
+    }
+    
+    // Update main route layer
+    if (map.current.getLayer('nav-route')) {
+      map.current.setPaintProperty('nav-route', 'line-color', config.main);
+    }
+    
+    // Update highlight layer
+    if (map.current.getLayer('nav-route-highlight')) {
+      map.current.setPaintProperty('nav-route-highlight', 'line-color', config.highlight);
+      map.current.setPaintProperty('nav-route-highlight', 'line-opacity', config.highlightOpacity);
+    }
+  }, [routeStyle, routeStyleConfig, mapReady]);
 
   // Update user marker & camera with smooth cursor animation
   // Use refs to avoid re-render triggers from animation
@@ -828,13 +895,46 @@ const ActiveNavigationView = () => {
                     geometry: { type: 'LineString', coordinates: routeCoords },
                   };
                   if (!map.current.getSource('nav-route')) {
+                    const config = routeStyleConfig;
                     map.current.addSource('nav-route', { type: 'geojson', data: geojson });
+                    
+                    // Outline layer
+                    map.current.addLayer({
+                      id: 'nav-route-outline',
+                      type: 'line',
+                      source: 'nav-route',
+                      layout: { 'line-join': 'round', 'line-cap': 'round' },
+                      paint: { 
+                        'line-color': config.outline, 
+                        'line-width': ['interpolate', ['linear'], ['zoom'], 10, 12, 14, 16, 18, 20],
+                        'line-opacity': 1,
+                      },
+                    });
+                    
+                    // Main route layer
                     map.current.addLayer({
                       id: 'nav-route',
                       type: 'line',
                       source: 'nav-route',
                       layout: { 'line-join': 'round', 'line-cap': 'round' },
-                      paint: { 'line-color': '#3b82f6', 'line-width': 6, 'line-opacity': 0.9 },
+                      paint: { 
+                        'line-color': config.main, 
+                        'line-width': ['interpolate', ['linear'], ['zoom'], 10, 8, 14, 12, 18, 16],
+                        'line-opacity': 1,
+                      },
+                    });
+                    
+                    // Highlight layer
+                    map.current.addLayer({
+                      id: 'nav-route-highlight',
+                      type: 'line',
+                      source: 'nav-route',
+                      layout: { 'line-join': 'round', 'line-cap': 'round' },
+                      paint: { 
+                        'line-color': config.highlight, 
+                        'line-width': ['interpolate', ['linear'], ['zoom'], 10, 2, 14, 3, 18, 4],
+                        'line-opacity': config.highlightOpacity,
+                      },
                     });
                   }
                 }
@@ -844,6 +944,13 @@ const ActiveNavigationView = () => {
         >
           <Layers className="w-5 h-5" />
         </Button>
+        
+        {/* Route style selector */}
+        <RouteStyleSelector
+          currentStyle={routeStyle}
+          onStyleChange={setRouteStyle}
+          className="rounded-full w-12 h-12"
+        />
         
         {/* Add report button */}
         <Button
