@@ -366,6 +366,30 @@ const RouteMap = ({ routePolyline, originLat, originLng, destLat, destLng, speed
             data: geojson,
           });
 
+          // Route outline/border layer - dark stroke for contrast on light maps
+          map.current.addLayer({
+            id: 'route-outline',
+            type: 'line',
+            source: 'route',
+            layout: {
+              'line-join': 'round',
+              'line-cap': 'round',
+            },
+            paint: {
+              'line-color': '#1e3a5f', // Dark navy blue outline
+              'line-width': [
+                'interpolate',
+                ['linear'],
+                ['zoom'],
+                10, 10,  // At zoom 10: 10px width
+                14, 14,  // At zoom 14: 14px width
+                18, 18,  // At zoom 18: 18px width
+              ],
+              'line-opacity': 1,
+            },
+          });
+
+          // Main route layer - bright, highly visible color
           map.current.addLayer({
             id: 'route',
             type: 'line',
@@ -375,9 +399,39 @@ const RouteMap = ({ routePolyline, originLat, originLng, destLat, destLng, speed
               'line-cap': 'round',
             },
             paint: {
-              'line-color': '#3b82f6',
-              'line-width': 5,
-              'line-opacity': 0.8,
+              'line-color': '#00d4ff', // Bright cyan - high visibility in daylight
+              'line-width': [
+                'interpolate',
+                ['linear'],
+                ['zoom'],
+                10, 6,   // At zoom 10: 6px width
+                14, 10,  // At zoom 14: 10px width
+                18, 14,  // At zoom 18: 14px width
+              ],
+              'line-opacity': 1,
+            },
+          });
+
+          // Inner glow/highlight for extra visibility
+          map.current.addLayer({
+            id: 'route-highlight',
+            type: 'line',
+            source: 'route',
+            layout: {
+              'line-join': 'round',
+              'line-cap': 'round',
+            },
+            paint: {
+              'line-color': '#ffffff', // White center highlight
+              'line-width': [
+                'interpolate',
+                ['linear'],
+                ['zoom'],
+                10, 2,  // At zoom 10: 2px width
+                14, 3,  // At zoom 14: 3px width
+                18, 4,  // At zoom 18: 4px width
+              ],
+              'line-opacity': 0.6,
             },
           });
         }
