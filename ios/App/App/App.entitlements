@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>aps-environment</key>
+    <string>development</string>
+    
+    <!-- Required for background location updates during navigation -->
+    <key>com.apple.developer.location.always</key>
+    <true/>
+    
+    <!-- Background modes for navigation -->
+    <key>com.apple.developer.audio-in-background</key>
+    <true/>
+    <key>com.apple.developer.background-location</key>
+    <true/>
+</dict>
+</plist>
