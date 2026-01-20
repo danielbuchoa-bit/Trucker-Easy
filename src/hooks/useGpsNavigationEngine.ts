@@ -6,12 +6,14 @@
  * 2. Weighted Segment Selection - Smart route matching
  * 3. HMM Map Matching - Probabilistic path tracking
  * 4. Adaptive Smoothing - Speed-dependent filtering
+ * 5. HERE Map Matching - Server-side snap-to-road for complex junctions
  * 
  * Designed specifically for truck navigation.
  */
 
-import { useRef, useCallback, useMemo } from 'react';
+import { useRef, useCallback, useMemo, useEffect } from 'react';
 import type { LngLat } from '@/lib/hereFlexiblePolyline';
+import { useHereMapMatching } from './useHereMapMatching';
 import {
   // Constants
   SPEED_THRESHOLDS,
@@ -44,6 +46,9 @@ import {
   processHMMObservation,
   resetHMMState,
 } from '@/lib/gps';
+
+// Feature flag for HERE Map Matching
+const USE_HERE_MAP_MATCHING = true;
 
 // === TYPES ===
 
@@ -82,6 +87,10 @@ export interface NavigationOutput {
   snapStrength: number;
   matchConfidence: number;
   
+  // HERE Map Matching info
+  hereMatchUsed: boolean;
+  hereMatchConfidence: number;
+  
   // Timing
   timestamp: number;
 }
@@ -95,6 +104,16 @@ interface PositionHistoryEntry {
 // === MAIN HOOK ===
 
 export function useGpsNavigationEngine() {
+  // HERE Map Matching hook for server-side snap-to-road
+  const hereMapMatching = useHereMapMatching({
+    enabled: USE_HERE_MAP_MATCHING,
+    minBatchSize: 3,
+    maxBatchSize: 10,
+    batchIntervalMs: 2000,
+    maxDistanceToAcceptM: 50,
+    minConfidenceThreshold: 0.4,
+  });
+  
   // Kalman filter state
   const kalmanRef = useRef<KalmanState | null>(null);
   
@@ -116,6 +135,10 @@ export function useGpsNavigationEngine() {
   
   // Last processed position
   const lastOutputRef = useRef<NavigationOutput | null>(null);
+  
+  // HERE match tracking
+  const hereMatchUsedRef = useRef<boolean>(false);
+  const hereMatchConfidenceRef = useRef<number>(0);
 
   /**
    * Calculate Course-Over-Ground from position history
@@ -272,60 +295,98 @@ export function useGpsNavigationEngine() {
     let snapStrength = 0;
     let matchConfidence = 0;
     let routeBearing: number | null = null;
+    let hereMatchUsed = false;
+    let hereMatchConfidence = 0;
 
     if (routeCoords.length >= 2) {
       // Calculate COG for heading-aware matching
       const cogHeading = calculateCOG();
       const headingForMatch = cogHeading ?? gpsHeading ?? null;
 
-      // Use HMM for probabilistic matching
-      const hmmResult = processHMMObservation(
-        hmmRef.current,
-        filteredLat,
-        filteredLng,
-        headingForMatch,
-        timestamp,
-        routeCoords
-      );
+      // === 5a. Try HERE Map Matching first (for complex junctions) ===
+      if (USE_HERE_MAP_MATCHING) {
+        // Add point to HERE matching buffer (async, cached)
+        hereMapMatching.addPoint({
+          lat: filteredLat,
+          lng: filteredLng,
+          heading: headingForMatch ?? undefined,
+          speed: smoothedSpeed,
+          timestamp,
+        });
 
-      // Also use weighted selection for comparison/fallback
-      const weightedResult = selectBestSegment(
-        filteredLat,
-        filteredLng,
-        headingForMatch,
-        smoothedSpeed,
-        routeCoords,
-        lastSegmentRef.current
-      );
-
-      // Choose between HMM and weighted selection based on confidence
-      if (hmmResult.confidence > 0.5 && hmmResult.confidence > weightedResult.confidence * 0.8) {
-        // Use HMM result
-        segmentIndex = hmmResult.segmentIndex;
-        snappedLat = hmmResult.matchedLat;
-        snappedLng = hmmResult.matchedLng;
-        matchConfidence = hmmResult.confidence;
-      } else if (weightedResult.shouldSnap) {
-        // Use weighted selection
-        segmentIndex = weightedResult.bestSegment.index;
-        snappedLat = weightedResult.bestSegment.projectedLat;
-        snappedLng = weightedResult.bestSegment.projectedLng;
-        matchConfidence = weightedResult.confidence;
+        // Check if we have a cached HERE match
+        const hereMatch = hereMapMatching.getMatchedPosition(filteredLat, filteredLng);
+        
+        if (hereMatch.fromCache && hereMatch.confidence > 0.4) {
+          // Use HERE matched position
+          snappedLat = hereMatch.lat;
+          snappedLng = hereMatch.lng;
+          hereMatchConfidence = hereMatch.confidence;
+          hereMatchUsed = true;
+          matchConfidence = hereMatch.confidence;
+          
+          // Calculate distance to route after HERE snap
+          distanceToRoute = haversineDistance(filteredLat, filteredLng, snappedLat, snappedLng);
+          snapStrength = calculateSnapStrength(distanceToRoute, matchConfidence);
+          
+          console.log('[GPS_ENGINE] Using HERE match:', { 
+            confidence: hereMatch.confidence.toFixed(2),
+            distance: distanceToRoute.toFixed(1) 
+          });
+        }
       }
 
-      // Calculate distance to route
-      distanceToRoute = haversineDistance(filteredLat, filteredLng, snappedLat, snappedLng);
+      // === 5b. Fallback to local HMM/weighted matching ===
+      if (!hereMatchUsed) {
+        // Use HMM for probabilistic matching
+        const hmmResult = processHMMObservation(
+          hmmRef.current,
+          filteredLat,
+          filteredLng,
+          headingForMatch,
+          timestamp,
+          routeCoords
+        );
 
-      // Calculate snap strength
-      snapStrength = calculateSnapStrength(distanceToRoute, matchConfidence);
+        // Also use weighted selection for comparison/fallback
+        const weightedResult = selectBestSegment(
+          filteredLat,
+          filteredLng,
+          headingForMatch,
+          smoothedSpeed,
+          routeCoords,
+          lastSegmentRef.current
+        );
 
-      // Apply soft snap (blend between filtered and snapped)
-      if (snapStrength > 0) {
-        snappedLat = lerp(filteredLat, snappedLat, snapStrength);
-        snappedLng = lerp(filteredLng, snappedLng, snapStrength);
-      } else {
-        snappedLat = filteredLat;
-        snappedLng = filteredLng;
+        // Choose between HMM and weighted selection based on confidence
+        if (hmmResult.confidence > 0.5 && hmmResult.confidence > weightedResult.confidence * 0.8) {
+          // Use HMM result
+          segmentIndex = hmmResult.segmentIndex;
+          snappedLat = hmmResult.matchedLat;
+          snappedLng = hmmResult.matchedLng;
+          matchConfidence = hmmResult.confidence;
+        } else if (weightedResult.shouldSnap) {
+          // Use weighted selection
+          segmentIndex = weightedResult.bestSegment.index;
+          snappedLat = weightedResult.bestSegment.projectedLat;
+          snappedLng = weightedResult.bestSegment.projectedLng;
+          matchConfidence = weightedResult.confidence;
+        }
+
+        // Calculate distance to route
+        distanceToRoute = haversineDistance(filteredLat, filteredLng, snappedLat, snappedLng);
+
+        // Calculate snap strength
+        snapStrength = calculateSnapStrength(distanceToRoute, matchConfidence);
+
+        // Apply soft snap (blend between filtered and snapped)
+        if (snapStrength > 0) {
+          snappedLat = lerp(filteredLat, snappedLat, snapStrength);
+          snappedLng = lerp(filteredLng, snappedLng, snapStrength);
+        } else {
+          snappedLat = filteredLat;
+          snappedLng = filteredLng;
+        }
       }
 
       // Get route bearing for heading calculation
@@ -337,6 +398,10 @@ export function useGpsNavigationEngine() {
 
       lastSegmentRef.current = segmentIndex;
     }
+    
+    // Store HERE match state for output
+    hereMatchUsedRef.current = hereMatchUsed;
+    hereMatchConfidenceRef.current = hereMatchConfidence;
 
     // === 6. HEADING CALCULATION ===
     const cogHeading = calculateCOG();
@@ -370,12 +435,14 @@ export function useGpsNavigationEngine() {
       isOnRoute,
       snapStrength,
       matchConfidence,
+      hereMatchUsed,
+      hereMatchConfidence,
       timestamp,
     };
 
     lastOutputRef.current = output;
     return output;
-  }, [calculateCOG, blendHeading]);
+  }, [calculateCOG, blendHeading, hereMapMatching]);
 
   /**
    * Get predicted position (for dead reckoning during GPS gaps)
@@ -432,11 +499,15 @@ export function useGpsNavigationEngine() {
     smoothedSpeedRef.current = 0;
     lastSegmentRef.current = 0;
     lastOutputRef.current = null;
-  }, []);
+    hereMatchUsedRef.current = false;
+    hereMatchConfidenceRef.current = 0;
+    hereMapMatching.reset();
+  }, [hereMapMatching]);
 
   return useMemo(() => ({
     processGpsFix,
     predictCurrentPosition,
     reset,
-  }), [processGpsFix, predictCurrentPosition, reset]);
+    getHereMatchStats: hereMapMatching.getCacheStats,
+  }), [processGpsFix, predictCurrentPosition, reset, hereMapMatching.getCacheStats]);
 }

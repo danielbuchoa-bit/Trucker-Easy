@@ -1160,6 +1160,10 @@ const ActiveNavigationView = () => {
           matchConfidence: matchedPosition?.snapStrength ?? 0,
           isOnRoute: matchedPosition?.isOnRoute ?? false,
           
+          // HERE Map Matching
+          hereMatchUsed: (matchedPosition as any)?.hereMatchUsed ?? false,
+          hereMatchConfidence: (matchedPosition as any)?.hereMatchConfidence ?? 0,
+          
           // Render cursor
           renderLat: renderCursor?.lat ?? null,
           renderLng: renderCursor?.lng ?? null,
