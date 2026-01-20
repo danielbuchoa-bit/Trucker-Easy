@@ -3,14 +3,13 @@ import { decodePolyline, type LngLat } from '@/lib/polylineDecoder';
 import {
   calculateNavigationProgress,
   haversineDistance,
-  matchPositionToRoute,
   type NavigationProgress,
-  type RouteMatchResult,
 } from '@/lib/navigationUtils';
 import { useWakeLock } from '@/hooks/useWakeLock';
-import { useRerouteController } from '@/hooks/useRerouteController';
 import { HereService, type RouteResponse, type GeocodeResult, DEFAULT_TRUCK_PROFILE, type TruckProfile } from '@/services/HereService';
 import { NavigationEngine, type ActiveEngine } from '@/services/NavigationEngine';
+import { useGpsNavigationEngine, type NavigationOutput } from '@/hooks/useGpsNavigationEngine';
+import { SNAP } from '@/lib/gps';
 
 const NAVIGATION_STATE_KEY = 'activeNavigation';
 const DETOUR_STATE_KEY = 'detourStop';
@@ -34,13 +33,6 @@ const MIN_SPEED_FOR_REROUTE_MPS = 6.7; // Must be going > 15 mph to trigger rero
 // Accuracy filter - only trust good GPS
 const MAX_ACCURACY_FOR_OFF_ROUTE_M = 25; // Don't trust GPS with >25m accuracy
 
-// Search window for route matching
-const ROUTE_MATCH_WINDOW = 90;
-
-// Soft snap for visual smoothness
-const SNAP_MAX_BLEND = 0.7;
-const SNAP_MAX_DISTANCE_M = 50;
-
 // 30 SECOND cooldown - absolute block
 const REROUTE_COOLDOWN_MS = 30000; // 30 seconds minimum
 
@@ -49,41 +41,8 @@ const DETOUR_ARRIVAL_DISTANCE_M = 200;
 const DETOUR_ARRIVAL_DWELL_TIME_MS = 10000;
 const DETOUR_COOLDOWN_MS = 120000;
 
-// Course-over-ground settings - optimized for smooth heading
-const MIN_COG_SPEED_MPS = 1.0; // ~3.6 km/h
-const MIN_COG_DISTANCE_M = 3;
-const MAX_REASONABLE_SPEED_MPS = 55; // ~200 km/h (spike rejection)
-const HEADING_SMOOTH_FACTOR = 0.15;
-const SPEED_SMOOTH_FACTOR = 0.2;
-
-// Position update throttling - 1 update per second max
-const MIN_POSITION_UPDATE_MS = 1000; // REDUCED to 1 update/second
-
-function calculateBearingBetweenPoints(lat1: number, lng1: number, lat2: number, lng2: number): number {
-  const toRad = (deg: number) => (deg * Math.PI) / 180;
-  const toDeg = (rad: number) => (rad * 180) / Math.PI;
-
-  const φ1 = toRad(lat1);
-  const φ2 = toRad(lat2);
-  const Δλ = toRad(lng2 - lng1);
-
-  const y = Math.sin(Δλ) * Math.cos(φ2);
-  const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
-
-  return (toDeg(Math.atan2(y, x)) + 360) % 360;
-}
-
-function angularDifference(a: number, b: number): number {
-  let diff = b - a;
-  while (diff > 180) diff -= 360;
-  while (diff < -180) diff += 360;
-  return diff;
-}
-
-function smoothAngle(current: number, target: number, factor: number): number {
-  const diff = angularDifference(current, target);
-  return (current + diff * factor + 360) % 360;
-}
+// Position update throttling - 500ms for smoother animation
+const MIN_POSITION_UPDATE_MS = 500;
 
 interface NavigationState {
   route: RouteResponse;
@@ -118,6 +77,12 @@ export interface UserPosition {
   heading: number | null;
   speed: number | null;
   accuracy: number | null;
+  // GPS Engine enhanced data (optional)
+  snappedLat?: number;
+  snappedLng?: number;
+  segmentIndex?: number;
+  isOnRoute?: boolean;
+  matchConfidence?: number;
 }
 
 interface ActiveNavigationContextValue {
@@ -167,12 +132,11 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
   const detourArrivalStartRef = useRef<number | null>(null);
   const lastDetourCompletedRef = useRef<number>(0);
 
-  // Raw fix history (for COG) + filtered fix (for stable nav)
-  const lastRawFixRef = useRef<{ lat: number; lng: number; time: number } | null>(null);
-  const filteredFixRef = useRef<{ lat: number; lng: number; time: number } | null>(null);
-  const lastValidHeadingRef = useRef<number | null>(null);
-  const smoothedHeadingRef = useRef<number | null>(null);
-  const smoothedSpeedRef = useRef<number>(0);
+  // Initialize GPS Navigation Engine
+  const gpsEngine = useGpsNavigationEngine();
+  
+  // Last navigation output for continuity
+  const lastNavOutputRef = useRef<NavigationOutput | null>(null);
 
   const [progress, setProgress] = useState<NavigationProgress | null>(null);
   const [positionError, setPositionError] = useState<string | null>(null);
@@ -194,6 +158,13 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
 
   // Keep screen on during navigation
   useWakeLock(isNavigating);
+
+  // Reset GPS engine when route changes
+  useEffect(() => {
+    if (route) {
+      gpsEngine.reset();
+    }
+  }, [route, gpsEngine]);
 
   // Restore navigation state from localStorage
   useEffect(() => {
@@ -231,9 +202,6 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
     }
   }, []);
 
-  // Initialize reroute controller
-  const rerouteController = useRerouteController();
-
   // Last position update time for throttling
   const lastPositionUpdateRef = useRef<number>(0);
 
@@ -260,85 +228,38 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
         if (now - lastPositionUpdateRef.current < MIN_POSITION_UPDATE_MS) {
           return;
         }
+        lastPositionUpdateRef.current = now;
         
         const { latitude, longitude, heading: gpsHeading, speed: gpsSpeed, accuracy } = pos.coords;
         
-        // === SPIKE REJECTION ===
-        // Reject impossible jumps based on speed
-        if (lastRawFixRef.current) {
-          const timeDelta = (now - lastRawFixRef.current.time) / 1000;
-          if (timeDelta > 0.1 && timeDelta < 30) {
-            const distance = haversineDistance(
-              lastRawFixRef.current.lat,
-              lastRawFixRef.current.lng,
-              latitude,
-              longitude
-            );
-            const impliedSpeed = distance / timeDelta;
-            
-            // Reject if speed exceeds maximum possible
-            if (impliedSpeed > MAX_REASONABLE_SPEED_MPS * 1.5) {
-              console.log('[NAV] Spike rejected:', { 
-                distance: Math.round(distance), 
-                speed: Math.round(impliedSpeed),
-                threshold: MAX_REASONABLE_SPEED_MPS * 1.5 
-              });
-              return;
-            }
-          }
-        }
+        // Process through GPS Navigation Engine
+        const navOutput = gpsEngine.processGpsFix(
+          {
+            lat: latitude,
+            lng: longitude,
+            accuracy: accuracy ?? null,
+            heading: gpsHeading ?? null,
+            speed: gpsSpeed ?? null,
+            timestamp: now,
+          },
+          routeCoords
+        );
         
-        lastPositionUpdateRef.current = now;
+        lastNavOutputRef.current = navOutput;
         
-        // === COURSE-OVER-GROUND CALCULATION ===
-        let calculatedHeading = gpsHeading;
-        
-        if (lastRawFixRef.current && (gpsHeading === null || gpsHeading === undefined)) {
-          const timeDelta = (now - lastRawFixRef.current.time) / 1000;
-          if (timeDelta > 0 && timeDelta < 5) {
-            const distance = haversineDistance(
-              lastRawFixRef.current.lat,
-              lastRawFixRef.current.lng,
-              latitude,
-              longitude
-            );
-            
-            if (distance > MIN_COG_DISTANCE_M) {
-              calculatedHeading = calculateBearingBetweenPoints(
-                lastRawFixRef.current.lat,
-                lastRawFixRef.current.lng,
-                latitude,
-                longitude
-              );
-              lastValidHeadingRef.current = calculatedHeading;
-            } else if (lastValidHeadingRef.current !== null) {
-              calculatedHeading = lastValidHeadingRef.current;
-            }
-          }
-        } else if (lastValidHeadingRef.current !== null && (gpsHeading === null || gpsHeading === undefined)) {
-          calculatedHeading = lastValidHeadingRef.current;
-        }
-        
-        // === HEADING SMOOTHING ===
-        if (typeof calculatedHeading === 'number' && smoothedHeadingRef.current !== null) {
-          calculatedHeading = smoothAngle(smoothedHeadingRef.current, calculatedHeading, HEADING_SMOOTH_FACTOR);
-        }
-        if (typeof calculatedHeading === 'number') {
-          smoothedHeadingRef.current = calculatedHeading;
-        }
-        
-        // === SPEED SMOOTHING ===
-        const rawSpeed = gpsSpeed ?? 0;
-        smoothedSpeedRef.current = smoothedSpeedRef.current * (1 - SPEED_SMOOTH_FACTOR) + rawSpeed * SPEED_SMOOTH_FACTOR;
-        
-        lastRawFixRef.current = { lat: latitude, lng: longitude, time: now };
-        
+        // Update user position with enhanced data from GPS engine
         setUserPosition({
-          lat: latitude,
-          lng: longitude,
-          heading: calculatedHeading ?? null,
-          speed: smoothedSpeedRef.current, // Use smoothed speed
+          lat: navOutput.rawLat,
+          lng: navOutput.rawLng,
+          heading: navOutput.heading,
+          speed: navOutput.speed,
           accuracy: accuracy ?? null,
+          // Enhanced GPS engine data
+          snappedLat: navOutput.snappedLat,
+          snappedLng: navOutput.snappedLng,
+          segmentIndex: navOutput.segmentIndex,
+          isOnRoute: navOutput.isOnRoute,
+          matchConfidence: navOutput.matchConfidence,
         });
         setPositionError(null);
       },
@@ -359,7 +280,7 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
         watchIdRef.current = null;
       }
     };
-  }, [isNavigating, isSimulating]);
+  }, [isNavigating, isSimulating, routeCoords, gpsEngine]);
 
   // Detour arrival detection
   useEffect(() => {
@@ -459,8 +380,15 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
     }
   }, [detourStop, originalTrip, effectivePosition]);
 
-  // Route matching + off-route detection
-  const lastMatchRef = useRef<RouteMatchResult | null>(null);
+  // Route matching + off-route detection using GPS engine data
+  interface MatchResult {
+    matchedLat: number;
+    matchedLng: number;
+    distanceToRouteM: number;
+    closestSegmentIndex: number;
+  }
+  
+  const lastMatchRef = useRef<MatchResult | null>(null);
   const onRouteCountRef = useRef<number>(0);
   const lastClosestSegRef = useRef<number | null>(null);
   const lastDebugLogRef = useRef<number>(0);
@@ -468,7 +396,7 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
   const checkAndReroute = useCallback(
     async (
       rawPosition: { lat: number; lng: number; accuracy: number | null; speed: number | null },
-      match: RouteMatchResult,
+      match: MatchResult,
       isProgressingAlongRoute: boolean
     ) => {
       if (!destination || !route || routeCoords.length < 2) return;
@@ -631,7 +559,7 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
     [destination, route, routeCoords, isRerouting, truckProfile, isOffRoute]
   );
 
-  // Update progress when position changes
+  // Update progress when position changes - using GPS engine data
   const lastProgressUpdate = useRef<number>(0);
 
   useEffect(() => {
@@ -641,37 +569,31 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
     }
 
     const now = Date.now();
-    if (now - lastProgressUpdate.current < 1000) return;
+    if (now - lastProgressUpdate.current < 500) return; // Faster updates with GPS engine
     lastProgressUpdate.current = now;
 
-    const filteredLat = effectivePosition.lat;
-    const filteredLng = effectivePosition.lng;
+    // Use snapped position from GPS engine if available, otherwise use raw
+    const matchedLat = effectivePosition.snappedLat ?? effectivePosition.lat;
+    const matchedLng = effectivePosition.snappedLng ?? effectivePosition.lng;
+    const segmentIndex = effectivePosition.segmentIndex ?? lastMatchRef.current?.closestSegmentIndex ?? 0;
+    
+    // Calculate distance to route
+    const distanceToRoute = effectivePosition.snappedLat && effectivePosition.snappedLng
+      ? haversineDistance(effectivePosition.lat, effectivePosition.lng, matchedLat, matchedLng)
+      : SNAP.MAX_DISTANCE_M; // Assume max if no snap data
 
-    const baseMatch = matchPositionToRoute(filteredLng, filteredLat, routeCoords, {
-      searchFromIndex: lastMatchRef.current?.closestSegmentIndex,
-      searchWindow: ROUTE_MATCH_WINDOW,
-      step: 2,
-    });
-
-    const blend = Math.min(
-      SNAP_MAX_BLEND,
-      Math.max(0, (SNAP_MAX_DISTANCE_M - baseMatch.distanceToRouteM) / SNAP_MAX_DISTANCE_M) * SNAP_MAX_BLEND
-    );
-
-    const matchedLat = filteredLat + (baseMatch.matchedLat - filteredLat) * blend;
-    const matchedLng = filteredLng + (baseMatch.matchedLng - filteredLng) * blend;
-
-    const match: RouteMatchResult = {
-      ...baseMatch,
+    const match: MatchResult = {
       matchedLat,
       matchedLng,
+      distanceToRouteM: distanceToRoute,
+      closestSegmentIndex: segmentIndex,
     };
 
     lastMatchRef.current = match;
 
     const newProgress = calculateNavigationProgress(
-      match.matchedLng,
-      match.matchedLat,
+      matchedLng,
+      matchedLat,
       routeCoords,
       route.instructions,
       route.distance,
@@ -681,8 +603,8 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
     setProgress(newProgress);
 
     const lastSeg = lastClosestSegRef.current;
-    const isProgressing = lastSeg === null ? true : match.closestSegmentIndex >= lastSeg - 2;
-    lastClosestSegRef.current = match.closestSegmentIndex;
+    const isProgressing = lastSeg === null ? true : segmentIndex >= lastSeg - 2;
+    lastClosestSegRef.current = segmentIndex;
 
     checkAndReroute(
       { 
