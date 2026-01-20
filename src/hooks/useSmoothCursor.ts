@@ -1,17 +1,20 @@
 import { useRef, useCallback, useEffect, useState } from 'react';
+import type { NavigationOutput } from '@/hooks/useGpsNavigationEngine';
+import { DEAD_RECKONING } from '@/lib/gps';
+import { projectPosition } from '@/lib/gps/geometry';
 
 // === CONFIGURATION ===
 const TARGET_FPS = 60;
 const FRAME_INTERVAL_MS = 1000 / TARGET_FPS; // ~16.67ms
 
 // Interpolation settings
-const INTERPOLATION_DURATION_MS = 800; // How long to interpolate between fixes
-const DEAD_RECKONING_MAX_MS = 2000; // Max time to project forward
-const MIN_SPEED_FOR_DR_MPS = 0.5; // ~1.8 km/h minimum for dead reckoning
+const INTERPOLATION_DURATION_MS = 600; // Reduced for GPS engine (already smoothed)
+const DEAD_RECKONING_MAX_MS = DEAD_RECKONING.MAX_DURATION_MS;
+const MIN_SPEED_FOR_DR_MPS = DEAD_RECKONING.MIN_SPEED_MPS;
 
-// Smoothing
-const POSITION_LERP_SPEED = 0.12; // Per-frame position lerp (lower = smoother)
-const HEADING_LERP_SPEED = 0.15; // Per-frame heading lerp
+// Smoothing - reduced since GPS engine already provides smooth data
+const POSITION_LERP_SPEED = 0.18; // Per-frame position lerp (higher = faster response)
+const HEADING_LERP_SPEED = 0.2; // Per-frame heading lerp
 
 export interface CursorPosition {
   lat: number;
@@ -19,6 +22,11 @@ export interface CursorPosition {
   heading: number;
   speed: number;
   timestamp: number;
+  // Enhanced data from GPS engine
+  snappedLat?: number;
+  snappedLng?: number;
+  isOnRoute?: boolean;
+  matchConfidence?: number;
 }
 
 export interface RenderCursor {
@@ -28,6 +36,9 @@ export interface RenderCursor {
   isAnimating: boolean;
   isDeadReckoning: boolean;
   frameCount: number;
+  // Enhanced rendering data
+  isOnRoute: boolean;
+  matchConfidence: number;
 }
 
 // Ease function for smooth deceleration
@@ -48,36 +59,11 @@ function lerpAngle(a: number, b: number, t: number): number {
   return ((a + diff * t) + 360) % 360;
 }
 
-// Project position forward
-function projectPosition(
-  lat: number,
-  lng: number,
-  speedMps: number,
-  headingDeg: number,
-  deltaMs: number
-): { lat: number; lng: number } {
-  if (speedMps < MIN_SPEED_FOR_DR_MPS || deltaMs <= 0) {
-    return { lat, lng };
-  }
-
-  const distanceM = speedMps * (deltaMs / 1000);
-  const headingRad = (headingDeg * Math.PI) / 180;
-  
-  // Approximate conversion from meters to degrees
-  const latOffset = (distanceM * Math.cos(headingRad)) / 111000;
-  const lngOffset = (distanceM * Math.sin(headingRad)) / (111000 * Math.cos(lat * Math.PI / 180));
-
-  return {
-    lat: lat + latOffset,
-    lng: lng + lngOffset,
-  };
-}
-
 /**
  * High-performance cursor animation hook
  * 
- * Takes snapped position from map matching and provides
- * silky-smooth 60fps cursor animation using requestAnimationFrame
+ * Now integrates with GPS Navigation Engine for enhanced smoothing.
+ * Takes snapped position from engine and provides silky-smooth 60fps animation.
  */
 export function useSmoothCursor(
   matchedPosition: CursorPosition | null,
@@ -103,6 +89,8 @@ export function useSmoothCursor(
     isAnimating: false,
     isDeadReckoning: false,
     frameCount: 0,
+    isOnRoute: false,
+    matchConfidence: 0,
   });
   
   // Throttle React state updates to ~30fps
@@ -134,6 +122,12 @@ export function useSmoothCursor(
     let targetHeading: number;
     let isDeadReckoning = false;
 
+    // Use snapped position from GPS engine if available
+    const currLat = curr.snappedLat ?? curr.lat;
+    const currLng = curr.snappedLng ?? curr.lng;
+    const prevLat = prev?.snappedLat ?? prev?.lat ?? currLat;
+    const prevLng = prev?.snappedLng ?? prev?.lng ?? currLng;
+
     if (prev && timeSinceLastFix < INTERPOLATION_DURATION_MS) {
       // INTERPOLATION: Smooth animation between previous and current fix
       const fixInterval = curr.timestamp - prev.timestamp;
@@ -143,15 +137,15 @@ export function useSmoothCursor(
       
       const easedProgress = easeOutQuart(progress);
       
-      targetLat = lerp(prev.lat, curr.lat, easedProgress);
-      targetLng = lerp(prev.lng, curr.lng, easedProgress);
+      targetLat = lerp(prevLat, currLat, easedProgress);
+      targetLng = lerp(prevLng, currLng, easedProgress);
       targetHeading = lerpAngle(prev.heading, curr.heading, easedProgress);
       
       // Continue with dead reckoning if interpolation complete
       if (progress >= 1 && curr.speed >= MIN_SPEED_FOR_DR_MPS) {
         const drTime = timeSinceLastFix - fixInterval;
         if (drTime > 0 && drTime < DEAD_RECKONING_MAX_MS) {
-          const projected = projectPosition(curr.lat, curr.lng, curr.speed, curr.heading, drTime);
+          const projected = projectPosition(currLat, currLng, curr.speed, curr.heading, drTime);
           targetLat = projected.lat;
           targetLng = projected.lng;
           isDeadReckoning = true;
@@ -160,13 +154,13 @@ export function useSmoothCursor(
     } else if (curr) {
       // DEAD RECKONING: No previous fix or interpolation expired
       if (curr.speed >= MIN_SPEED_FOR_DR_MPS && timeSinceLastFix < DEAD_RECKONING_MAX_MS) {
-        const projected = projectPosition(curr.lat, curr.lng, curr.speed, curr.heading, timeSinceLastFix);
+        const projected = projectPosition(currLat, currLng, curr.speed, curr.heading, timeSinceLastFix);
         targetLat = projected.lat;
         targetLng = projected.lng;
         isDeadReckoning = true;
       } else {
-        targetLat = curr.lat;
-        targetLng = curr.lng;
+        targetLat = currLat;
+        targetLng = currLng;
       }
       targetHeading = curr.heading;
     } else {
@@ -182,6 +176,8 @@ export function useSmoothCursor(
     state.isAnimating = true;
     state.isDeadReckoning = isDeadReckoning;
     state.frameCount = frameCountRef.current;
+    state.isOnRoute = curr.isOnRoute ?? false;
+    state.matchConfidence = curr.matchConfidence ?? 0;
 
     // Throttle React state updates
     if (now - lastStateUpdateRef.current >= STATE_UPDATE_INTERVAL) {
@@ -221,15 +217,21 @@ export function useSmoothCursor(
     const now = performance.now();
 
     // Spike rejection - ignore if position jumps too far too fast
+    // Note: GPS engine already does spike detection, so this is an extra safety check
     if (currPosRef.current) {
       const timeDelta = (now - lastFixTimeRef.current) / 1000;
       if (timeDelta > 0.05 && timeDelta < 30) {
+        const currLat = currPosRef.current.snappedLat ?? currPosRef.current.lat;
+        const currLng = currPosRef.current.snappedLng ?? currPosRef.current.lng;
+        const newLat = matchedPosition.snappedLat ?? matchedPosition.lat;
+        const newLng = matchedPosition.snappedLng ?? matchedPosition.lng;
+        
         const R = 6371e3;
-        const dLat = (matchedPosition.lat - currPosRef.current.lat) * Math.PI / 180;
-        const dLng = (matchedPosition.lng - currPosRef.current.lng) * Math.PI / 180;
+        const dLat = (newLat - currLat) * Math.PI / 180;
+        const dLng = (newLng - currLng) * Math.PI / 180;
         const a = Math.sin(dLat/2) ** 2 + 
-                  Math.cos(currPosRef.current.lat * Math.PI / 180) * 
-                  Math.cos(matchedPosition.lat * Math.PI / 180) * 
+                  Math.cos(currLat * Math.PI / 180) * 
+                  Math.cos(newLat * Math.PI / 180) * 
                   Math.sin(dLng/2) ** 2;
         const distance = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
         const impliedSpeed = distance / timeDelta;
@@ -255,10 +257,15 @@ export function useSmoothCursor(
     lastFixTimeRef.current = now;
 
     // Initialize render state if needed
+    const initLat = matchedPosition.snappedLat ?? matchedPosition.lat;
+    const initLng = matchedPosition.snappedLng ?? matchedPosition.lng;
+    
     if (renderStateRef.current.lat === 0 && renderStateRef.current.lng === 0) {
-      renderStateRef.current.lat = matchedPosition.lat;
-      renderStateRef.current.lng = matchedPosition.lng;
+      renderStateRef.current.lat = initLat;
+      renderStateRef.current.lng = initLng;
       renderStateRef.current.heading = matchedPosition.heading;
+      renderStateRef.current.isOnRoute = matchedPosition.isOnRoute ?? false;
+      renderStateRef.current.matchConfidence = matchedPosition.matchConfidence ?? 0;
     }
 
     // Start animation
@@ -273,4 +280,34 @@ export function useSmoothCursor(
   }, [stopAnimation]);
 
   return renderCursor;
+}
+
+/**
+ * Helper to convert UserPosition from context to CursorPosition for useSmoothCursor
+ */
+export function toCursorPosition(
+  userPosition: {
+    lat: number;
+    lng: number;
+    heading: number | null;
+    speed: number | null;
+    snappedLat?: number;
+    snappedLng?: number;
+    isOnRoute?: boolean;
+    matchConfidence?: number;
+  } | null
+): CursorPosition | null {
+  if (!userPosition) return null;
+  
+  return {
+    lat: userPosition.lat,
+    lng: userPosition.lng,
+    heading: userPosition.heading ?? 0,
+    speed: userPosition.speed ?? 0,
+    timestamp: Date.now(),
+    snappedLat: userPosition.snappedLat,
+    snappedLng: userPosition.snappedLng,
+    isOnRoute: userPosition.isOnRoute,
+    matchConfidence: userPosition.matchConfidence,
+  };
 }
