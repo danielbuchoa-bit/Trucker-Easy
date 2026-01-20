@@ -48,16 +48,16 @@ export const SMOOTHING = {
   },
 };
 
-// === SNAP TO ROUTE CONFIGURATION ===
+// === [C] FIX: SNAP TO ROUTE CONFIGURATION - increased tolerances ===
 export const SNAP = {
-  /** Maximum distance to consider snapping (meters) */
-  MAX_DISTANCE_M: 45,
-  /** Distance at which snap is 100% (meters) */
-  HARD_DISTANCE_M: 12,
-  /** Exponential curve for snap blending */
-  BLEND_CURVE: 2.0,
-  /** Minimum confidence to apply snap (0-1) */
-  MIN_CONFIDENCE: 0.6,
+  /** Maximum distance to consider snapping (meters) - increased from 45 */
+  MAX_DISTANCE_M: 80,
+  /** Distance at which snap is 100% (meters) - increased from 12 */
+  HARD_DISTANCE_M: 20,
+  /** Exponential curve for snap blending - smoother curve */
+  BLEND_CURVE: 1.8,
+  /** Minimum confidence to apply snap (0-1) - lowered for better coverage */
+  MIN_CONFIDENCE: 0.45,
 };
 
 // === MAP MATCHING CONFIGURATION ===
@@ -106,18 +106,20 @@ export const KALMAN = {
   R_MAX: 0.0001,
 };
 
-// === SPIKE DETECTION ===
+// === [A] FIX: SPIKE DETECTION - tuned for truck navigation ===
 export const SPIKE = {
-  /** Maximum implied speed before rejection (m/s) */
-  MAX_SPEED_MPS: 35, // ~126 km/h
-  /** Maximum acceleration before rejection (m/s²) */
-  MAX_ACCELERATION: 5.0,
-  /** Maximum distance from median (meters) */
-  MAX_MEDIAN_DEVIATION_M: 100,
+  /** Maximum implied speed before rejection (m/s) - 35 = 126 km/h, realistic for trucks */
+  MAX_SPEED_MPS: 35,
+  /** Maximum acceleration before rejection (m/s²) - trucks accelerate slowly */
+  MAX_ACCELERATION: 4.0,
+  /** Maximum distance from median (meters) - increased for GPS inaccuracy */
+  MAX_MEDIAN_DEVIATION_M: 120,
   /** Minimum time between fixes to evaluate (seconds) */
   MIN_TIME_DELTA_S: 0.1,
   /** Maximum time between fixes (seconds) */
   MAX_TIME_DELTA_S: 30,
+  /** Maximum consecutive rejects before freezing cursor */
+  MAX_CONSECUTIVE_REJECTS: 3,
 };
 
 // === DEAD RECKONING ===
@@ -130,18 +132,18 @@ export const DEAD_RECKONING = {
   CONFIDENCE_DECAY: 0.15,
 };
 
-// === HMM MAP MATCHING ===
+// === [C] FIX: HMM MAP MATCHING - increased tolerances ===
 export const HMM = {
-  /** Standard deviation for emission probability (meters) */
-  SIGMA_Z: 15,
-  /** Beta parameter for transition probability */
-  BETA: 5,
-  /** Maximum candidates per observation */
-  MAX_CANDIDATES: 8,
+  /** Standard deviation for emission probability (meters) - increased for GPS error */
+  SIGMA_Z: 25,
+  /** Beta parameter for transition probability - more lenient */
+  BETA: 8,
+  /** Maximum candidates per observation - more options */
+  MAX_CANDIDATES: 10,
   /** Minimum transition probability */
   MIN_TRANSITION_PROB: 0.001,
-  /** History window size for Viterbi */
-  WINDOW_SIZE: 10,
+  /** History window size for Viterbi - longer history */
+  WINDOW_SIZE: 12,
 };
 
 // === UPDATE INTERVALS ===

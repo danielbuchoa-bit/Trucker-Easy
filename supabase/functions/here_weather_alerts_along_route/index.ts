@@ -6,9 +6,10 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Simple in-memory cache (10 minutes TTL)
-const cache = new Map<string, { data: any; timestamp: number }>();
-const CACHE_TTL_MS = 10 * 60 * 1000;
+// === [F] FIX: Adaptive cache with location-based invalidation ===
+const cache = new Map<string, { data: any; timestamp: number; centerLat: number; centerLng: number }>();
+const CACHE_TTL_MS = 5 * 60 * 1000; // Reduced from 10min to 5min for fresher data
+const CACHE_DISTANCE_INVALIDATION_M = 50000; // Invalidate if moved 50km from cache center
 
 interface WeatherRequest {
   routePolyline: string;
@@ -156,26 +157,54 @@ serve(async (req) => {
 
     console.log('[WEATHER] Request for polyline length:', routePolyline.length);
 
-    // Check cache
+    // === [F] FIX: Check cache with location-based invalidation ===
     const cacheKey = `${hashPolyline(routePolyline)}_${language}`;
     const cached = cache.get(cacheKey);
-    if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
-      console.log('[WEATHER] Returning cached alerts');
-      return new Response(
-        JSON.stringify({ ...cached.data, cached: true }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    // Decode polyline and sample points
-    const allCoords = decodeFlexiblePolyline(routePolyline);
+    const cacheAge = cached ? Date.now() - cached.timestamp : null;
     
-    // Validate decoded coordinates
+    // Calculate route center for distance check
+    const allCoords = decodeFlexiblePolyline(routePolyline);
     const validCoords = allCoords.filter(c => 
       c.lat >= -90 && c.lat <= 90 && 
       c.lng >= -180 && c.lng <= 180
     );
+    const routeCenter = validCoords.length > 0 
+      ? validCoords[Math.floor(validCoords.length / 2)] 
+      : null;
     
+    // Check if cache is still valid (time + location)
+    let cacheValid = false;
+    if (cached && cacheAge !== null && cacheAge < CACHE_TTL_MS) {
+      if (routeCenter && cached.centerLat && cached.centerLng) {
+        // Calculate distance from cache center
+        const R = 6371000;
+        const dLat = (routeCenter.lat - cached.centerLat) * Math.PI / 180;
+        const dLng = (routeCenter.lng - cached.centerLng) * Math.PI / 180;
+        const a = Math.sin(dLat/2) ** 2 + 
+                  Math.cos(cached.centerLat * Math.PI / 180) * 
+                  Math.cos(routeCenter.lat * Math.PI / 180) * 
+                  Math.sin(dLng/2) ** 2;
+        const distance = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        
+        if (distance < CACHE_DISTANCE_INVALIDATION_M) {
+          cacheValid = true;
+        } else {
+          console.log(`[WEATHER] Cache invalidated: moved ${Math.round(distance/1000)}km from center`);
+        }
+      } else {
+        cacheValid = true; // No location to compare, use time-based only
+      }
+    }
+    
+    if (cacheValid && cached) {
+      console.log(`[WEATHER] Returning cached alerts (age: ${Math.round((cacheAge || 0) / 1000)}s)`);
+      return new Response(
+        JSON.stringify({ ...cached.data, cached: true, cacheAge: Math.round((cacheAge || 0) / 1000) }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Use pre-calculated coords from cache check
     console.log('[WEATHER] Valid coordinates:', validCoords.length, 'of', allCoords.length);
     
     if (validCoords.length === 0) {
@@ -240,8 +269,13 @@ serve(async (req) => {
       pointsChecked: samplePoints.length,
     };
 
-    // Store in cache
-    cache.set(cacheKey, { data: result, timestamp: Date.now() });
+    // === [F] FIX: Store cache with center location for invalidation ===
+    cache.set(cacheKey, { 
+      data: result, 
+      timestamp: Date.now(),
+      centerLat: routeCenter?.lat || 0,
+      centerLng: routeCenter?.lng || 0,
+    });
     console.log('[WEATHER] Processed', result.count, 'alerts from', result.pointsChecked, 'points');
 
     return new Response(

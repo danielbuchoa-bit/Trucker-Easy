@@ -1,20 +1,30 @@
 import { useRef, useCallback, useEffect, useState } from 'react';
 import type { NavigationOutput } from '@/hooks/useGpsNavigationEngine';
-import { DEAD_RECKONING } from '@/lib/gps';
+import { DEAD_RECKONING, SPIKE } from '@/lib/gps';
 import { projectPosition } from '@/lib/gps/geometry';
 
 // === CONFIGURATION ===
 const TARGET_FPS = 60;
 const FRAME_INTERVAL_MS = 1000 / TARGET_FPS; // ~16.67ms
 
-// Interpolation settings
-const INTERPOLATION_DURATION_MS = 600; // Reduced for GPS engine (already smoothed)
+// === [A] FIX: Reduced interpolation for lower latency ===
+const INTERPOLATION_DURATION_MS = 350; // Reduced from 600ms for lower latency
 const DEAD_RECKONING_MAX_MS = DEAD_RECKONING.MAX_DURATION_MS;
 const MIN_SPEED_FOR_DR_MPS = DEAD_RECKONING.MIN_SPEED_MPS;
 
-// Smoothing - reduced since GPS engine already provides smooth data
-const POSITION_LERP_SPEED = 0.18; // Per-frame position lerp (higher = faster response)
-const HEADING_LERP_SPEED = 0.2; // Per-frame heading lerp
+// === [D] FIX: Increased LERP speeds for faster response ===
+const POSITION_LERP_SPEED = 0.28; // Increased from 0.18 (faster response)
+const HEADING_LERP_SPEED = 0.30; // Increased from 0.2 (faster response)
+
+// === [A] SPIKE REJECTION CONFIG - tuned for trucks ===
+// Max implied speed: 35 m/s = 126 km/h (from constants.ts SPIKE.MAX_SPEED_MPS)
+// Consecutive rejects before freeze: 3
+const SPIKE_CONFIG = {
+  MAX_SPEED_MPS: SPIKE.MAX_SPEED_MPS, // 35 m/s = 126 km/h
+  MAX_CONSECUTIVE_REJECTS: 3, // Don't freeze until 3 consecutive spikes
+  MIN_TIME_DELTA_S: 0.1, // Ignore if time delta too small
+  RECOVERY_AFTER_REJECT: true, // Use interpolation after reject instead of freeze
+};
 
 export interface CursorPosition {
   lat: number;
@@ -41,7 +51,8 @@ export interface RenderCursor {
   matchConfidence: number;
   // Debug info
   spikeRejectCount: number;
-  lastSpikeRejected: { distance: number; speed: string } | null;
+  lastSpikeRejected: { distance: number; speed: string; reason: string } | null;
+  consecutiveRejects: number;
 }
 
 // Ease function for smooth deceleration
@@ -65,7 +76,9 @@ function lerpAngle(a: number, b: number, t: number): number {
 /**
  * High-performance cursor animation hook
  * 
- * Now integrates with GPS Navigation Engine for enhanced smoothing.
+ * [A] FIX: Improved spike rejection - doesn't freeze on single reject
+ * [D] FIX: Reduced latency with faster LERP and shorter interpolation
+ * 
  * Takes snapped position from engine and provides silky-smooth 60fps animation.
  */
 export function useSmoothCursor(
@@ -96,15 +109,18 @@ export function useSmoothCursor(
     matchConfidence: 0,
     spikeRejectCount: 0,
     lastSpikeRejected: null,
+    consecutiveRejects: 0,
   });
   
   // Throttle React state updates to ~30fps
   const lastStateUpdateRef = useRef<number>(0);
   const STATE_UPDATE_INTERVAL = 33; // ~30fps
   
-  // Spike tracking
+  // === [A] FIX: Spike tracking with consecutive count ===
   const spikeRejectCountRef = useRef<number>(0);
-  const lastSpikeRejectedRef = useRef<{ distance: number; speed: string } | null>(null);
+  const consecutiveRejectsRef = useRef<number>(0);
+  const lastSpikeRejectedRef = useRef<{ distance: number; speed: string; reason: string } | null>(null);
+  const lastGoodPositionRef = useRef<CursorPosition | null>(null);
 
   // Animation loop - runs at 60fps
   const animationLoop = useCallback(() => {
@@ -215,30 +231,33 @@ export function useSmoothCursor(
     }
   }, []);
 
-  // Process new matched position
+  // === [A] FIX: Process new matched position with improved spike handling ===
   useEffect(() => {
     if (!enabled || !matchedPosition) {
       stopAnimation();
       setRenderCursor(null);
       prevPosRef.current = null;
       currPosRef.current = null;
+      consecutiveRejectsRef.current = 0;
       return;
     }
 
     const now = performance.now();
+    let shouldAccept = true;
+    let rejectReason = '';
 
-    // Spike rejection - ignore if position jumps too far too fast
-    // Note: GPS engine already does spike detection, so this is an extra safety check
-    // IMPORTANT: Be more permissive to avoid blocking valid GPS updates
+    // === [A] FIX: Improved spike rejection with consecutive count ===
     if (currPosRef.current) {
       const timeDelta = (now - lastFixTimeRef.current) / 1000;
-      // Only check if we have a reasonable time delta (not first update, not too old)
-      if (timeDelta > 0.1 && timeDelta < 10) {
+      
+      // Only check if time delta is reasonable
+      if (timeDelta > SPIKE_CONFIG.MIN_TIME_DELTA_S && timeDelta < 30) {
         const currLat = currPosRef.current.snappedLat ?? currPosRef.current.lat;
         const currLng = currPosRef.current.snappedLng ?? currPosRef.current.lng;
         const newLat = matchedPosition.snappedLat ?? matchedPosition.lat;
         const newLng = matchedPosition.snappedLng ?? matchedPosition.lng;
         
+        // Haversine distance
         const R = 6371e3;
         const dLat = (newLat - currLat) * Math.PI / 180;
         const dLng = (newLng - currLng) * Math.PI / 180;
@@ -249,23 +268,64 @@ export function useSmoothCursor(
         const distance = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
         const impliedSpeed = distance / timeDelta;
         
-        // Reject only if implied speed > 400 km/h (~111 m/s) - very permissive
-        // This catches only truly impossible jumps while allowing fast highway driving
-        // and GPS corrections after tunnel exits, etc.
-        if (impliedSpeed > 111) {
+        // Check against truck-realistic threshold (35 m/s = 126 km/h)
+        if (impliedSpeed > SPIKE_CONFIG.MAX_SPEED_MPS) {
+          consecutiveRejectsRef.current++;
           spikeRejectCountRef.current++;
+          rejectReason = `impliedSpeed=${Math.round(impliedSpeed * 3.6)}km/h > ${Math.round(SPIKE_CONFIG.MAX_SPEED_MPS * 3.6)}km/h`;
+          
           lastSpikeRejectedRef.current = { 
             distance: Math.round(distance), 
-            speed: Math.round(impliedSpeed * 3.6) + ' km/h' 
+            speed: Math.round(impliedSpeed * 3.6) + ' km/h',
+            reason: rejectReason,
           };
-          console.log('[CURSOR] Spike rejected:', lastSpikeRejectedRef.current);
           
-          // Update render state with spike info
-          renderStateRef.current.spikeRejectCount = spikeRejectCountRef.current;
-          renderStateRef.current.lastSpikeRejected = lastSpikeRejectedRef.current;
-          return;
+          console.log('[CURSOR] Spike detected:', {
+            ...lastSpikeRejectedRef.current,
+            consecutiveRejects: consecutiveRejectsRef.current,
+            timeDelta: timeDelta.toFixed(2) + 's',
+          });
+          
+          // === [A] FIX: Only freeze if MAX_CONSECUTIVE_REJECTS reached ===
+          if (consecutiveRejectsRef.current >= SPIKE_CONFIG.MAX_CONSECUTIVE_REJECTS) {
+            shouldAccept = false;
+            console.log('[CURSOR] ❌ Frozen: too many consecutive spikes');
+          } else if (SPIKE_CONFIG.RECOVERY_AFTER_REJECT && lastGoodPositionRef.current) {
+            // Use dead reckoning from last good position instead of freezing
+            const drTime = now - lastFixTimeRef.current;
+            if (drTime < DEAD_RECKONING_MAX_MS && lastGoodPositionRef.current.speed > MIN_SPEED_FOR_DR_MPS) {
+              const projected = projectPosition(
+                lastGoodPositionRef.current.snappedLat ?? lastGoodPositionRef.current.lat,
+                lastGoodPositionRef.current.snappedLng ?? lastGoodPositionRef.current.lng,
+                lastGoodPositionRef.current.speed,
+                lastGoodPositionRef.current.heading,
+                drTime
+              );
+              // Accept with interpolated position
+              currPosRef.current = {
+                ...matchedPosition,
+                lat: projected.lat,
+                lng: projected.lng,
+                snappedLat: projected.lat,
+                snappedLng: projected.lng,
+              };
+              console.log('[CURSOR] 🔄 Using dead reckoning after spike reject');
+            }
+          }
+        } else {
+          // Good position - reset consecutive counter
+          consecutiveRejectsRef.current = 0;
         }
       }
+    }
+
+    // Update render state with spike info
+    renderStateRef.current.spikeRejectCount = spikeRejectCountRef.current;
+    renderStateRef.current.lastSpikeRejected = lastSpikeRejectedRef.current;
+    renderStateRef.current.consecutiveRejects = consecutiveRejectsRef.current;
+
+    if (!shouldAccept) {
+      return; // Skip this position but don't stop animation
     }
 
     // Store previous position for interpolation
@@ -273,8 +333,9 @@ export function useSmoothCursor(
       prevPosRef.current = { ...currPosRef.current };
     }
 
-    // Update current position
+    // Update current position and save as last good
     currPosRef.current = { ...matchedPosition };
+    lastGoodPositionRef.current = { ...matchedPosition };
     lastFixTimeRef.current = now;
 
     // Initialize render state if needed

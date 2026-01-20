@@ -1,5 +1,6 @@
 import React from 'react';
 
+// === [A][D][E] UPDATED: Enhanced debug info for all fixes ===
 interface CursorDebugInfo {
   // Raw GPS
   rawLat: number | null;
@@ -22,9 +23,10 @@ interface CursorDebugInfo {
   isDeadReckoning: boolean;
   frameCount: number;
   
-  // Spike detection
-  lastSpikeRejected: { distance: number; speed: string } | null;
+  // [A] FIX: Enhanced spike detection info
+  lastSpikeRejected: { distance: number; speed: string; reason?: string } | null;
   spikeRejectCount: number;
+  consecutiveRejects?: number;
   
   // Timestamps
   lastGpsUpdate: number;
@@ -40,21 +42,35 @@ export default function CursorDebugPanel({ debug, visible }: CursorDebugPanelPro
   if (!visible) return null;
 
   const speedMph = debug.rawSpeed !== null ? (debug.rawSpeed * 2.237).toFixed(1) : '—';
+  const speedKmh = debug.rawSpeed !== null ? (debug.rawSpeed * 3.6).toFixed(1) : '—';
   const timeSinceGps = debug.lastGpsUpdate > 0 
     ? ((Date.now() - debug.lastGpsUpdate) / 1000).toFixed(1) + 's ago'
     : '—';
 
+  // Calculate stats
+  const positionDelta = debug.rawLat && debug.snappedLat
+    ? Math.abs(debug.rawLat - debug.snappedLat) * 111000 // rough meters
+    : 0;
+
   return (
     <div className="absolute top-36 left-2 right-2 z-30 bg-black/90 text-white text-xs p-3 rounded-lg font-mono space-y-2 max-h-[50vh] overflow-y-auto">
-      <div className="font-bold text-cyan-400 mb-2">🔧 CURSOR & ROUTE DEBUG</div>
+      <div className="font-bold text-cyan-400 mb-2">🔧 CURSOR & ROUTE DEBUG v2</div>
       
-      {/* Spike Rejection Warning */}
+      {/* [A] FIX: Enhanced Spike Rejection Warning */}
       {debug.spikeRejectCount > 0 && (
         <div className="bg-red-900/50 border border-red-500 rounded p-2 mb-2">
-          <div className="text-red-400 font-bold">⚠️ GPS SPIKES REJECTED: {debug.spikeRejectCount}</div>
+          <div className="text-red-400 font-bold">
+            ⚠️ SPIKES: {debug.spikeRejectCount} total 
+            {debug.consecutiveRejects !== undefined && debug.consecutiveRejects > 0 && (
+              <span className="text-yellow-400 ml-2">({debug.consecutiveRejects} consecutive)</span>
+            )}
+          </div>
           {debug.lastSpikeRejected && (
             <div className="text-red-300 text-xs">
               Last: {debug.lastSpikeRejected.distance}m @ {debug.lastSpikeRejected.speed}
+              {debug.lastSpikeRejected.reason && (
+                <span className="text-gray-400 block">Reason: {debug.lastSpikeRejected.reason}</span>
+              )}
             </div>
           )}
         </div>

@@ -414,29 +414,62 @@ serve(async (req) => {
       return false;
     }
 
-    function isTruckStopPoi(item: any): boolean {
+    // === [B] FIX: Relaxed truck stop detection ===
+    // Accept POIs based on HERE category OR brand match
+    function isTruckStopPoi(item: any): { valid: boolean; reason: string } {
       const name = (item.title || '').toLowerCase();
       const chainName = (item.chains?.[0]?.name || '').toLowerCase();
       
       // First check exclusions - if excluded, it's NOT a truck stop
       if (isExcludedPlace(name, chainName)) {
-        return false;
+        return { valid: false, reason: 'excluded_keyword' };
       }
       
-      // STRICT FILTER: Only accept if name/chain matches a KNOWN truck stop brand
-      // Do NOT rely on HERE category alone - it's too broad
-      const searchText = `${name} ${chainName}`;
-      
-      for (const brand of TRUCK_STOP_BRANDS) {
-        if (searchText.includes(brand)) {
-          console.log(`[HERE_BROWSE_POIS] ✅ Matched brand "${brand}": ${item.title}`);
-          return true;
+      // === [B] FIX: Accept if HERE says it's a truck stop (category 7850) ===
+      for (const cat of item.categories || []) {
+        const catId = cat.id || '';
+        if (catId.includes('7850')) {
+          console.log(`[HERE_BROWSE_POIS] ✅ HERE category truck_stop: ${item.title}`);
+          return { valid: true, reason: 'here_category_7850' };
         }
       }
       
-      // Reject everything else - even if HERE says it's a truck stop
-      console.log(`[HERE_BROWSE_POIS] ⛔ No brand match, rejecting: ${item.title}`);
-      return false;
+      // Also accept if it's a fueling station with truck services
+      const hasTruckServices = (item.title || '').toLowerCase().includes('diesel') ||
+                               (item.contacts?.phone?.[0]?.value || '').includes('truck') ||
+                               (item.address?.label || '').toLowerCase().includes('truck');
+      
+      if (hasTruckServices) {
+        console.log(`[HERE_BROWSE_POIS] ✅ Has truck services: ${item.title}`);
+        return { valid: true, reason: 'truck_services_detected' };
+      }
+      
+      // Check brand match
+      const searchText = `${name} ${chainName}`;
+      for (const brand of TRUCK_STOP_BRANDS) {
+        if (searchText.includes(brand)) {
+          console.log(`[HERE_BROWSE_POIS] ✅ Matched brand "${brand}": ${item.title}`);
+          return { valid: true, reason: `brand_${brand}` };
+        }
+      }
+      
+      // === [B] FIX: Accept gas stations that are NOT car-only ===
+      // Check if it's a major fuel station (Chevron, Shell, etc.) with diesel
+      for (const cat of item.categories || []) {
+        const catId = cat.id || '';
+        // 700-7600-0116 = Petrol/Gas Station, 700-7600-0117 = Truck Service
+        if (catId.includes('7600')) {
+          // Check if name suggests truck-friendly (diesel, travel center, etc.)
+          if (name.includes('diesel') || name.includes('travel') || name.includes('plaza')) {
+            console.log(`[HERE_BROWSE_POIS] ✅ Fuel station with truck features: ${item.title}`);
+            return { valid: true, reason: 'fuel_with_truck_features' };
+          }
+        }
+      }
+      
+      // Reject if no match
+      console.log(`[HERE_BROWSE_POIS] ⛔ No match: ${item.title}`);
+      return { valid: false, reason: 'no_match' };
     }
 
     let results = items.map((item: any) => {
@@ -445,6 +478,7 @@ serve(async (req) => {
       const distance = haversineDistance(lat, lng, poiLat, poiLng);
       const bearingToPoi = calculateBearing(lat, lng, poiLat, poiLng);
       const chainName = item.chains?.[0]?.name || null;
+      const truckStopCheck = isTruckStopPoi(item);
 
       return {
         id: item.id,
@@ -459,7 +493,8 @@ serve(async (req) => {
         chainName,
         openingHours: item.openingHours?.[0]?.text || null,
         contacts: item.contacts?.[0]?.phone?.[0]?.value || null,
-        _isTruckStop: isTruckStopPoi(item), // Internal flag for filtering
+        _isTruckStop: truckStopCheck.valid, // Internal flag for filtering
+        _truckStopReason: truckStopCheck.reason, // Debug: why accepted/rejected
         _isExcluded: isExcludedPlace(item.title, chainName), // Track exclusions
       };
     });
