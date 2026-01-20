@@ -23,6 +23,7 @@ import LocationContextBar from './LocationContextBar';
 import NearbyPoisOverlay from './NearbyPoisOverlay';
 import ArrivalPrompt from './ArrivalPrompt';
 import ArrivalDebugPanel from './ArrivalDebugPanel';
+import CursorDebugPanel, { type CursorDebugInfo } from './CursorDebugPanel';
 import LaneGuidancePanel from './LaneGuidancePanel';
 import SpeedAlertOverlay from './SpeedAlertOverlay';
 import SpeedAlertDetailsSheet from './SpeedAlertDetailsSheet';
@@ -1140,6 +1141,41 @@ const ActiveNavigationView = () => {
       {/* Arrival Detection Debug */}
       <ArrivalDebugPanel
         debug={arrival.debugInfo}
+        visible={showDebug}
+      />
+      
+      {/* Cursor & Route Debug Panel */}
+      <CursorDebugPanel
+        debug={{
+          // Raw GPS
+          rawLat: userPosition?.lat ?? null,
+          rawLng: userPosition?.lng ?? null,
+          rawHeading: userPosition?.heading ?? null,
+          rawSpeed: userPosition?.speed ?? null,
+          rawAccuracy: userPosition?.accuracy ?? null,
+          
+          // Matched position
+          snappedLat: matchedPosition?.snappedLat ?? null,
+          snappedLng: matchedPosition?.snappedLng ?? null,
+          matchConfidence: matchedPosition?.snapStrength ?? 0,
+          isOnRoute: matchedPosition?.isOnRoute ?? false,
+          
+          // Render cursor
+          renderLat: renderCursor?.lat ?? null,
+          renderLng: renderCursor?.lng ?? null,
+          renderHeading: renderCursor?.heading ?? 0,
+          isAnimating: renderCursor?.isAnimating ?? false,
+          isDeadReckoning: renderCursor?.isDeadReckoning ?? false,
+          frameCount: renderCursor?.frameCount ?? 0,
+          
+          // Spike detection
+          lastSpikeRejected: renderCursor?.lastSpikeRejected ?? null,
+          spikeRejectCount: renderCursor?.spikeRejectCount ?? 0,
+          
+          // Timestamps
+          lastGpsUpdate: matchedPosition?.timestamp ?? 0,
+          lastRenderUpdate: Date.now(),
+        }}
         visible={showDebug}
       />
 

@@ -39,6 +39,9 @@ export interface RenderCursor {
   // Enhanced rendering data
   isOnRoute: boolean;
   matchConfidence: number;
+  // Debug info
+  spikeRejectCount: number;
+  lastSpikeRejected: { distance: number; speed: string } | null;
 }
 
 // Ease function for smooth deceleration
@@ -91,11 +94,17 @@ export function useSmoothCursor(
     frameCount: 0,
     isOnRoute: false,
     matchConfidence: 0,
+    spikeRejectCount: 0,
+    lastSpikeRejected: null,
   });
   
   // Throttle React state updates to ~30fps
   const lastStateUpdateRef = useRef<number>(0);
   const STATE_UPDATE_INTERVAL = 33; // ~30fps
+  
+  // Spike tracking
+  const spikeRejectCountRef = useRef<number>(0);
+  const lastSpikeRejectedRef = useRef<{ distance: number; speed: string } | null>(null);
 
   // Animation loop - runs at 60fps
   const animationLoop = useCallback(() => {
@@ -178,6 +187,8 @@ export function useSmoothCursor(
     state.frameCount = frameCountRef.current;
     state.isOnRoute = curr.isOnRoute ?? false;
     state.matchConfidence = curr.matchConfidence ?? 0;
+    state.spikeRejectCount = spikeRejectCountRef.current;
+    state.lastSpikeRejected = lastSpikeRejectedRef.current;
 
     // Throttle React state updates
     if (now - lastStateUpdateRef.current >= STATE_UPDATE_INTERVAL) {
@@ -218,9 +229,11 @@ export function useSmoothCursor(
 
     // Spike rejection - ignore if position jumps too far too fast
     // Note: GPS engine already does spike detection, so this is an extra safety check
+    // IMPORTANT: Be more permissive to avoid blocking valid GPS updates
     if (currPosRef.current) {
       const timeDelta = (now - lastFixTimeRef.current) / 1000;
-      if (timeDelta > 0.05 && timeDelta < 30) {
+      // Only check if we have a reasonable time delta (not first update, not too old)
+      if (timeDelta > 0.1 && timeDelta < 10) {
         const currLat = currPosRef.current.snappedLat ?? currPosRef.current.lat;
         const currLng = currPosRef.current.snappedLng ?? currPosRef.current.lng;
         const newLat = matchedPosition.snappedLat ?? matchedPosition.lat;
@@ -236,12 +249,20 @@ export function useSmoothCursor(
         const distance = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
         const impliedSpeed = distance / timeDelta;
         
-        // Reject if implied speed > 200 km/h (~55 m/s)
-        if (impliedSpeed > 55) {
-          console.log('[CURSOR] Spike rejected:', { 
+        // Reject only if implied speed > 400 km/h (~111 m/s) - very permissive
+        // This catches only truly impossible jumps while allowing fast highway driving
+        // and GPS corrections after tunnel exits, etc.
+        if (impliedSpeed > 111) {
+          spikeRejectCountRef.current++;
+          lastSpikeRejectedRef.current = { 
             distance: Math.round(distance), 
             speed: Math.round(impliedSpeed * 3.6) + ' km/h' 
-          });
+          };
+          console.log('[CURSOR] Spike rejected:', lastSpikeRejectedRef.current);
+          
+          // Update render state with spike info
+          renderStateRef.current.spikeRejectCount = spikeRejectCountRef.current;
+          renderStateRef.current.lastSpikeRejected = lastSpikeRejectedRef.current;
           return;
         }
       }
