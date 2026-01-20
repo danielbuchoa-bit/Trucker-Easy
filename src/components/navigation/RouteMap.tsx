@@ -434,6 +434,47 @@ const RouteMap = ({ routePolyline, originLat, originLng, destLat, destLng, speed
               'line-opacity': 0.6,
             },
           });
+
+          // Create arrow icon for direction indicators
+          if (!map.current.hasImage('route-arrow')) {
+            const arrowSvg = `
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+                <path d="M12 4 L20 12 L16 12 L16 20 L8 20 L8 12 L4 12 Z" 
+                      fill="white" 
+                      stroke="rgba(0,0,0,0.3)" 
+                      stroke-width="1"
+                      transform="rotate(180 12 12)"/>
+              </svg>
+            `;
+            const img = new Image(24, 24);
+            img.onload = () => {
+              if (map.current && !map.current.hasImage('route-arrow')) {
+                map.current.addImage('route-arrow', img, { sdf: false });
+                // Add arrows layer after image is loaded
+                if (map.current && !map.current.getLayer('route-arrows')) {
+                  map.current.addLayer({
+                    id: 'route-arrows',
+                    type: 'symbol',
+                    source: 'route',
+                    layout: {
+                      'symbol-placement': 'line',
+                      'symbol-spacing': 100,
+                      'icon-image': 'route-arrow',
+                      'icon-size': 0.7,
+                      'icon-allow-overlap': true,
+                      'icon-ignore-placement': true,
+                      'icon-rotation-alignment': 'map',
+                      'icon-pitch-alignment': 'map',
+                    },
+                    paint: {
+                      'icon-opacity': 0.85,
+                    },
+                  });
+                }
+              }
+            };
+            img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(arrowSvg);
+          }
         }
 
         // Fit bounds to route
