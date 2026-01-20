@@ -706,27 +706,29 @@ const ActiveNavigationView = () => {
       lastAppliedBearingRef.current = displayHeading;
     }
 
-    // Update marker position and rotation at high frequency for smooth animation
+    // Update marker position at high frequency for smooth animation
+    // NOTE: In course-up mode, the MAP rotates to match heading, so the cursor
+    // should always point UP (rotation=0). Setting rotation=heading would cause
+    // double-rotation and make the cursor point sideways.
     if (now - markerUpdateRef.current >= MARKER_UPDATE_INTERVAL) {
       markerUpdateRef.current = now;
       
       if (userMarker.current) {
         userMarker.current.setLngLat([displayLng, displayLat]);
-        // Update marker rotation to match heading (cursor always points in direction of travel)
-        const rotation = displayHeading ?? lastAppliedBearingRef.current;
-        userMarker.current.setRotation(rotation);
+        // Cursor always points UP in course-up mode - map rotation handles direction
+        userMarker.current.setRotation(0);
       } else if (map.current) {
         const el = createTruckCursorElement(52);
         el.style.pointerEvents = 'none';
 
         userMarker.current = new mapboxgl.Marker({
           element: el,
-          rotationAlignment: 'map', // Rotate with the map bearing
+          rotationAlignment: 'map', // Marker stays fixed relative to map (points up)
           pitchAlignment: 'map',
           anchor: 'center',
         })
           .setLngLat([displayLng, displayLat])
-          .setRotation(displayHeading ?? 0)
+          .setRotation(0) // Always 0 - cursor points UP, map rotates to show direction
           .addTo(map.current);
       }
     }
