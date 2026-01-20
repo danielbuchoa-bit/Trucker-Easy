@@ -768,28 +768,7 @@ const ActiveNavigationView = () => {
         })}
       />
 
-      {/* Speed Alert Overlay - Camera warnings, enforcement zones */}
-      <SpeedAlertOverlay
-        criticalAlert={speedAlerts.criticalAlert}
-        warningAlerts={speedAlerts.warningAlerts}
-        currentSpeedMph={speedMph ?? 0}
-        onDismiss={speedAlerts.dismissAlert}
-      />
-
-      {/* Traffic Light Overlay - Shows red light cameras with distance */}
-      <TrafficLightOverlay alerts={speedAlerts.alerts} />
-
-      {/* Report Alert Button */}
-      <ReportAlertButton onReport={speedAlerts.reportAlert} />
-
-      {/* Speed Alert Details Sheet */}
-      <SpeedAlertDetailsSheet
-        alert={selectedSpeedAlert}
-        open={speedAlertDetailsOpen}
-        onOpenChange={setSpeedAlertDetailsOpen}
-        onConfirm={speedAlerts.confirmAlert}
-        onDeny={speedAlerts.denyAlert}
-      />
+      {/* Camera monitoring removed per user request */}
 
       {/* Speed Indicator + Engine Indicator - Bottom Left */}
       <div className="absolute bottom-24 left-4 z-30 flex flex-col gap-2">
