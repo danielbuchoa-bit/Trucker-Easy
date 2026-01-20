@@ -470,10 +470,56 @@ const ActiveNavigationView = () => {
               'line-opacity': ROUTE_STYLES['default'].highlightOpacity,
             },
           });
+          
+          // Direction arrows layer - chevrons along the route
+          map.current.addLayer({
+            id: 'nav-route-arrows',
+            type: 'symbol',
+            source: 'nav-route',
+            layout: {
+              'symbol-placement': 'line',
+              'symbol-spacing': [
+                'interpolate', ['linear'], ['zoom'],
+                10, 120, 14, 80, 18, 50,
+              ],
+              'icon-image': 'route-arrow',
+              'icon-size': [
+                'interpolate', ['linear'], ['zoom'],
+                10, 0.5, 14, 0.7, 18, 0.9,
+              ],
+              'icon-allow-overlap': true,
+              'icon-ignore-placement': true,
+              'icon-rotation-alignment': 'map',
+              'icon-pitch-alignment': 'map',
+            },
+            paint: {
+              'icon-opacity': 0.85,
+            },
+          });
         }
       };
 
       map.current.once('load', () => {
+        // Create custom arrow icon for direction indicators
+        if (map.current && !map.current.hasImage('route-arrow')) {
+          const arrowSvg = `
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+              <path d="M12 4 L20 12 L16 12 L16 20 L8 20 L8 12 L4 12 Z" 
+                    fill="white" 
+                    stroke="rgba(0,0,0,0.3)" 
+                    stroke-width="1"
+                    transform="rotate(180 12 12)"/>
+            </svg>
+          `;
+          const img = new Image(24, 24);
+          img.onload = () => {
+            if (map.current && !map.current.hasImage('route-arrow')) {
+              map.current.addImage('route-arrow', img, { sdf: false });
+            }
+          };
+          img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(arrowSvg);
+        }
+        
         markReady();
         drawInitialRoute();
       });
@@ -555,6 +601,40 @@ const ActiveNavigationView = () => {
       map.current.setPaintProperty('nav-route-highlight', 'line-opacity', config.highlightOpacity);
     }
   }, [routeStyle, routeStyleConfig, mapReady]);
+
+  // Animate route arrows with pulsing opacity
+  const arrowAnimationRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!map.current || !mapReady) return;
+    
+    let startTime = Date.now();
+    const animate = () => {
+      if (!map.current || !map.current.getLayer('nav-route-arrows')) {
+        arrowAnimationRef.current = requestAnimationFrame(animate);
+        return;
+      }
+      
+      const elapsed = Date.now() - startTime;
+      // Smooth sine wave animation: opacity oscillates between 0.5 and 1.0
+      const opacity = 0.5 + 0.5 * Math.sin(elapsed / 800 * Math.PI);
+      
+      try {
+        map.current.setPaintProperty('nav-route-arrows', 'icon-opacity', opacity);
+      } catch (e) {
+        // Layer may not exist yet, ignore
+      }
+      
+      arrowAnimationRef.current = requestAnimationFrame(animate);
+    };
+    
+    arrowAnimationRef.current = requestAnimationFrame(animate);
+    
+    return () => {
+      if (arrowAnimationRef.current) {
+        cancelAnimationFrame(arrowAnimationRef.current);
+      }
+    };
+  }, [mapReady]);
 
   // Update user marker & camera with smooth cursor animation
   // Use refs to avoid re-render triggers from animation
@@ -936,6 +1016,28 @@ const ActiveNavigationView = () => {
                         'line-opacity': config.highlightOpacity,
                       },
                     });
+                    
+                    // Direction arrows layer
+                    if (map.current.hasImage('route-arrow')) {
+                      map.current.addLayer({
+                        id: 'nav-route-arrows',
+                        type: 'symbol',
+                        source: 'nav-route',
+                        layout: {
+                          'symbol-placement': 'line',
+                          'symbol-spacing': ['interpolate', ['linear'], ['zoom'], 10, 120, 14, 80, 18, 50],
+                          'icon-image': 'route-arrow',
+                          'icon-size': ['interpolate', ['linear'], ['zoom'], 10, 0.5, 14, 0.7, 18, 0.9],
+                          'icon-allow-overlap': true,
+                          'icon-ignore-placement': true,
+                          'icon-rotation-alignment': 'map',
+                          'icon-pitch-alignment': 'map',
+                        },
+                        paint: {
+                          'icon-opacity': 0.85,
+                        },
+                      });
+                    }
                   }
                 }
               });
