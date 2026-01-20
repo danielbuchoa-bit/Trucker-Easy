@@ -105,13 +105,14 @@ interface PositionHistoryEntry {
 
 export function useGpsNavigationEngine() {
   // HERE Map Matching hook for server-side snap-to-road
+  // Strict configuration for 15m off-route threshold
   const hereMapMatching = useHereMapMatching({
     enabled: USE_HERE_MAP_MATCHING,
     minBatchSize: 3,
     maxBatchSize: 10,
-    batchIntervalMs: 2000,
-    maxDistanceToAcceptM: 50,
-    minConfidenceThreshold: 0.4,
+    batchIntervalMs: 1500, // Faster updates for precision
+    maxDistanceToAcceptM: 15, // Match 15m threshold
+    minConfidenceThreshold: 0.5, // Higher confidence required
   });
   
   // Kalman filter state
@@ -376,16 +377,26 @@ export function useGpsNavigationEngine() {
         // Calculate distance to route
         distanceToRoute = haversineDistance(filteredLat, filteredLng, snappedLat, snappedLng);
 
-        // Calculate snap strength
+        // Calculate snap strength - FORCE SNAP when within threshold
         snapStrength = calculateSnapStrength(distanceToRoute, matchConfidence);
 
-        // Apply soft snap (blend between filtered and snapped)
-        if (snapStrength > 0) {
-          snappedLat = lerp(filteredLat, snappedLat, snapStrength);
-          snappedLng = lerp(filteredLng, snappedLng, snapStrength);
+        // Apply FORCED snap when within 15m threshold (route polyline reference)
+        if (distanceToRoute <= SNAP.MAX_DISTANCE_M) {
+          // Force snap when within off-route threshold
+          if (distanceToRoute <= SNAP.FORCE_SNAP_DISTANCE_M) {
+            // 100% snap when very close to route
+            snappedLat = snappedLat;
+            snappedLng = snappedLng;
+          } else {
+            // Progressive snap based on distance
+            const forceSnapStrength = Math.max(snapStrength, 0.8);
+            snappedLat = lerp(filteredLat, snappedLat, forceSnapStrength);
+            snappedLng = lerp(filteredLng, snappedLng, forceSnapStrength);
+          }
         } else {
-          snappedLat = filteredLat;
-          snappedLng = filteredLng;
+          // Beyond 15m threshold - still apply soft snap but flag as off-route
+          snappedLat = lerp(filteredLat, snappedLat, snapStrength * 0.3);
+          snappedLng = lerp(filteredLng, snappedLng, snapStrength * 0.3);
         }
       }
 

@@ -48,16 +48,20 @@ export const SMOOTHING = {
   },
 };
 
-// === [C] FIX: SNAP TO ROUTE CONFIGURATION - increased tolerances ===
+// === SNAP TO ROUTE CONFIGURATION - strict 15m threshold ===
 export const SNAP = {
-  /** Maximum distance to consider snapping (meters) - increased from 45 */
-  MAX_DISTANCE_M: 80,
-  /** Distance at which snap is 100% (meters) - increased from 12 */
-  HARD_DISTANCE_M: 20,
-  /** Exponential curve for snap blending - smoother curve */
-  BLEND_CURVE: 1.8,
-  /** Minimum confidence to apply snap (0-1) - lowered for better coverage */
-  MIN_CONFIDENCE: 0.45,
+  /** Maximum distance to consider snapping (meters) - off-route threshold */
+  MAX_DISTANCE_M: 15,
+  /** Distance at which snap is 100% (meters) - hard snap zone */
+  HARD_DISTANCE_M: 5,
+  /** Exponential curve for snap blending - tighter curve for precision */
+  BLEND_CURVE: 2.5,
+  /** Minimum confidence to apply snap (0-1) - higher for accuracy */
+  MIN_CONFIDENCE: 0.60,
+  /** Off-route detection threshold (meters) */
+  OFF_ROUTE_THRESHOLD_M: 15,
+  /** Force snap when within this distance (meters) */
+  FORCE_SNAP_DISTANCE_M: 10,
 };
 
 // === MAP MATCHING CONFIGURATION ===

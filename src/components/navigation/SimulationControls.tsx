@@ -34,19 +34,24 @@ const SimulationControls = ({
   onSpeedChange,
 }: SimulationControlsProps) => {
   if (!isSimulating) {
-    // Show start simulation button
-    return (
-      <div className="absolute bottom-4 left-4 z-30">
-        <Button
-          variant="secondary"
-          onClick={onStart}
-          className="shadow-lg"
-        >
-          <Play className="w-4 h-4 mr-2" />
-          Test Drive (Simulate)
-        </Button>
-      </div>
-    );
+    // Simulation is DISABLED by default - using real GPS only
+    // This button is hidden in production, only shown for development/testing
+    if (process.env.NODE_ENV === 'development') {
+      return (
+        <div className="absolute bottom-4 left-4 z-30">
+          <Button
+            variant="secondary"
+            onClick={onStart}
+            className="shadow-lg opacity-50"
+          >
+            <Play className="w-4 h-4 mr-2" />
+            [DEV] Test Simulation
+          </Button>
+        </div>
+      );
+    }
+    // In production, don't show simulation controls - use real GPS only
+    return null;
   }
 
   // Show simulation controls when active

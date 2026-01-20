@@ -14,24 +14,24 @@ import { SNAP } from '@/lib/gps';
 const NAVIGATION_STATE_KEY = 'activeNavigation';
 const DETOUR_STATE_KEY = 'detourStop';
 
-// === ULTRA-CONSERVATIVE ANTI-REROUTE CONFIGURATION ===
-// Match Trucker Path behavior - virtually no false reroutes
+// === STRICT SNAP-TO-ROUTE CONFIGURATION ===
+// Uses route polyline as reference with 15m off-route threshold
 
-// Off-route detection with VERY HIGH thresholds
-const OFF_ROUTE_THRESHOLD_M = 50; // Must be 50+ meters off route
-const ON_ROUTE_THRESHOLD_M = 25; // Back on route threshold
+// Off-route detection - strict 15m threshold
+const OFF_ROUTE_THRESHOLD_M = 15; // 15 meters off-route threshold
+const ON_ROUTE_THRESHOLD_M = 10; // Back on route threshold
 
-// Low speed tolerance - at parking lots, yards, exits
-const LOW_SPEED_THRESHOLD_MPS = 6.7; // ~15 mph - below this = parking mode
-const LOW_SPEED_OFF_ROUTE_M = 80; // 80m tolerance at low speed
+// Low speed tolerance - reduced for precision
+const LOW_SPEED_THRESHOLD_MPS = 4.0; // ~9 mph - below this = parking mode
+const LOW_SPEED_OFF_ROUTE_M = 20; // 20m tolerance at low speed
 
-// Confirmation requirements - EXTREMELY conservative
-const OFF_ROUTE_CONSECUTIVE_THRESHOLD = 8; // Need 8 readings
-const OFF_ROUTE_PERSIST_TIME_MS = 8000; // Must stay off-route for 8 SECONDS
-const MIN_SPEED_FOR_REROUTE_MPS = 6.7; // Must be going > 15 mph to trigger reroute
+// Confirmation requirements - balanced for accuracy
+const OFF_ROUTE_CONSECUTIVE_THRESHOLD = 5; // Need 5 readings
+const OFF_ROUTE_PERSIST_TIME_MS = 4000; // Must stay off-route for 4 SECONDS
+const MIN_SPEED_FOR_REROUTE_MPS = 4.0; // Must be going > 9 mph to trigger reroute
 
-// Accuracy filter - only trust good GPS
-const MAX_ACCURACY_FOR_OFF_ROUTE_M = 25; // Don't trust GPS with >25m accuracy
+// Accuracy filter - stricter for precision snap
+const MAX_ACCURACY_FOR_OFF_ROUTE_M = 15; // Only trust GPS with <15m accuracy
 
 // 30 SECOND cooldown - absolute block
 const REROUTE_COOLDOWN_MS = 30000; // 30 seconds minimum
@@ -124,6 +124,7 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
   const [destination, setDestination] = useState<GeocodeResult | null>(null);
   const [userPosition, setUserPosition] = useState<UserPosition | null>(null);
   const [simulatedPosition, setSimulatedPosition] = useState<UserPosition | null>(null);
+  // Simulation DISABLED by default - use only real GPS
   const [isSimulating, setIsSimulating] = useState(false);
 
   // Detour state
@@ -153,7 +154,8 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
   const hasActiveTrip = originalTrip !== null || (isNavigating && !detourStop);
   const isOnDetour = detourStop !== null && !detourStop.completed;
 
-  // Use simulated position if simulating, otherwise real position
+  // ALWAYS use real GPS position - simulation disabled by default
+  // Only use simulated position if explicitly enabled (for testing only)
   const effectivePosition = isSimulating ? simulatedPosition : userPosition;
 
   // Keep screen on during navigation
