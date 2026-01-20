@@ -602,26 +602,40 @@ const ActiveNavigationView = () => {
     }
   }, [routeStyle, routeStyleConfig, mapReady]);
 
-  // Animate route arrows with pulsing opacity
+  // Animate route arrows with pulsing opacity (throttled to reduce CPU usage)
   const arrowAnimationRef = useRef<number | null>(null);
+  const lastArrowUpdateRef = useRef<number>(0);
   useEffect(() => {
     if (!map.current || !mapReady) return;
     
+    const ARROW_UPDATE_INTERVAL = 100; // Update every 100ms instead of every frame
     let startTime = Date.now();
+    
     const animate = () => {
-      if (!map.current || !map.current.getLayer('nav-route-arrows')) {
+      const now = performance.now();
+      
+      // Throttle updates to reduce CPU usage
+      if (now - lastArrowUpdateRef.current < ARROW_UPDATE_INTERVAL) {
+        arrowAnimationRef.current = requestAnimationFrame(animate);
+        return;
+      }
+      lastArrowUpdateRef.current = now;
+      
+      if (!map.current) {
         arrowAnimationRef.current = requestAnimationFrame(animate);
         return;
       }
       
-      const elapsed = Date.now() - startTime;
-      // Smooth sine wave animation: opacity oscillates between 0.5 and 1.0
-      const opacity = 0.5 + 0.5 * Math.sin(elapsed / 800 * Math.PI);
-      
+      // Check if layer exists before updating
       try {
-        map.current.setPaintProperty('nav-route-arrows', 'icon-opacity', opacity);
+        if (map.current.getLayer('nav-route-arrows')) {
+          const elapsed = Date.now() - startTime;
+          // Smooth sine wave animation: opacity oscillates between 0.6 and 1.0
+          const opacity = 0.6 + 0.4 * Math.sin(elapsed / 1000 * Math.PI);
+          map.current.setPaintProperty('nav-route-arrows', 'icon-opacity', opacity);
+        }
       } catch (e) {
-        // Layer may not exist yet, ignore
+        // Layer may not exist, ignore
       }
       
       arrowAnimationRef.current = requestAnimationFrame(animate);
@@ -632,6 +646,7 @@ const ActiveNavigationView = () => {
     return () => {
       if (arrowAnimationRef.current) {
         cancelAnimationFrame(arrowAnimationRef.current);
+        arrowAnimationRef.current = null;
       }
     };
   }, [mapReady]);
@@ -690,23 +705,27 @@ const ActiveNavigationView = () => {
       lastAppliedBearingRef.current = displayHeading;
     }
 
-    // Update marker position at high frequency for smooth animation
+    // Update marker position and rotation at high frequency for smooth animation
     if (now - markerUpdateRef.current >= MARKER_UPDATE_INTERVAL) {
       markerUpdateRef.current = now;
       
       if (userMarker.current) {
         userMarker.current.setLngLat([displayLng, displayLat]);
+        // Update marker rotation to match heading (cursor always points in direction of travel)
+        const rotation = displayHeading ?? lastAppliedBearingRef.current;
+        userMarker.current.setRotation(rotation);
       } else if (map.current) {
         const el = createTruckCursorElement(52);
         el.style.pointerEvents = 'none';
 
         userMarker.current = new mapboxgl.Marker({
           element: el,
-          rotationAlignment: 'viewport',
-          pitchAlignment: 'viewport',
+          rotationAlignment: 'map', // Rotate with the map bearing
+          pitchAlignment: 'map',
           anchor: 'center',
         })
           .setLngLat([displayLng, displayLat])
+          .setRotation(displayHeading ?? 0)
           .addTo(map.current);
       }
     }
@@ -968,14 +987,34 @@ const ActiveNavigationView = () => {
             if (map.current) {
               map.current.setStyle(styles[nextStyle]);
               map.current.once('style.load', () => {
-                if (map.current && routeCoords.length > 0) {
-                  const geojson: GeoJSON.Feature = {
-                    type: 'Feature',
-                    properties: {},
-                    geometry: { type: 'LineString', coordinates: routeCoords },
-                  };
-                  if (!map.current.getSource('nav-route')) {
+                if (!map.current) return;
+                
+                // Recreate the arrow icon since style change removes all images
+                const arrowSvg = `
+                  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+                    <path d="M12 4 L20 12 L16 12 L16 20 L8 20 L8 12 L4 12 Z" 
+                          fill="white" 
+                          stroke="rgba(0,0,0,0.3)" 
+                          stroke-width="1"
+                          transform="rotate(180 12 12)"/>
+                  </svg>
+                `;
+                const img = new Image(24, 24);
+                img.onload = () => {
+                  if (!map.current) return;
+                  if (!map.current.hasImage('route-arrow')) {
+                    map.current.addImage('route-arrow', img, { sdf: false });
+                  }
+                  
+                  // Now add route layers if we have coordinates
+                  if (routeCoords.length > 0 && !map.current.getSource('nav-route')) {
                     const config = routeStyleConfig;
+                    const geojson: GeoJSON.Feature = {
+                      type: 'Feature',
+                      properties: {},
+                      geometry: { type: 'LineString', coordinates: routeCoords },
+                    };
+                    
                     map.current.addSource('nav-route', { type: 'geojson', data: geojson });
                     
                     // Outline layer
@@ -1018,28 +1057,27 @@ const ActiveNavigationView = () => {
                     });
                     
                     // Direction arrows layer
-                    if (map.current.hasImage('route-arrow')) {
-                      map.current.addLayer({
-                        id: 'nav-route-arrows',
-                        type: 'symbol',
-                        source: 'nav-route',
-                        layout: {
-                          'symbol-placement': 'line',
-                          'symbol-spacing': ['interpolate', ['linear'], ['zoom'], 10, 120, 14, 80, 18, 50],
-                          'icon-image': 'route-arrow',
-                          'icon-size': ['interpolate', ['linear'], ['zoom'], 10, 0.5, 14, 0.7, 18, 0.9],
-                          'icon-allow-overlap': true,
-                          'icon-ignore-placement': true,
-                          'icon-rotation-alignment': 'map',
-                          'icon-pitch-alignment': 'map',
-                        },
-                        paint: {
-                          'icon-opacity': 0.85,
-                        },
-                      });
-                    }
+                    map.current.addLayer({
+                      id: 'nav-route-arrows',
+                      type: 'symbol',
+                      source: 'nav-route',
+                      layout: {
+                        'symbol-placement': 'line',
+                        'symbol-spacing': ['interpolate', ['linear'], ['zoom'], 10, 120, 14, 80, 18, 50],
+                        'icon-image': 'route-arrow',
+                        'icon-size': ['interpolate', ['linear'], ['zoom'], 10, 0.5, 14, 0.7, 18, 0.9],
+                        'icon-allow-overlap': true,
+                        'icon-ignore-placement': true,
+                        'icon-rotation-alignment': 'map',
+                        'icon-pitch-alignment': 'map',
+                      },
+                      paint: {
+                        'icon-opacity': 0.85,
+                      },
+                    });
                   }
-                }
+                };
+                img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(arrowSvg);
               });
             }
           }}
