@@ -15,6 +15,12 @@ interface CursorDebugInfo {
   matchConfidence: number;
   isOnRoute: boolean;
   
+  // HERE Map Matching (NEW)
+  hereMatchUsed: boolean;
+  hereMatchConfidence: number;
+  hereCacheSize?: number;
+  hereBufferSize?: number;
+  
   // Render cursor
   renderLat: number | null;
   renderLng: number | null;
@@ -121,6 +127,21 @@ export default function CursorDebugPanel({ debug, visible }: CursorDebugPanelPro
           <span className={debug.matchConfidence > 0.7 ? 'text-green-400' : debug.matchConfidence > 0.4 ? 'text-yellow-400' : 'text-red-400'}>
             {(debug.matchConfidence * 100).toFixed(0)}%
           </span>
+          
+          {/* HERE Map Matching Status */}
+          <span className="text-gray-500">HERE Match:</span>
+          <span className={debug.hereMatchUsed ? 'text-cyan-400' : 'text-gray-500'}>
+            {debug.hereMatchUsed ? `✓ ${(debug.hereMatchConfidence * 100).toFixed(0)}%` : 'Local HMM'}
+          </span>
+          
+          {debug.hereCacheSize !== undefined && (
+            <>
+              <span className="text-gray-500">HERE Cache:</span>
+              <span className="text-gray-400">
+                {debug.hereCacheSize} pts / buf: {debug.hereBufferSize ?? 0}
+              </span>
+            </>
+          )}
         </div>
       </div>
       
