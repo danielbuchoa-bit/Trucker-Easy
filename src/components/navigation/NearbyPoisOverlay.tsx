@@ -18,7 +18,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { detectBrand, getInitial, getColorForInitial, type TruckBrand } from '@/lib/truckBrands';
+import { detectBrand, getInitial, getColorForInitial, type TruckBrand, MAJOR_TRUCK_STOP_BRANDS } from '@/lib/truckBrands';
 import { getBrandLogo, GenericTruckStopLogo } from '@/lib/truckStopLogos';
 import { usePoiRatings } from '@/hooks/usePoiRatings';
 import PoiRatingBadge from '@/components/poi/PoiRatingBadge';
@@ -230,7 +230,14 @@ const NearbyPoisOverlay: React.FC<NearbyPoisOverlayProps> = ({
 
         if (!error && data?.pois) {
           lastFetchRef.current = { lat, lng, time: now };
-          const allPois = data.pois.slice(0, 10);
+          
+          // Filter to only show major truck stop brands (Love's, Pilot, TA, Petro, Flying J, etc.)
+          const majorBrandPois = data.pois.filter((poi: Poi) => {
+            const brand = detectBrand(poi.name, poi.chainName);
+            return brand && MAJOR_TRUCK_STOP_BRANDS.includes(brand.key);
+          });
+          
+          const allPois = majorBrandPois.slice(0, 10);
           setPois(allPois.slice(0, 5));
           
           // Fetch ratings for these POIs

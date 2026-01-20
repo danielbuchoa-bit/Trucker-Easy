@@ -148,6 +148,19 @@ export const TRUCK_BRANDS: Record<string, TruckBrand> = {
   },
 };
 
+// Major truck stop brands that should be displayed in navigation POI overlay
+// These are the primary truck stops with diesel, parking, and truck services
+export const MAJOR_TRUCK_STOP_BRANDS: string[] = [
+  'loves',      // Love's Travel Stops
+  'pilot',      // Pilot Travel Centers
+  'flyingj',    // Flying J
+  'ta',         // TravelCenters of America
+  'petro',      // Petro Stopping Centers
+  'sapp',       // Sapp Bros
+  'ambest',     // Ambest
+  'bucees',     // Buc-ee's
+];
+
 // Brand detection patterns (order matters - more specific first)
 const BRAND_PATTERNS: Array<{ pattern: RegExp; brandKey: string }> = [
   { pattern: /flying\s*j/i, brandKey: 'flyingj' },
