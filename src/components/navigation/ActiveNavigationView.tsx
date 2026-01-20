@@ -29,6 +29,7 @@ import SpeedAlertDetailsSheet from './SpeedAlertDetailsSheet';
 import ReportAlertButton from './ReportAlertButton';
 import TrafficLightOverlay from './TrafficLightOverlay';
 import { createTruckCursorElement } from './TruckCursor';
+import EngineIndicator from './EngineIndicator';
 import { MapPin, Navigation as NavIcon, RotateCcw, Layers, Bug, Plus, Route, Utensils } from 'lucide-react';
 import WeighStationOverlay from '@/components/weighstation/WeighStationOverlay';
 import WeighStationAlert from '@/components/weighstation/WeighStationAlert';
@@ -790,8 +791,8 @@ const ActiveNavigationView = () => {
         onDeny={speedAlerts.denyAlert}
       />
 
-      {/* Speed Indicator - Bottom Left */}
-      <div className="absolute bottom-24 left-4 z-30">
+      {/* Speed Indicator + Engine Indicator - Bottom Left */}
+      <div className="absolute bottom-24 left-4 z-30 flex flex-col gap-2">
         <SpeedIndicator 
           speedMph={speedMph} 
           speedLimitMph={
@@ -801,6 +802,7 @@ const ActiveNavigationView = () => {
             null
           } 
         />
+        <EngineIndicator />
       </div>
 
       {/* Bottom ETA Bar */}
