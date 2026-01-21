@@ -38,6 +38,7 @@ import WeighStationBottomSheet from '@/components/weighstation/WeighStationBotto
 import WeighStationQuestionnaire from '@/components/weighstation/WeighStationQuestionnaire';
 import { useGeofence } from '@/contexts/GeofenceContext';
 import { usePoiFeedback } from '@/contexts/PoiFeedbackContext';
+import { useRoadTestSafe } from '@/contexts/RoadTestContext';
 import { Button } from '@/components/ui/button';
 import { useLanguage } from '@/i18n/LanguageContext';
 import { useRouteStyle, ROUTE_STYLES } from '@/hooks/useRouteStyle';
@@ -172,10 +173,48 @@ const ActiveNavigationView = () => {
   
   // Food suggestion context
   const { currentVisitedPoi, isShowingFoodSuggestion } = usePoiFeedback();
+  
+  // Road Test diagnostics
+  const roadTest = useRoadTestSafe();
 
   useEffect(() => {
     voiceRef.current = voice;
   }, [voice]);
+  
+  // Update Road Test diagnostics when position changes
+  useEffect(() => {
+    if (!roadTest?.isRoadTestMode || !userPosition) return;
+    
+    roadTest.updateGpsDiagnostics({
+      lat: userPosition.lat,
+      lng: userPosition.lng,
+      accuracy: userPosition.accuracy ?? 0,
+      speed: userPosition.speed ?? null,
+      heading: userPosition.heading ?? null,
+      timestamp: Date.now(),
+      source: isSimulating ? 'simulated' : 'real',
+      appState: document.visibilityState === 'visible' ? 'foreground' : 'background',
+    });
+    
+    roadTest.logLocationUpdate({
+      lat: userPosition.lat,
+      lng: userPosition.lng,
+      accuracy: userPosition.accuracy ?? 0,
+      speed: userPosition.speed ?? null,
+      heading: userPosition.heading ?? null,
+      timestamp: Date.now(),
+      updatesPerSecond: 0,
+      source: isSimulating ? 'simulated' : 'real',
+      appState: document.visibilityState === 'visible' ? 'foreground' : 'background',
+    });
+    
+    // Update navigation state
+    roadTest.setNavigationState({
+      isNavigating: true,
+      cursorOnRoad: !isOffRoute,
+      voiceEnabled: voice.settings.enabled,
+    });
+  }, [userPosition, isOffRoute, voice.settings.enabled, isSimulating, roadTest]);
 
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
