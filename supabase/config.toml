@@ -56,3 +56,9 @@ verify_jwt = false
 
 [functions.fetch_trucking_news]
 verify_jwt = false
+
+[functions.admin_data]
+verify_jwt = false
+
+[functions.here_map_matching]
+verify_jwt = false
