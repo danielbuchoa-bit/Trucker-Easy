@@ -79,7 +79,7 @@ export function useRouteDiagnostics() {
         if (response.polyline) {
           const validation = validatePolyline(response.polyline);
           result.decodedPoints = validation.decodedPoints;
-          result.distanceKm = response.distanceMeters ? response.distanceMeters / 1000 : 0;
+          result.distanceKm = response.distance ? response.distance / 1000 : 0;
 
           if (validation.boundingBox) {
             const bboxCheck = compareBoundingBoxes(testRoute.expectedBbox, validation.boundingBox);
