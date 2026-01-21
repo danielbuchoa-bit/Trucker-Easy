@@ -1,9 +1,9 @@
 /**
- * Unified Navigation Engine - NextBillion Primary + HERE Fallback
+ * Unified Navigation Engine - HERE Primary
  * 
  * Architecture:
- * - NextBillion: Primary engine for ALL truck navigation (routing, turn-by-turn, reroute, ETA)
- * - HERE: Fallback ONLY when NextBillion fails
+ * - HERE: Primary engine for ALL truck navigation (routing, turn-by-turn, reroute, ETA)
+ * - NextBillion: Fallback ONLY when HERE fails
  * - Only ONE engine active at a time
  * 
  * Fallback triggers:
@@ -140,7 +140,7 @@ class NavigationEngineClass {
         if (parsed.fallbackActivatedAt && 
             Date.now() - parsed.fallbackActivatedAt >= FALLBACK_COOLDOWN_MS) {
           // Reset to primary engine
-          console.log('[NAV_ENGINE] Fallback cooldown expired, resetting to NextBillion');
+          console.log('[NAV_ENGINE] Fallback cooldown expired, resetting to HERE');
           return this.getDefaultState();
         }
         return parsed;
@@ -153,7 +153,7 @@ class NavigationEngineClass {
 
   private getDefaultState(): NavigationEngineState {
     return {
-      activeEngine: 'nextbillion',
+      activeEngine: 'here',
       routePolyline: null,
       maneuvers: [],
       eta: null,
@@ -181,8 +181,8 @@ class NavigationEngineClass {
     // Check if fallback cooldown has expired
     if (this.state.fallbackActivatedAt && 
         Date.now() - this.state.fallbackActivatedAt >= FALLBACK_COOLDOWN_MS) {
-      console.log('[NAV_ENGINE] Trying to recover to NextBillion');
-      this.state.activeEngine = 'nextbillion';
+      console.log('[NAV_ENGINE] Trying to recover to HERE');
+      this.state.activeEngine = 'here';
       this.state.fallbackActivatedAt = null;
       this.state.fallbackReason = null;
       this.saveState();
@@ -195,8 +195,8 @@ class NavigationEngineClass {
   }
 
   private activateFallback(reason: string): void {
-    console.warn('[NAV_ENGINE] Activating HERE fallback:', reason);
-    this.state.activeEngine = 'here';
+    console.warn('[NAV_ENGINE] Activating NextBillion fallback:', reason);
+    this.state.activeEngine = 'nextbillion';
     this.state.fallbackReason = reason;
     this.state.fallbackActivatedAt = Date.now();
     this.saveState();
@@ -206,7 +206,7 @@ class NavigationEngineClass {
       endpoint: 'fallback',
       status: 'error',
       message: `Fallback activated: ${reason}`,
-      engine: 'here',
+      engine: 'nextbillion',
     });
   }
 
@@ -232,7 +232,7 @@ class NavigationEngineClass {
     userHeading: number | null,
     routeHeading: number | null
   ): void {
-    if (this.state.activeEngine !== 'nextbillion') return;
+    if (this.state.activeEngine !== 'here') return;
 
     const now = Date.now();
 
@@ -284,10 +284,11 @@ class NavigationEngineClass {
     try {
       let result: RouteResponse;
 
-      if (engine === 'nextbillion' && isTruck) {
-        result = await this.calculateWithNextBillion(request);
-      } else {
+      // HERE is the primary engine for all routing
+      if (engine === 'here') {
         result = await this.calculateWithHere(request);
+      } else {
+        result = await this.calculateWithNextBillion(request);
       }
 
       // Validate response
@@ -296,7 +297,7 @@ class NavigationEngineClass {
       }
 
       // Success - update state
-      if (engine === 'nextbillion') {
+      if (engine === 'here') {
         this.state.lastSuccessfulPrimaryTimestamp = Date.now();
       }
       
@@ -311,16 +312,16 @@ class NavigationEngineClass {
     } catch (error) {
       console.error(`[NAV_ENGINE] ${engine} failed:`, error);
 
-      // If NextBillion failed, try HERE as fallback
-      if (engine === 'nextbillion') {
+      // If HERE failed, try NextBillion as fallback
+      if (engine === 'here') {
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
         this.activateFallback(errorMessage);
         
-        // Retry with HERE
+        // Retry with NextBillion
         return this.calculateRoute(request);
       }
 
-      // HERE also failed - propagate error
+      // NextBillion also failed - propagate error
       throw error;
     }
   }
@@ -514,15 +515,15 @@ class NavigationEngineClass {
     console.log('[NAV_ENGINE] Reset to default state');
   }
 
-  // Force switch to primary (NextBillion)
+  // Force switch to primary (HERE)
   forcePrimary(): void {
-    this.state.activeEngine = 'nextbillion';
+    this.state.activeEngine = 'here';
     this.state.fallbackReason = null;
     this.state.fallbackActivatedAt = null;
     this.rerouteFailures = [];
     this.qualityDegradationStart = null;
     this.saveState();
-    console.log('[NAV_ENGINE] Forced to primary (NextBillion)');
+    console.log('[NAV_ENGINE] Forced to primary (HERE)');
   }
 }
 
