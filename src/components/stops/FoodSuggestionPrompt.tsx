@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { X, Utensils, Sparkles, Loader2, ThumbsUp, AlertTriangle, Ban, ChevronDown, ChevronUp, MapPin } from 'lucide-react';
+import { X, Utensils, Sparkles, Loader2, ThumbsUp, AlertTriangle, Ban, ChevronDown, ChevronUp, MapPin, Store } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
-import type { FoodRecommendation, DriverFoodProfile } from '@/types/stops';
+import type { DriverFoodProfile } from '@/types/stops';
 
 interface VisitedStop {
   id: string;
@@ -12,6 +12,31 @@ interface VisitedStop {
   type: string;
   lat: number;
   lng: number;
+  brand?: string;
+  address?: string;
+  placeId?: string;
+}
+
+interface ConvenienceRecommendation {
+  source: string;
+  station: { name: string; brand?: string };
+  best_choice: {
+    item: string;
+    reason: string;
+    what_to_pick?: string[];
+  };
+  alternative: {
+    item: string;
+    reason: string;
+    what_to_pick?: string[];
+  };
+  emergency_option: {
+    item: string;
+    reason: string;
+    what_to_pick?: string[];
+  };
+  avoid: Array<{ item: string; reason: string }>;
+  is_convenience_fallback?: boolean;
 }
 
 interface FoodSuggestionPromptProps {
@@ -22,16 +47,17 @@ interface FoodSuggestionPromptProps {
 const FoodSuggestionPrompt: React.FC<FoodSuggestionPromptProps> = ({ stop, onDismiss }) => {
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState(false);
-  const [recommendation, setRecommendation] = useState<FoodRecommendation | null>(null);
+  const [recommendation, setRecommendation] = useState<ConvenienceRecommendation | null>(null);
   const [userProfile, setUserProfile] = useState<DriverFoodProfile | null>(null);
   const [nearbyRestaurants, setNearbyRestaurants] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [isConvenienceFallback, setIsConvenienceFallback] = useState(false);
 
   // Fetch user food profile
   const fetchUserProfile = useCallback(async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      if (!user) return null;
 
       const { data } = await supabase
         .from('driver_food_profiles')
@@ -41,15 +67,20 @@ const FoodSuggestionPrompt: React.FC<FoodSuggestionPromptProps> = ({ stop, onDis
 
       if (data) {
         setUserProfile(data as DriverFoodProfile);
+        return data as DriverFoodProfile;
       }
+      return null;
     } catch (err) {
       console.log('[FoodSuggestion] No food profile found');
+      return null;
     }
   }, []);
 
   // Fetch nearby restaurants at this stop
-  const fetchNearbyRestaurants = useCallback(async () => {
+  const fetchNearbyRestaurants = useCallback(async (): Promise<string[]> => {
     try {
+      console.log('[FoodSuggestion] Searching restaurants for:', stop.name);
+      
       const { data, error: fnError } = await supabase.functions.invoke('here_browse_pois', {
         body: {
           lat: stop.lat,
@@ -60,10 +91,14 @@ const FoodSuggestionPrompt: React.FC<FoodSuggestionPromptProps> = ({ stop, onDis
         },
       });
 
-      if (fnError) throw fnError;
+      if (fnError) {
+        console.error('[FoodSuggestion] Restaurant search error:', fnError);
+        return [];
+      }
 
       if (data?.pois) {
         const names = data.pois.map((p: any) => p.name).filter(Boolean);
+        console.log('[FoodSuggestion] Found restaurants:', names.length);
         setNearbyRestaurants(names);
         return names;
       }
@@ -72,53 +107,131 @@ const FoodSuggestionPrompt: React.FC<FoodSuggestionPromptProps> = ({ stop, onDis
       console.error('[FoodSuggestion] Error fetching restaurants:', err);
       return [];
     }
-  }, [stop.lat, stop.lng]);
+  }, [stop.lat, stop.lng, stop.name]);
 
-  // Get AI food recommendations
-  const fetchRecommendation = useCallback(async (restaurants: string[]) => {
+  // Get AI food recommendations with fallback
+  const fetchRecommendation = useCallback(async (restaurants: string[], profile: DriverFoodProfile | null) => {
     try {
+      // STATION OBJECT - DO NOT MODIFY
+      const station = {
+        placeId: stop.placeId || stop.id,
+        name: stop.name,
+        brand: stop.brand,
+        address: stop.address,
+        lat: stop.lat,
+        lng: stop.lng,
+      };
+
+      // Determine if fallback is needed
+      const needsFallback = restaurants.length === 0;
+      
+      console.log('[FoodSuggestion] Calling recommendation API', {
+        stationDetected: true,
+        stationName: station.name,
+        restaurantSearchAttempted: true,
+        restaurantsFound: restaurants.length,
+        fallbackTriggered: needsFallback,
+        fallbackReason: needsFallback ? 'no_restaurants_found' : null,
+      });
+
       const { data, error: fnError } = await supabase.functions.invoke('food_recommendation', {
         body: {
-          profile: userProfile ? {
-            diet_type: userProfile.diet_type,
-            allergies: userProfile.allergies,
-            restrictions: userProfile.restrictions,
-            health_goals: userProfile.health_goals,
-            budget_preference: userProfile.budget_preference,
+          profile: profile ? {
+            diet_type: profile.diet_type,
+            allergies: profile.allergies,
+            restrictions: profile.restrictions,
+            health_goals: profile.health_goals,
+            budget_preference: profile.budget_preference,
           } : null,
           menuItems: [],
           placeType: stop.type,
           stopName: stop.name,
           restaurantNames: restaurants,
+          station: station,
+          useFallback: needsFallback,
         },
       });
 
-      if (fnError) throw fnError;
-
-      if (data.error) {
-        throw new Error(data.error);
+      if (fnError) {
+        console.error('[FoodSuggestion] API error, forcing fallback');
+        // Force fallback on error
+        return await forceFallback(station, profile);
       }
 
+      if (data.error) {
+        console.error('[FoodSuggestion] Data error:', data.error);
+        return await forceFallback(station, profile);
+      }
+
+      setIsConvenienceFallback(data.is_convenience_fallback || data.source?.includes('FALLBACK'));
       setRecommendation(data);
     } catch (err) {
       console.error('[FoodSuggestion] Error getting recommendations:', err);
-      setError(err instanceof Error ? err.message : 'Erro ao obter sugestões');
+      // Force fallback on any error
+      const station = {
+        placeId: stop.placeId || stop.id,
+        name: stop.name,
+        brand: stop.brand,
+        address: stop.address,
+        lat: stop.lat,
+        lng: stop.lng,
+      };
+      await forceFallback(station, profile);
     }
-  }, [stop.name, stop.type, userProfile]);
+  }, [stop]);
+
+  // Force convenience fallback
+  const forceFallback = async (station: any, profile: DriverFoodProfile | null) => {
+    try {
+      console.log('[FoodSuggestion] Forcing convenience fallback for:', station.name);
+      
+      const { data, error: fnError } = await supabase.functions.invoke('food_recommendation', {
+        body: {
+          profile: profile ? {
+            diet_type: profile.diet_type,
+            allergies: profile.allergies,
+            restrictions: profile.restrictions,
+            health_goals: profile.health_goals,
+            budget_preference: profile.budget_preference,
+          } : null,
+          menuItems: [],
+          placeType: stop.type,
+          stopName: station.name,
+          restaurantNames: [],
+          station: station,
+          useFallback: true,
+        },
+      });
+
+      if (fnError || data.error) {
+        setError('Erro ao obter sugestões');
+        return;
+      }
+
+      setIsConvenienceFallback(true);
+      setRecommendation(data);
+    } catch (err) {
+      setError('Erro ao obter sugestões');
+    }
+  };
 
   // Load everything on mount
   useEffect(() => {
     const load = async () => {
-      console.log('[FoodSuggestion] Loading for stop:', stop.name);
+      console.log('[FoodSuggestion] Loading for stop:', stop.name, 'brand:', stop.brand);
       setLoading(true);
-      await fetchUserProfile();
+      setError(null);
+      
+      const profile = await fetchUserProfile();
       const restaurants = await fetchNearbyRestaurants();
+      
       console.log('[FoodSuggestion] Fetching recommendation with', restaurants.length, 'restaurants');
-      await fetchRecommendation(restaurants);
+      await fetchRecommendation(restaurants, profile);
+      
       setLoading(false);
     };
     load();
-  }, [stop.id]); // Only re-run if stop changes
+  }, [stop.id]);
 
   return (
     <div className="fixed bottom-20 left-2 right-2 z-50 animate-in slide-in-from-bottom-4 duration-300">
@@ -127,13 +240,24 @@ const FoodSuggestionPrompt: React.FC<FoodSuggestionPromptProps> = ({ stop, onDis
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <div className="p-1.5 rounded-full bg-primary/10">
-                <Utensils className="w-4 h-4 text-primary" />
+                {isConvenienceFallback ? (
+                  <Store className="w-4 h-4 text-primary" />
+                ) : (
+                  <Utensils className="w-4 h-4 text-primary" />
+                )}
               </div>
               <div>
-                <CardTitle className="text-sm font-medium">Sugestões Alimentares</CardTitle>
+                <CardTitle className="text-sm font-medium">
+                  {isConvenienceFallback ? 'Sugestões da Conveniência' : 'Sugestões Alimentares'}
+                </CardTitle>
                 <div className="flex items-center gap-1 text-xs text-muted-foreground">
                   <MapPin className="w-3 h-3" />
                   <span className="truncate max-w-[180px]">{stop.name}</span>
+                  {stop.brand && (
+                    <Badge variant="outline" className="text-xs ml-1 py-0 h-4">
+                      {stop.brand}
+                    </Badge>
+                  )}
                 </div>
               </div>
             </div>
@@ -162,7 +286,9 @@ const FoodSuggestionPrompt: React.FC<FoodSuggestionPromptProps> = ({ stop, onDis
           {loading ? (
             <div className="flex items-center gap-2 py-2">
               <Loader2 className="w-4 h-4 animate-spin text-primary" />
-              <span className="text-sm text-muted-foreground">Analisando opções...</span>
+              <span className="text-sm text-muted-foreground">
+                {isConvenienceFallback ? 'Buscando opções na conveniência...' : 'Analisando opções...'}
+              </span>
             </div>
           ) : error ? (
             <div className="flex items-center gap-2 py-2 text-destructive">
@@ -171,6 +297,14 @@ const FoodSuggestionPrompt: React.FC<FoodSuggestionPromptProps> = ({ stop, onDis
             </div>
           ) : recommendation ? (
             <div className="space-y-3">
+              {/* Convenience fallback indicator */}
+              {isConvenienceFallback && (
+                <div className="flex items-center gap-1.5 text-xs text-muted-foreground bg-muted/50 rounded px-2 py-1">
+                  <Store className="w-3 h-3" />
+                  <span>Sugestões da conveniência do posto</span>
+                </div>
+              )}
+
               {/* Best Choice - Always visible */}
               <div className="p-2.5 rounded-lg bg-green-500/10 border border-green-500/20">
                 <div className="flex items-center gap-2 mb-1">
@@ -180,6 +314,15 @@ const FoodSuggestionPrompt: React.FC<FoodSuggestionPromptProps> = ({ stop, onDis
                 </div>
                 <p className="font-semibold text-sm">{recommendation.best_choice.item}</p>
                 <p className="text-xs text-muted-foreground">{recommendation.best_choice.reason}</p>
+                {recommendation.best_choice.what_to_pick && recommendation.best_choice.what_to_pick.length > 0 && (
+                  <div className="mt-1.5 flex flex-wrap gap-1">
+                    {recommendation.best_choice.what_to_pick.map((item, idx) => (
+                      <Badge key={idx} variant="secondary" className="text-xs">
+                        {item}
+                      </Badge>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Alternative - visible when expanded */}
@@ -191,6 +334,15 @@ const FoodSuggestionPrompt: React.FC<FoodSuggestionPromptProps> = ({ stop, onDis
                     </Badge>
                     <p className="font-medium text-sm">{recommendation.alternative.item}</p>
                     <p className="text-xs text-muted-foreground">{recommendation.alternative.reason}</p>
+                    {recommendation.alternative.what_to_pick && recommendation.alternative.what_to_pick.length > 0 && (
+                      <div className="mt-1.5 flex flex-wrap gap-1">
+                        {recommendation.alternative.what_to_pick.map((item, idx) => (
+                          <Badge key={idx} variant="outline" className="text-xs">
+                            {item}
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
                   {/* Emergency Option */}
@@ -201,6 +353,15 @@ const FoodSuggestionPrompt: React.FC<FoodSuggestionPromptProps> = ({ stop, onDis
                     </div>
                     <p className="font-medium text-sm">{recommendation.emergency_option.item}</p>
                     <p className="text-xs text-muted-foreground">{recommendation.emergency_option.reason}</p>
+                    {recommendation.emergency_option.what_to_pick && recommendation.emergency_option.what_to_pick.length > 0 && (
+                      <div className="mt-1.5 flex flex-wrap gap-1">
+                        {recommendation.emergency_option.what_to_pick.map((item, idx) => (
+                          <Badge key={idx} variant="outline" className="text-xs">
+                            {item}
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
                   {/* Avoid List */}
@@ -211,7 +372,7 @@ const FoodSuggestionPrompt: React.FC<FoodSuggestionPromptProps> = ({ stop, onDis
                         <span className="text-xs font-medium text-red-700 dark:text-red-400">Evitar</span>
                       </div>
                       <div className="space-y-1">
-                        {recommendation.avoid.slice(0, 2).map((item, idx) => (
+                        {recommendation.avoid.slice(0, 3).map((item, idx) => (
                           <div key={idx} className="text-xs">
                             <span className="font-medium">{item.item}</span>
                             <span className="text-muted-foreground"> - {item.reason}</span>
@@ -221,8 +382,8 @@ const FoodSuggestionPrompt: React.FC<FoodSuggestionPromptProps> = ({ stop, onDis
                     </div>
                   )}
 
-                  {/* Nearby restaurants */}
-                  {nearbyRestaurants.length > 0 && (
+                  {/* Nearby restaurants - only if not fallback */}
+                  {!isConvenienceFallback && nearbyRestaurants.length > 0 && (
                     <div className="pt-2 border-t border-border">
                       <p className="text-xs text-muted-foreground mb-1.5">Restaurantes próximos:</p>
                       <div className="flex flex-wrap gap-1">
