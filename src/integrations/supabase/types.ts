@@ -266,6 +266,42 @@ export type Database = {
         }
         Relationships: []
       }
+      emotional_checkins: {
+        Row: {
+          body_condition: number
+          checkin_type: string
+          created_at: string
+          day_quality: number | null
+          energy_level: number
+          id: string
+          notes: string | null
+          stress_level: number
+          user_id: string
+        }
+        Insert: {
+          body_condition: number
+          checkin_type: string
+          created_at?: string
+          day_quality?: number | null
+          energy_level: number
+          id?: string
+          notes?: string | null
+          stress_level: number
+          user_id: string
+        }
+        Update: {
+          body_condition?: number
+          checkin_type?: string
+          created_at?: string
+          day_quality?: number | null
+          energy_level?: number
+          id?: string
+          notes?: string | null
+          stress_level?: number
+          user_id?: string
+        }
+        Relationships: []
+      }
       facilities: {
         Row: {
           address: string | null

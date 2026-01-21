@@ -11,12 +11,15 @@ import { DiagnosticsProvider } from "./contexts/DiagnosticsContext";
 import { PoiFeedbackProvider } from "./contexts/PoiFeedbackContext";
 import { ChatProvider } from "./contexts/ChatContext";
 import { RoadTestProvider } from "./contexts/RoadTestContext";
+import { EmotionalCheckInProvider } from "./contexts/EmotionalCheckInContext";
 import DiagnosticsPanel from "./components/diagnostics/DiagnosticsPanel";
 import RoadTestDiagnosticsPanel from "./components/diagnostics/RoadTestDiagnosticsPanel";
 import LocationPermissionRequest from "./components/location/LocationPermissionRequest";
 import { DriverChatSheet } from "./components/ai/DriverChatSheet";
 import FloatingChatButton from "./components/chat/FloatingChatButton";
 import { DocumentReminderProvider } from "./components/notifications/DocumentReminderProvider";
+import EmotionalCheckInModal from "./components/wellness/EmotionalCheckInModal";
+import CheckInTrigger from "./components/wellness/CheckInTrigger";
 import WelcomeScreen from "./pages/Welcome";
 import AuthScreen from "./pages/Auth";
 import OnboardingScreen from "./pages/Onboarding";
@@ -39,6 +42,7 @@ import FavoriteMealsScreen from "./pages/FavoriteMeals";
 import SubscriptionScreen from "./pages/Subscription";
 import RatingHistoryScreen from "./pages/RatingHistory";
 import RoadTestChecklist from "./pages/RoadTestChecklist";
+import WellbeingScreen from "./pages/Wellbeing";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -59,38 +63,43 @@ const App = () => (
             <BrowserRouter>
               <ChatProvider>
                 <ActiveNavigationProvider>
-                  <PoiFeedbackProvider>
-                    <GeofenceProvider>
-                      <FacilityGeofenceProvider>
-                        <FloatingChatButton />
-                        <Routes>
-                          <Route path="/" element={<WelcomeScreen onComplete={() => {}} />} />
-                          <Route path="/auth" element={<AuthScreen onComplete={() => {}} onBack={() => {}} />} />
-                          <Route path="/onboarding" element={<OnboardingScreen onComplete={() => {}} onBack={() => {}} />} />
-                          <Route path="/home" element={<HomeScreen />} />
-                          <Route path="/stops" element={<StopsScreen />} />
-                          <Route path="/report" element={<ReportScreen />} />
-                          <Route path="/community" element={<CommunityScreen />} />
-                          <Route path="/profile" element={<ProfileScreen />} />
-                          <Route path="/place/:id" element={<PlaceDetailScreen />} />
-                          <Route path="/company-review/:id" element={<CompanyReviewScreen />} />
-                          <Route path="/chat/:id" element={<ChatRoomScreen />} />
-                          <Route path="/bypass-history" element={<BypassHistory />} />
-                          <Route path="/settings" element={<Settings />} />
-                          <Route path="/navigation" element={<NavigationScreen />} />
-                          <Route path="/stop-advisor" element={<StopAdvisorScreen />} />
-                          <Route path="/facility-rating" element={<FacilityRatingScreen />} />
-                          <Route path="/facility/:id" element={<FacilityDetailScreen />} />
-                          <Route path="/food-preferences" element={<FoodPreferencesScreen />} />
-                          <Route path="/favorite-meals" element={<FavoriteMealsScreen />} />
-                          <Route path="/subscription" element={<SubscriptionScreen />} />
-                          <Route path="/rating-history" element={<RatingHistoryScreen />} />
-                          <Route path="/road-test-checklist" element={<RoadTestChecklist />} />
-                          <Route path="*" element={<NotFound />} />
-                        </Routes>
-                      </FacilityGeofenceProvider>
-                    </GeofenceProvider>
-                  </PoiFeedbackProvider>
+                  <EmotionalCheckInProvider>
+                    <PoiFeedbackProvider>
+                      <GeofenceProvider>
+                        <FacilityGeofenceProvider>
+                          <FloatingChatButton />
+                          <EmotionalCheckInModal />
+                          <CheckInTrigger />
+                          <Routes>
+                            <Route path="/" element={<WelcomeScreen onComplete={() => {}} />} />
+                            <Route path="/auth" element={<AuthScreen onComplete={() => {}} onBack={() => {}} />} />
+                            <Route path="/onboarding" element={<OnboardingScreen onComplete={() => {}} onBack={() => {}} />} />
+                            <Route path="/home" element={<HomeScreen />} />
+                            <Route path="/stops" element={<StopsScreen />} />
+                            <Route path="/report" element={<ReportScreen />} />
+                            <Route path="/community" element={<CommunityScreen />} />
+                            <Route path="/profile" element={<ProfileScreen />} />
+                            <Route path="/place/:id" element={<PlaceDetailScreen />} />
+                            <Route path="/company-review/:id" element={<CompanyReviewScreen />} />
+                            <Route path="/chat/:id" element={<ChatRoomScreen />} />
+                            <Route path="/bypass-history" element={<BypassHistory />} />
+                            <Route path="/settings" element={<Settings />} />
+                            <Route path="/navigation" element={<NavigationScreen />} />
+                            <Route path="/stop-advisor" element={<StopAdvisorScreen />} />
+                            <Route path="/facility-rating" element={<FacilityRatingScreen />} />
+                            <Route path="/facility/:id" element={<FacilityDetailScreen />} />
+                            <Route path="/food-preferences" element={<FoodPreferencesScreen />} />
+                            <Route path="/favorite-meals" element={<FavoriteMealsScreen />} />
+                            <Route path="/subscription" element={<SubscriptionScreen />} />
+                            <Route path="/rating-history" element={<RatingHistoryScreen />} />
+                            <Route path="/road-test-checklist" element={<RoadTestChecklist />} />
+                            <Route path="/wellbeing" element={<WellbeingScreen />} />
+                            <Route path="*" element={<NotFound />} />
+                          </Routes>
+                        </FacilityGeofenceProvider>
+                      </GeofenceProvider>
+                    </PoiFeedbackProvider>
+                  </EmotionalCheckInProvider>
                 </ActiveNavigationProvider>
               </ChatProvider>
             </BrowserRouter>
