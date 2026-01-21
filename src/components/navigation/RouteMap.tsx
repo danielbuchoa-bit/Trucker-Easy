@@ -6,6 +6,7 @@ import { decodePolyline } from '@/lib/polylineDecoder';
 import { useDiagnosticsSafe } from '@/contexts/DiagnosticsContext';
 import { useDiagnosticsTap } from '@/hooks/useDiagnosticsTap';
 import { SpeedAlertWithDistance, SpeedAlertType, ALERT_TYPE_CONFIG } from '@/types/speedAlerts';
+import { createTruckCursorElement } from './TruckCursor';
 
 // SVG icons for alert markers
 function getAlertIconSvg(type: SpeedAlertType, config: typeof ALERT_TYPE_CONFIG[SpeedAlertType]): string {
@@ -183,12 +184,15 @@ const RouteMap = ({ routePolyline, originLat, originLng, destLat, destLng, speed
           setMapReady(true);
           setLoading(false);
           
-          // Add user location marker if available
+          // Add user location marker with truck cursor
           const loc = userLocationRef.current;
           if (loc && map.current) {
-            const el = document.createElement('div');
-            el.className = 'w-4 h-4 bg-blue-500 rounded-full border-2 border-white shadow-lg animate-pulse';
-            userLocationMarker.current = new mapboxgl.Marker(el)
+            const el = createTruckCursorElement(40);
+            userLocationMarker.current = new mapboxgl.Marker({
+              element: el,
+              rotationAlignment: 'map',
+              pitchAlignment: 'map',
+            })
               .setLngLat([loc.lng, loc.lat])
               .addTo(map.current);
           }
