@@ -1,13 +1,16 @@
 import { useLanguage } from '@/i18n/LanguageContext';
 import { useBypassSettings } from '@/hooks/useBypassSettings';
-import { ArrowLeft, Scale, Shield, Bell, Globe, Moon } from 'lucide-react';
+import { useRoadTestSafe } from '@/contexts/RoadTestContext';
+import { ArrowLeft, Scale, Shield, Bell, Globe, Moon, FlaskConical, ClipboardCheck } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import BottomNav from '@/components/navigation/BottomNav';
 import { Switch } from '@/components/ui/switch';
+import { Button } from '@/components/ui/button';
 
 const Settings = () => {
   const { t, language, setLanguage } = useLanguage();
   const { settings, updateSettings } = useBypassSettings();
+  const roadTest = useRoadTestSafe();
   const navigate = useNavigate();
 
   const handleLanguageChange = () => {
@@ -71,6 +74,45 @@ const Settings = () => {
             </div>
           </div>
         </div>
+
+        {/* Road Test Mode */}
+        {roadTest && (
+          <div className="space-y-2">
+            <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide px-1">
+              🧪 Road Test
+            </h2>
+            <div className="bg-card rounded-xl border border-border divide-y divide-border">
+              <div className="p-4 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-orange-500/10 flex items-center justify-center">
+                    <FlaskConical className="w-5 h-5 text-orange-500" />
+                  </div>
+                  <div>
+                    <p className="font-medium">Road Test Mode</p>
+                    <p className="text-sm text-muted-foreground">Ativa diagnósticos e dados reais</p>
+                  </div>
+                </div>
+                <Switch
+                  checked={roadTest.isRoadTestMode}
+                  onCheckedChange={(checked) => roadTest.setRoadTestMode(checked)}
+                />
+              </div>
+              
+              {roadTest.isRoadTestMode && (
+                <div className="p-4">
+                  <Button 
+                    variant="outline" 
+                    className="w-full"
+                    onClick={() => navigate('/road-test-checklist')}
+                  >
+                    <ClipboardCheck className="w-4 h-4 mr-2" />
+                    Abrir Checklist de Teste
+                  </Button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* General Settings */}
         <div className="space-y-2">
