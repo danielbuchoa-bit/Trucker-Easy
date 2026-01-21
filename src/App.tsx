@@ -43,6 +43,7 @@ import SubscriptionScreen from "./pages/Subscription";
 import RatingHistoryScreen from "./pages/RatingHistory";
 import RoadTestChecklist from "./pages/RoadTestChecklist";
 import WellbeingScreen from "./pages/Wellbeing";
+import AdminDashboard from "./pages/AdminDashboard";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -94,6 +95,7 @@ const App = () => (
                             <Route path="/rating-history" element={<RatingHistoryScreen />} />
                             <Route path="/road-test-checklist" element={<RoadTestChecklist />} />
                             <Route path="/wellbeing" element={<WellbeingScreen />} />
+                            <Route path="/admin" element={<AdminDashboard />} />
                             <Route path="*" element={<NotFound />} />
                           </Routes>
                         </FacilityGeofenceProvider>

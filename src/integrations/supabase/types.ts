@@ -916,6 +916,27 @@ export type Database = {
         }
         Relationships: []
       }
+      user_roles: {
+        Row: {
+          created_at: string
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
       weigh_station_reports: {
         Row: {
           created_at: string
@@ -998,6 +1019,45 @@ export type Database = {
       }
     }
     Views: {
+      admin_user_summary: {
+        Row: {
+          email: string | null
+          full_name: string | null
+          joined_at: string | null
+          total_checkins: number | null
+          total_facility_ratings: number | null
+          total_messages: number | null
+          total_poi_feedback: number | null
+          total_reports: number | null
+          total_stop_ratings: number | null
+          user_id: string | null
+        }
+        Insert: {
+          email?: string | null
+          full_name?: string | null
+          joined_at?: string | null
+          total_checkins?: never
+          total_facility_ratings?: never
+          total_messages?: never
+          total_poi_feedback?: never
+          total_reports?: never
+          total_stop_ratings?: never
+          user_id?: string | null
+        }
+        Update: {
+          email?: string | null
+          full_name?: string | null
+          joined_at?: string | null
+          total_checkins?: never
+          total_facility_ratings?: never
+          total_messages?: never
+          total_poi_feedback?: never
+          total_reports?: never
+          total_stop_ratings?: never
+          user_id?: string | null
+        }
+        Relationships: []
+      }
       poi_ratings_aggregate: {
         Row: {
           avg_cleanliness: number | null
@@ -1028,9 +1088,16 @@ export type Database = {
         Args: { p_poi_id: string; p_user_id: string }
         Returns: boolean
       }
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
     }
     Enums: {
-      [_ in never]: never
+      app_role: "admin" | "user"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -1157,6 +1224,8 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["admin", "user"],
+    },
   },
 } as const
