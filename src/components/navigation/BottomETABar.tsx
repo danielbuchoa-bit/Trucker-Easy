@@ -1,7 +1,9 @@
 import React, { useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { X, ChevronUp, MessageSquare } from 'lucide-react';
 import { HereService } from '@/services/HereService';
 import { addSeconds, format } from 'date-fns';
+import { useChatContext } from '@/contexts/ChatContext';
 
 interface BottomETABarProps {
   remainingDistance: number; // meters
@@ -20,6 +22,8 @@ const BottomETABar = ({
   onEndNavigation,
   onMore,
 }: BottomETABarProps) => {
+  const navigate = useNavigate();
+  const { myRooms, lastActiveRoomId } = useChatContext();
   // Calculate ETA - handle NaN and invalid values
   const eta = useMemo(() => {
     if (typeof remainingDuration !== 'number' || !Number.isFinite(remainingDuration) || remainingDuration <= 0) {
@@ -61,7 +65,16 @@ const BottomETABar = ({
       <div className="bg-card border-t border-border">
         <div className="flex items-center justify-between px-4 py-3">
           {/* Left - Chat/Report button */}
-          <button className="flex flex-col items-center justify-center p-2 bg-success rounded-xl text-success-foreground">
+          <button 
+            onClick={() => {
+              if (myRooms.length > 0 && lastActiveRoomId) {
+                navigate(`/chat/${lastActiveRoomId}`);
+              } else {
+                navigate('/community?tab=chat');
+              }
+            }}
+            className="flex flex-col items-center justify-center p-2 bg-success rounded-xl text-success-foreground"
+          >
             <MessageSquare className="w-6 h-6" />
             <span className="text-[10px] font-semibold mt-0.5">Tap to Chat</span>
           </button>
