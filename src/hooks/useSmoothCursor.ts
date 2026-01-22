@@ -244,6 +244,9 @@ export function useSmoothCursor(
 
     const now = performance.now();
     let shouldAccept = true;
+    let isRecoveredSpike = false;
+    // If we need to override the incoming fix (e.g., spike recovery), we store it here.
+    let nextPosition: CursorPosition = matchedPosition;
     let rejectReason = '';
 
     // === [A] FIX: Improved spike rejection with consecutive count ===
@@ -286,12 +289,13 @@ export function useSmoothCursor(
             timeDelta: timeDelta.toFixed(2) + 's',
           });
           
-          // === [A] FIX: Only freeze if MAX_CONSECUTIVE_REJECTS reached ===
+          // If the implied speed is unrealistic, DO NOT accept the incoming point.
+          // Instead, keep animating from the last known good fix (dead reckoning) to avoid
+          // sudden lateral jumps that look like the GPS is "andando de lado".
           if (consecutiveRejectsRef.current >= SPIKE_CONFIG.MAX_CONSECUTIVE_REJECTS) {
             shouldAccept = false;
-            console.log('[CURSOR] ❌ Frozen: too many consecutive spikes');
+            console.log('[CURSOR] ❌ Skipping: too many consecutive spikes');
           } else if (SPIKE_CONFIG.RECOVERY_AFTER_REJECT && lastGoodPositionRef.current) {
-            // Use dead reckoning from last good position instead of freezing
             const drTime = now - lastFixTimeRef.current;
             if (drTime < DEAD_RECKONING_MAX_MS && lastGoodPositionRef.current.speed > MIN_SPEED_FOR_DR_MPS) {
               const projected = projectPosition(
@@ -301,16 +305,26 @@ export function useSmoothCursor(
                 lastGoodPositionRef.current.heading,
                 drTime
               );
-              // Accept with interpolated position
-              currPosRef.current = {
+
+              // Accept a *recovered* position (projected from last good), NOT the spiky fix.
+              // Also keep heading/speed from last good to avoid projecting sideways.
+              nextPosition = {
                 ...matchedPosition,
                 lat: projected.lat,
                 lng: projected.lng,
                 snappedLat: projected.lat,
                 snappedLng: projected.lng,
+                heading: lastGoodPositionRef.current.heading,
+                speed: lastGoodPositionRef.current.speed,
               };
-              console.log('[CURSOR] 🔄 Using dead reckoning after spike reject');
+              isRecoveredSpike = true;
+              shouldAccept = true;
+              console.log('[CURSOR] 🔄 Recovered spike: using dead reckoning instead of spiky fix');
+            } else {
+              shouldAccept = false;
             }
+          } else {
+            shouldAccept = false;
           }
         } else {
           // Good position - reset consecutive counter
@@ -333,9 +347,13 @@ export function useSmoothCursor(
       prevPosRef.current = { ...currPosRef.current };
     }
 
-    // Update current position and save as last good
-    currPosRef.current = { ...matchedPosition };
-    lastGoodPositionRef.current = { ...matchedPosition };
+    // Update current position.
+    // If we recovered from a spike, we must NOT overwrite lastGoodPositionRef with the recovered point.
+    // Otherwise, we'd slowly drift and amplify errors.
+    currPosRef.current = { ...nextPosition };
+    if (!isRecoveredSpike) {
+      lastGoodPositionRef.current = { ...matchedPosition };
+    }
     lastFixTimeRef.current = now;
 
     // Initialize render state if needed
@@ -345,7 +363,7 @@ export function useSmoothCursor(
     if (renderStateRef.current.lat === 0 && renderStateRef.current.lng === 0) {
       renderStateRef.current.lat = initLat;
       renderStateRef.current.lng = initLng;
-      renderStateRef.current.heading = matchedPosition.heading;
+      renderStateRef.current.heading = nextPosition.heading;
       renderStateRef.current.isOnRoute = matchedPosition.isOnRoute ?? false;
       renderStateRef.current.matchConfidence = matchedPosition.matchConfidence ?? 0;
     }
