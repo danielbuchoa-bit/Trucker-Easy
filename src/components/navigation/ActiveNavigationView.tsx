@@ -746,16 +746,19 @@ const ActiveNavigationView = () => {
     }
 
     // Update marker position at high frequency for smooth animation
-    // NOTE: In course-up mode, the MAP rotates to match heading, so the cursor
-    // should always point UP (rotation=0). Setting rotation=heading would cause
-    // double-rotation and make the cursor point sideways.
+    // IMPORTANT: The cursor rotation should be relative to the *current map bearing*.
+    // If we set cursorRotation=heading while the map is also bearing=heading (course-up),
+    // the cursor will appear rotated ("andando de lado").
+    // So we compute: relativeRotation = heading - mapBearing.
     if (now - markerUpdateRef.current >= MARKER_UPDATE_INTERVAL) {
       markerUpdateRef.current = now;
+
+      const mapBearing = map.current?.getBearing?.() ?? 0;
+      const relativeRotation = ((displayHeading - mapBearing) % 360 + 360) % 360;
       
       if (userMarker.current) {
         userMarker.current.setLngLat([displayLng, displayLat]);
-        // Cursor always points UP in course-up mode - map rotation handles direction
-        userMarker.current.setRotation(0);
+        userMarker.current.setRotation(relativeRotation);
       } else if (map.current) {
         const el = createTruckCursorElement(52);
         el.style.pointerEvents = 'none';
@@ -767,7 +770,7 @@ const ActiveNavigationView = () => {
           anchor: 'center',
         })
           .setLngLat([displayLng, displayLat])
-          .setRotation(0) // Always 0 - cursor points UP, map rotates to show direction
+          .setRotation(relativeRotation)
           .addTo(map.current);
       }
     }
