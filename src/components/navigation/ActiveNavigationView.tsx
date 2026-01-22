@@ -746,30 +746,29 @@ const ActiveNavigationView = () => {
     }
 
     // Update marker position at high frequency for smooth animation
-    // COURSE-UP MODE LOGIC:
-    // With rotationAlignment: 'viewport', the marker orientation is fixed relative to the screen.
-    // The MAP rotates so the direction of travel points UP on screen.
-    // Therefore, the cursor should ALWAYS have rotation=0 (pointing UP).
-    // Any rotation we apply would make it point sideways ("andando de lado").
+    // IMPORTANT:
+    // To avoid the cursor "andando de lado" across different camera modes (course-up, north-up,
+    // and even when the user manually rotates the map), we align the marker rotation to the MAP
+    // and set its rotation to the vehicle heading.
+    // This makes the cursor represent direction-of-travel correctly regardless of map bearing.
     if (now - markerUpdateRef.current >= MARKER_UPDATE_INTERVAL) {
       markerUpdateRef.current = now;
       
       if (userMarker.current) {
         userMarker.current.setLngLat([displayLng, displayLat]);
-        // CRITICAL: rotation=0 in course-up mode. Map rotation handles direction.
-        userMarker.current.setRotation(0);
+        userMarker.current.setRotation(displayHeading);
       } else if (map.current) {
         const el = createTruckCursorElement(52);
         el.style.pointerEvents = 'none';
 
         userMarker.current = new mapboxgl.Marker({
           element: el,
-          rotationAlignment: 'viewport', // Fixed to screen - always points UP
-          pitchAlignment: 'viewport',
+          rotationAlignment: 'map',
+          pitchAlignment: 'map',
           anchor: 'center',
         })
           .setLngLat([displayLng, displayLat])
-          .setRotation(0) // CRITICAL: Always 0 in course-up mode
+          .setRotation(displayHeading)
           .addTo(map.current);
       }
     }
