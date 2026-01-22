@@ -746,31 +746,30 @@ const ActiveNavigationView = () => {
     }
 
     // Update marker position at high frequency for smooth animation
-    // IMPORTANT: The cursor rotation should be relative to the *current map bearing*.
-    // If we set cursorRotation=heading while the map is also bearing=heading (course-up),
-    // the cursor will appear rotated ("andando de lado").
-    // So we compute: relativeRotation = heading - mapBearing.
+    // COURSE-UP MODE LOGIC:
+    // With rotationAlignment: 'viewport', the marker orientation is fixed relative to the screen.
+    // The MAP rotates so the direction of travel points UP on screen.
+    // Therefore, the cursor should ALWAYS have rotation=0 (pointing UP).
+    // Any rotation we apply would make it point sideways ("andando de lado").
     if (now - markerUpdateRef.current >= MARKER_UPDATE_INTERVAL) {
       markerUpdateRef.current = now;
-
-      const mapBearing = map.current?.getBearing?.() ?? 0;
-      const relativeRotation = ((displayHeading - mapBearing) % 360 + 360) % 360;
       
       if (userMarker.current) {
         userMarker.current.setLngLat([displayLng, displayLat]);
-        userMarker.current.setRotation(relativeRotation);
+        // CRITICAL: rotation=0 in course-up mode. Map rotation handles direction.
+        userMarker.current.setRotation(0);
       } else if (map.current) {
         const el = createTruckCursorElement(52);
         el.style.pointerEvents = 'none';
 
         userMarker.current = new mapboxgl.Marker({
           element: el,
-          rotationAlignment: 'viewport', // Marker always points UP on screen (course-up mode)
+          rotationAlignment: 'viewport', // Fixed to screen - always points UP
           pitchAlignment: 'viewport',
           anchor: 'center',
         })
           .setLngLat([displayLng, displayLat])
-          .setRotation(relativeRotation)
+          .setRotation(0) // CRITICAL: Always 0 in course-up mode
           .addTo(map.current);
       }
     }
