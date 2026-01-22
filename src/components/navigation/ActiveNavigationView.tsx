@@ -762,8 +762,8 @@ const ActiveNavigationView = () => {
 
         userMarker.current = new mapboxgl.Marker({
           element: el,
-          rotationAlignment: 'map', // Marker stays fixed relative to map (points up)
-          pitchAlignment: 'map',
+          rotationAlignment: 'viewport', // Marker always points UP on screen (course-up mode)
+          pitchAlignment: 'viewport',
           anchor: 'center',
         })
           .setLngLat([displayLng, displayLat])
