@@ -202,58 +202,71 @@ const NewsFeed: React.FC = () => {
 
       {/* News Cards */}
       {news.map((item) => (
-        <button
+        <a
           key={item.id}
-          onClick={() => openNews(item.source_url)}
-          className="w-full bg-card rounded-xl border border-border hover:border-primary/50 transition-all text-left overflow-hidden"
+          href={item.source_url}
+          target="_blank"
+          rel="noreferrer"
+          className="block rounded-2xl bg-card border border-border p-4 active:scale-[0.99] transition-transform hover:border-primary/50"
         >
-          {/* Image */}
-          <div className="relative h-32 w-full">
-            <img 
-              src={item.image_url || 'https://images.unsplash.com/photo-1601584115197-04ecc0da31d7?w=400&h=200&fit=crop'} 
-              alt={item.title}
-              className="w-full h-full object-cover"
-              onError={(e) => {
-                (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1601584115197-04ecc0da31d7?w=400&h=200&fit=crop';
-              }}
-            />
-            <div className="absolute top-2 left-2 flex items-center gap-2 flex-wrap">
-              {item.urgency !== 'normal' && (
-                <Badge className={urgencyColors[item.urgency]}>
-                  {item.urgency === 'today' ? 'HOJE' : item.urgency === 'alert' ? 'ALERTA' : 'URGENTE'}
-                </Badge>
-              )}
-              <Badge variant="secondary" className="bg-black/60 text-white border-0">
-                {item.category}
-              </Badge>
-              {item.state && (
-                <Badge variant="secondary" className="bg-black/60 text-white border-0 flex items-center gap-1">
-                  <MapPin className="w-3 h-3" />
-                  {item.state}
-                </Badge>
-              )}
-            </div>
-          </div>
+          <div className="flex gap-4">
+            {item.image_url ? (
+              <img
+                src={item.image_url}
+                alt=""
+                className="h-20 w-28 rounded-xl object-cover flex-none"
+                onError={(e) => {
+                  (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1601584115197-04ecc0da31d7?w=400&h=200&fit=crop';
+                }}
+              />
+            ) : (
+              <div className="h-20 w-28 rounded-xl bg-muted flex-none" />
+            )}
 
-          {/* Content */}
-          <div className="p-3">
-            <h3 className="font-semibold text-foreground line-clamp-2 text-sm">{item.title}</h3>
-            <p className="text-xs text-muted-foreground line-clamp-2 mt-1">{item.summary}</p>
-            
-            <div className="flex items-center justify-between mt-2">
-              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                <span>{item.source}</span>
-                <span>•</span>
-                <Clock className="w-3 h-3" />
-                <span>{formatDate(item.published_at)}</span>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2 mb-2 flex-wrap">
+                <span className="text-xs px-2 py-1 rounded-full bg-muted text-foreground">
+                  {item.source}
+                </span>
+                {item.urgency !== 'normal' && (
+                  <Badge className={urgencyColors[item.urgency]}>
+                    {item.urgency === 'today' ? 'HOJE' : item.urgency === 'alert' ? 'ALERTA' : 'URGENTE'}
+                  </Badge>
+                )}
+                <Badge variant="secondary" className="bg-muted text-muted-foreground border-0">
+                  {item.category}
+                </Badge>
+                {item.state && (
+                  <Badge variant="secondary" className="bg-muted text-muted-foreground border-0 flex items-center gap-1">
+                    <MapPin className="w-3 h-3" />
+                    {item.state}
+                  </Badge>
+                )}
               </div>
-              <div className="flex items-center gap-1 text-xs text-primary">
-                <span>Ler mais</span>
-                <ExternalLink className="w-3 h-3" />
+
+              <h3 className="text-foreground font-semibold text-base leading-snug line-clamp-2">
+                {item.title}
+              </h3>
+
+              {item.summary && (
+                <p className="mt-1.5 text-muted-foreground text-sm leading-relaxed line-clamp-2">
+                  {item.summary}
+                </p>
+              )}
+
+              <div className="mt-2 flex items-center justify-between">
+                <span className="text-xs text-muted-foreground flex items-center gap-1">
+                  <Clock className="w-3 h-3" />
+                  {formatDate(item.published_at)}
+                </span>
+                <span className="text-sm text-primary font-medium flex items-center gap-1">
+                  Ler mais
+                  <ExternalLink className="w-3 h-3" />
+                </span>
               </div>
             </div>
           </div>
-        </button>
+        </a>
       ))}
 
       {/* Empty State */}
