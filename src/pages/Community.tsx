@@ -49,7 +49,7 @@ const CommunityScreen = () => {
 
   const filters = [
     { id: 'all', label: t.community.all },
-    { id: 'my_rooms', label: 'My Rooms' },
+    { id: 'my_rooms', label: language === 'pt' ? 'Minhas Salas' : language === 'es' ? 'Mis Salas' : 'My Rooms' },
     { id: 'language', label: t.community.byLanguage },
     { id: 'region', label: t.community.byRegion },
     { id: 'trailer', label: t.community.byTrailer },
@@ -109,23 +109,23 @@ const CommunityScreen = () => {
             <TabsList className="grid grid-cols-5 h-auto">
               <TabsTrigger value="reports" className="flex flex-col items-center gap-0.5 py-2 px-1 text-xs">
                 <AlertTriangle className="w-4 h-4" />
-                <span>Reports</span>
+                <span>{t.community.tabs.reports}</span>
               </TabsTrigger>
               <TabsTrigger value="facilities" className="flex flex-col items-center gap-0.5 py-2 px-1 text-xs">
                 <Building2 className="w-4 h-4" />
-                <span>Facilities</span>
+                <span>{t.community.tabs.facilities}</span>
               </TabsTrigger>
               <TabsTrigger value="chat" className="flex flex-col items-center gap-0.5 py-2 px-1 text-xs">
                 <MessageCircle className="w-4 h-4" />
-                <span>Chat</span>
+                <span>{t.community.tabs.chat}</span>
               </TabsTrigger>
               <TabsTrigger value="news" className="flex flex-col items-center gap-0.5 py-2 px-1 text-xs">
                 <Newspaper className="w-4 h-4" />
-                <span>News</span>
+                <span>{t.community.tabs.news}</span>
               </TabsTrigger>
               <TabsTrigger value="learn" className="flex flex-col items-center gap-0.5 py-2 px-1 text-xs">
                 <BookOpen className="w-4 h-4" />
-                <span>Learn</span>
+                <span>{t.community.tabs.learn}</span>
               </TabsTrigger>
             </TabsList>
           </Tabs>
@@ -154,8 +154,12 @@ const CommunityScreen = () => {
                   <Plus className="w-6 h-6 text-primary-foreground" />
                 </div>
                 <div className="flex-1">
-                  <h3 className="font-semibold text-primary-foreground">+ Create New Room</h3>
-                  <p className="text-sm text-primary-foreground/80">Start your own community chat</p>
+                  <h3 className="font-semibold text-primary-foreground">+ {t.community.createGroup}</h3>
+                  <p className="text-sm text-primary-foreground/80">
+                    {language === 'pt' ? 'Inicie sua própria sala de chat' : 
+                     language === 'es' ? 'Inicia tu propio chat comunitario' : 
+                     'Start your own community chat'}
+                  </p>
                 </div>
                 <ChevronRight className="w-5 h-5 text-primary-foreground" />
               </div>
@@ -209,19 +213,21 @@ const CommunityScreen = () => {
                       <h3 className="font-semibold text-foreground truncate">{room.name}</h3>
                       {isMember && (
                         <span className="px-2 py-0.5 bg-primary/10 text-primary text-xs rounded-full font-medium">
-                          Member
+                          {language === 'pt' ? 'Membro' : language === 'es' ? 'Miembro' : 'Member'}
                         </span>
                       )}
                       {isDriverCreated && (
                         <span className="px-2 py-0.5 bg-secondary text-muted-foreground text-xs rounded-full font-medium flex items-center gap-1">
                           <Users className="w-3 h-3" />
-                          Driver Room
+                          {language === 'pt' ? 'Sala de Motorista' : language === 'es' ? 'Sala de Conductor' : 'Driver Room'}
                         </span>
                       )}
                     </div>
                     
                     <p className="text-sm text-muted-foreground truncate mt-0.5">
-                      {room.last_message_preview || room.description || 'No messages yet'}
+                      {room.last_message_preview || room.description || 
+                        (language === 'pt' ? 'Nenhuma mensagem ainda' : 
+                         language === 'es' ? 'Sin mensajes aún' : 'No messages yet')}
                     </p>
                     
                     <div className="flex items-center gap-3 mt-2">
@@ -249,14 +255,22 @@ const CommunityScreen = () => {
               <div className="text-center py-12">
                 <MessageCircle className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
                 <p className="text-muted-foreground">
-                  {activeFilter === 'my_rooms' ? "You haven't joined any rooms yet" : 'No chat rooms found'}
+                  {activeFilter === 'my_rooms' 
+                    ? (language === 'pt' ? "Você ainda não entrou em nenhuma sala" : 
+                       language === 'es' ? "Aún no te has unido a ninguna sala" : 
+                       "You haven't joined any rooms yet")
+                    : (language === 'pt' ? 'Nenhuma sala encontrada' : 
+                       language === 'es' ? 'No se encontraron salas' : 
+                       'No chat rooms found')}
                 </p>
                 {activeFilter === 'my_rooms' && (
                   <button
                     onClick={() => setActiveFilter('all')}
                     className="mt-4 px-4 py-2 bg-primary text-primary-foreground rounded-full text-sm font-medium"
                   >
-                    Explore rooms
+                    {language === 'pt' ? 'Explorar salas' : 
+                     language === 'es' ? 'Explorar salas' : 
+                     'Explore rooms'}
                   </button>
                 )}
               </div>
