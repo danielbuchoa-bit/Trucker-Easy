@@ -3,6 +3,7 @@ import { useLanguage } from '@/i18n/LanguageContext';
 import { MapPin, Fuel, Scale, Coffee, Bed, Star, ChevronRight } from 'lucide-react';
 import BottomNav from '@/components/navigation/BottomNav';
 import { useNavigate } from 'react-router-dom';
+import EnglishQuickReturn from '@/components/settings/EnglishQuickReturn';
 
 const StopsScreen = () => {
   const { t } = useLanguage();
@@ -108,7 +109,10 @@ const StopsScreen = () => {
       {/* Header */}
       <div className="sticky top-0 z-40 bg-background/95 backdrop-blur-sm border-b border-border safe-top">
         <div className="p-4">
-          <h1 className="text-2xl font-bold text-foreground mb-4">{t.nav.stops}</h1>
+          <div className="flex items-center justify-between mb-4">
+            <h1 className="text-2xl font-bold text-foreground">{t.nav.stops}</h1>
+            <EnglishQuickReturn />
+          </div>
           
           {/* Filter Pills */}
           <div className="flex gap-2 overflow-x-auto hide-scrollbar pb-1">

@@ -6,6 +6,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
 import NicknameModal from '@/components/chat/NicknameModal';
+import EnglishQuickReturn from '@/components/settings/EnglishQuickReturn';
 import { useChatContext } from '@/contexts/ChatContext';
 import MentionInput from '@/components/chat/MentionInput';
 import MentionHighlight, { isUserMentioned } from '@/components/chat/MentionHighlight';
@@ -536,42 +537,45 @@ const ChatRoomScreen = () => {
             </div>
           </div>
           
-          {isMember && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button className="w-10 h-10 flex items-center justify-center text-muted-foreground hover:text-foreground">
-                  <MoreVertical className="w-5 h-5" />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56">
-                <DropdownMenuItem onClick={() => setShowNicknameModal(true)}>
-                  <Edit2 className="w-4 h-4 mr-2" />
-                  Editar apelido
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={handleToggleNotifications}>
-                  {notificationsEnabled ? (
-                    <>
-                      <BellOff className="w-4 h-4 mr-2" />
-                      Desativar notificações
-                    </>
-                  ) : (
-                    <>
-                      <Bell className="w-4 h-4 mr-2" />
-                      Ativar notificações
-                    </>
-                  )}
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem 
-                  onClick={handleLeaveRoom}
-                  className="text-destructive focus:text-destructive"
-                >
-                  <LogOut className="w-4 h-4 mr-2" />
-                  Sair da sala
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
+          <div className="flex items-center gap-2">
+            <EnglishQuickReturn />
+            {isMember && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button className="w-10 h-10 flex items-center justify-center text-muted-foreground hover:text-foreground">
+                    <MoreVertical className="w-5 h-5" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-56">
+                  <DropdownMenuItem onClick={() => setShowNicknameModal(true)}>
+                    <Edit2 className="w-4 h-4 mr-2" />
+                    {t.community?.editNickname || 'Edit nickname'}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={handleToggleNotifications}>
+                    {notificationsEnabled ? (
+                      <>
+                        <BellOff className="w-4 h-4 mr-2" />
+                        {t.community?.disableNotifications || 'Disable notifications'}
+                      </>
+                    ) : (
+                      <>
+                        <Bell className="w-4 h-4 mr-2" />
+                        {t.community?.enableNotifications || 'Enable notifications'}
+                      </>
+                    )}
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem 
+                    onClick={handleLeaveRoom}
+                    className="text-destructive focus:text-destructive"
+                  >
+                    <LogOut className="w-4 h-4 mr-2" />
+                    {t.community?.leave || 'Leave room'}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+          </div>
         </div>
       </div>
 
