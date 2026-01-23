@@ -36,6 +36,10 @@
     --info: 199 89% 48%;
     --info-foreground: 220 20% 10%;
     
+    /* Action button colors */
+    --facility-action: 210 80% 55%;
+    --facility-action-foreground: 0 0% 100%;
+    
     /* Status colors for truck stops */
     --status-open: 142 71% 45%;
     --status-closed: 0 72% 51%;

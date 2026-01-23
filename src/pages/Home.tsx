@@ -1,6 +1,6 @@
 import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import { useLanguage } from '@/i18n/LanguageContext';
-import { Search, Filter, MapPin, Navigation, Route, Building2, Loader2, RefreshCw, AlertCircle, Truck, Fuel, Scale, UtensilsCrossed, TreePine, Info } from 'lucide-react';
+import { Search, Filter, MapPin, Navigation, Route, Building2, Loader2, RefreshCw, AlertCircle, Truck, Fuel, Scale, UtensilsCrossed, TreePine, Info, Star } from 'lucide-react';
 import BottomNav from '@/components/navigation/BottomNav';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -9,7 +9,8 @@ import { getBrandLogo } from '@/lib/truckStopLogos';
 import LocationErrorCard from '@/components/location/LocationErrorCard';
 import { NextBillionDiagnosticsPanel } from '@/components/diagnostics/NextBillionDiagnosticsPanel';
 import { useNextBillionDiagnostics } from '@/hooks/useNextBillionDiagnostics';
-import RateFacilityModal from '@/components/facility/RateFacilityModal';
+import CompleteFacilityReviewModal from '@/components/facility/CompleteFacilityReviewModal';
+import MapBackground from '@/components/map/MapBackground';
 import { Badge } from '@/components/ui/badge';
 
 interface NearbyPlace {
@@ -420,52 +421,58 @@ const HomeScreen = () => {
         </div>
       </div>
 
-      {/* Map Placeholder with Diagnostics Trigger */}
-      <div className="relative h-[40vh] bg-secondary/30 flex items-center justify-center border-b border-border">
-        <div className="text-center">
-          {/* Tappable Logo for Diagnostics (5 taps to open) */}
+      {/* Map Background with floating elements */}
+      <MapBackground userLocation={userLocation} className="h-[40vh]">
+        {/* Floating content over map */}
+        <div className="flex flex-col h-full justify-end p-4">
+          {/* Diagnostics trigger (hidden tappable area) */}
           <button 
             onClick={diagnostics.handleTap}
-            className="focus:outline-none"
+            className="absolute top-4 left-1/2 -translate-x-1/2 focus:outline-none opacity-0"
             aria-label="Open diagnostics (tap 5 times)"
           >
-            <Truck className="w-12 h-12 text-primary mx-auto mb-2" />
+            <Truck className="w-8 h-8" />
           </button>
-          {userLocation ? (
-            <p className="text-muted-foreground text-sm">
+
+          {/* Location info */}
+          {userLocation && (
+            <div className="absolute top-4 left-4 bg-background/80 backdrop-blur-sm rounded-lg px-3 py-1.5 text-xs text-muted-foreground">
               📍 {userLocation.lat.toFixed(4)}, {userLocation.lng.toFixed(4)}
-            </p>
-          ) : (
-            <p className="text-muted-foreground text-sm">{t.common.loading}</p>
+            </div>
           )}
-          <p className="text-xs text-muted-foreground mt-1">Map integration coming soon</p>
-          
-          {/* Action Buttons */}
-          <div className="flex flex-wrap gap-2 mt-4 justify-center">
-            <Button onClick={() => navigate('/navigation')}>
+
+          {/* Action Buttons - Side by Side, Same Size */}
+          <div className="flex gap-3 mt-auto">
+            <Button 
+              onClick={() => navigate('/navigation')}
+              className="flex-1 h-12"
+            >
               <Route className="w-4 h-4 mr-2" />
               {t.navigation?.calculateRoute || 'Calculate Route'}
             </Button>
-            <Button variant="outline" onClick={() => setIsRateModalOpen(true)}>
-              <Building2 className="w-4 h-4 mr-2" />
+            <Button 
+              onClick={() => setIsRateModalOpen(true)}
+              className="flex-1 h-12 bg-facility-action hover:bg-facility-action/90 text-facility-action-foreground"
+            >
+              <Star className="w-4 h-4 mr-2" />
               Rate Facility
             </Button>
           </div>
-        </div>
 
-        {/* Floating Refresh Location Button */}
-        <button 
-          onClick={handleRefresh}
-          disabled={loading}
-          className="absolute bottom-4 right-4 w-12 h-12 bg-card border border-border rounded-full shadow-lg flex items-center justify-center text-primary hover:bg-secondary transition-colors disabled:opacity-50"
-        >
-          {loading ? (
-            <Loader2 className="w-5 h-5 animate-spin" />
-          ) : (
-            <Navigation className="w-5 h-5" />
-          )}
-        </button>
-      </div>
+          {/* Floating Refresh Location Button */}
+          <button 
+            onClick={handleRefresh}
+            disabled={loading}
+            className="absolute bottom-20 right-4 w-12 h-12 bg-card/90 backdrop-blur-sm border border-border rounded-full shadow-lg flex items-center justify-center text-primary hover:bg-card transition-colors disabled:opacity-50"
+          >
+            {loading ? (
+              <Loader2 className="w-5 h-5 animate-spin" />
+            ) : (
+              <Navigation className="w-5 h-5" />
+            )}
+          </button>
+        </div>
+      </MapBackground>
 
       {/* Nearby Places List */}
       <div className="p-4">
@@ -662,8 +669,8 @@ const HomeScreen = () => {
         onClose={diagnostics.close} 
       />
 
-      {/* Rate Facility Modal */}
-      <RateFacilityModal
+      {/* Complete Facility Review Modal */}
+      <CompleteFacilityReviewModal
         isOpen={isRateModalOpen}
         onClose={() => setIsRateModalOpen(false)}
         userLocation={userLocation}
