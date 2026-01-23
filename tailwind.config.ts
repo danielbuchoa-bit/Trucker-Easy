@@ -85,6 +85,10 @@ export default {
           limited: "hsl(var(--parking-limited))",
           full: "hsl(var(--parking-full))",
         },
+        "facility-action": {
+          DEFAULT: "hsl(var(--facility-action))",
+          foreground: "hsl(var(--facility-action-foreground))",
+        },
       },
       borderRadius: {
         lg: "var(--radius)",
