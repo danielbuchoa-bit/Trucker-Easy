@@ -1,5 +1,11 @@
 import { useState, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { 
+  filterTruckFriendlyPOIs, 
+  TRUCK_STOP_BRANDS, 
+  TRUCK_STOP_ATTACHED_RESTAURANTS,
+  type TruckFriendlyPOI 
+} from '@/lib/truckFriendlyFilter';
 
 // ============ TYPES ============
 interface Restaurant {
@@ -28,42 +34,33 @@ interface NearbyRestaurantsResult {
   restaurants: Restaurant[];
   fallback: FallbackSuggestions | null;
   source: 'api' | 'fallback';
+  truckFriendlyFiltered?: boolean;
 }
 
 // ============ CONSTANTS ============
-const SEARCH_RADII = [100, 200, 350]; // meters - smaller radius to find restaurants INSIDE truck stops
+// Search only within truck stop complex - very tight radius
+const SEARCH_RADII = [150, 300]; // meters - only find restaurants INSIDE or adjacent to truck stops
 const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
-const CACHE_VERSION = 'v3'; // bump to invalidate old cached results
+const CACHE_VERSION = 'v4-truck-filter'; // bump to invalidate old cached results
 
-// Known food brands for detection - expanded list
+// Known food brands for detection - only those commonly in truck stops
 const KNOWN_FOOD_BRANDS = [
-  // Fast food chains commonly in truck stops
-  "mcdonald", "burger king", "wendy", "subway", "taco bell", "hardee", "carl's jr",
-  "popeyes", "chick-fil-a", "arby", "dairy queen", "sonic", "denny", "ihop",
-  "waffle house", "cracker barrel", "pizza hut", "domino", "papa john",
-  "dunkin", "starbucks", "tim horton", "krispy kreme", "cinnabon",
-  "chester", "godfather", "hot stuff", "iron skillet", "country pride",
-  // Additional chains
-  "panda express", "fazoli", "sbarro", "auntie anne", "taco john",
-  "bojangle", "zaxby", "huddle house", "shoney", "golden corral",
-  "long john silver", "captain d", "whataburger", "in-n-out", "five guys",
-  "jimmy john", "firehouse sub", "jersey mike", "quizno", "blimpie",
-  "little caesar", "marcos pizza", "hunt brothers"
+  // Fast food chains commonly INSIDE truck stops - verified truck-friendly
+  "iron skillet", "country pride", // TA/Petro exclusive
+  "denny", "huddle house", "waffle house",
+  "wendy", "subway", "taco bell", "mcdonald", "burger king", "arby",
+  "popeyes", "chester", "godfather", "hot stuff",
+  "dunkin", "starbucks", "tim horton",
+  "pizza hut", "domino", "papa john", "little caesar", "hunt brothers",
+  // Highway chains with known truck parking
+  "cracker barrel", "golden corral", "shoney",
 ];
 
-// HERE category IDs for food places - more comprehensive
+// HERE category IDs for food places
 const FOOD_CATEGORIES = [
   '100-1000-0000', // Restaurant
-  '100-1000-0001', // Casual Dining
-  '100-1000-0002', // Fine Dining
-  '100-1000-0003', // Take Out & Delivery
-  '100-1000-0004', // Food Court
-  '100-1000-0005', // Bistro
   '100-1000-0006', // Fast Food - KEY for truck stop restaurants
-  '100-1000-0007', // Coffee Shop
-  '100-1000-0008', // Cafeteria
-  '100-1000-0009', // Bakery
-  '100-1100-0000', // Coffee/Tea - for Starbucks, Dunkin, etc.
+  '100-1100-0000', // Coffee/Tea
 ];
 
 // ============ TRUCK STOP OFFERINGS CATALOG ============
@@ -115,26 +112,55 @@ function dedupeByName(restaurants: Restaurant[]): Restaurant[] {
   });
 }
 
-function isFoodPlace(item: any): boolean {
-  // Our backend already classifies results; trust it.
-  if (item?.category === 'restaurant') return true;
-
-  // Check categories (when present)
-  const categories = item.categories || [];
-  for (const cat of categories) {
-    const catId = cat.id || '';
-    // Restaurant and food categories start with 100-1000 or 100-1100
-    if (catId.startsWith('100-1000') || catId.startsWith('100-1100')) {
+/**
+ * STRICT TRUCK-FRIENDLY FOOD FILTER
+ * Only allows food places that are:
+ * 1. Inside a truck stop complex (distance < 150m from truck stop)
+ * 2. Known truck stop attached restaurants
+ * 3. Highway restaurants with verified truck parking (Cracker Barrel, etc.)
+ */
+function isTruckFriendlyFood(item: any, stopName: string): boolean {
+  const itemName = normalizeName(item.name || item.title || '');
+  const chainName = normalizeName(item.chainName || item.chains?.[0]?.name || '');
+  const searchText = itemName + ' ' + chainName;
+  const distance = item.distance || 0;
+  
+  // Check if the stop itself is a known truck stop
+  const isAtTruckStop = TRUCK_STOP_BRANDS.some(brand => 
+    normalizeName(stopName).includes(normalizeName(brand))
+  );
+  
+  // If we're at a truck stop and the restaurant is very close (< 150m), it's likely attached
+  if (isAtTruckStop && distance < 150) {
+    // Check if it's a known food brand
+    const isKnownFood = KNOWN_FOOD_BRANDS.some(brand => 
+      searchText.includes(normalizeName(brand))
+    );
+    if (isKnownFood) {
+      console.log(`[TruckFilter] ✅ ${item.name} - attached to truck stop (${distance}m)`);
       return true;
     }
   }
-
-  // Check name against known food brands - this is KEY for finding restaurants in truck stops
-  const nameNormalized = normalizeName(item.name || item.title || '');
-  const chainName = normalizeName(item.chainName || item.chains?.[0]?.name || '');
-  const searchText = nameNormalized + ' ' + chainName;
   
-  return KNOWN_FOOD_BRANDS.some((brand) => searchText.includes(normalizeName(brand)));
+  // Check if it's a truck stop attached restaurant chain
+  const isAttachedChain = TRUCK_STOP_ATTACHED_RESTAURANTS.some(brand =>
+    searchText.includes(normalizeName(brand))
+  );
+  
+  if (isAttachedChain && distance < 200) {
+    console.log(`[TruckFilter] ✅ ${item.name} - known truck stop restaurant chain`);
+    return true;
+  }
+  
+  // Special case: Cracker Barrel is always truck-friendly
+  if (searchText.includes('crackerbarrel') || searchText.includes('cracker barrel')) {
+    console.log(`[TruckFilter] ✅ ${item.name} - Cracker Barrel (truck-friendly)`);
+    return true;
+  }
+  
+  // STRICT: Exclude everything else - urban restaurants, malls, etc.
+  console.log(`[TruckFilter] ❌ ${item.name} - not verified truck-friendly (${distance}m from stop)`);
+  return false;
 }
 
 function detectTruckStopBrand(stopName: string): string {
@@ -231,16 +257,12 @@ export function useNearbyRestaurants() {
         const pois = data?.pois || [];
         console.log(`[useNearbyRestaurants] Raw POIs returned: ${pois.length}`);
         
-        // Filter for actual food places
+        // STRICT TRUCK-FRIENDLY FILTER: Only allow restaurants inside truck stops
         const foodPlaces = pois.filter((item: any) => {
-          const isFood = isFoodPlace(item);
-          if (isFood) {
-            console.log(`[useNearbyRestaurants] ✅ Found food: ${item.name} (distance: ${item.distance}m)`);
-          }
-          return isFood;
+          return isTruckFriendlyFood(item, stopName);
         });
         
-        console.log(`[useNearbyRestaurants] After food filter: ${foodPlaces.length} places`);
+        console.log(`[useNearbyRestaurants] After truck-friendly filter: ${foodPlaces.length} places`);
         
         if (foodPlaces.length > 0) {
           restaurants = foodPlaces

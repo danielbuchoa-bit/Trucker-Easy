@@ -1,10 +1,15 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { X, Utensils, Sparkles, Loader2, ThumbsUp, AlertTriangle, Ban, ChevronDown, ChevronUp, MapPin, Store } from 'lucide-react';
+import { X, Utensils, Sparkles, Loader2, ThumbsUp, AlertTriangle, Ban, ChevronDown, ChevronUp, MapPin, Store, Truck } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
 import type { DriverFoodProfile } from '@/types/stops';
+import { 
+  TRUCK_STOP_BRANDS, 
+  TRUCK_STOP_ATTACHED_RESTAURANTS,
+  getTruckFriendlyFallbackMessage 
+} from '@/lib/truckFriendlyFilter';
 
 interface VisitedStop {
   id: string;
@@ -76,17 +81,28 @@ const FoodSuggestionPrompt: React.FC<FoodSuggestionPromptProps> = ({ stop, onDis
     }
   }, []);
 
-  // Fetch nearby restaurants at this stop
+  // Fetch nearby restaurants at this stop - STRICT TRUCK-FRIENDLY FILTER
   const fetchNearbyRestaurants = useCallback(async (): Promise<string[]> => {
     try {
-      console.log('[FoodSuggestion] Searching restaurants for:', stop.name);
+      console.log('[FoodSuggestion] Searching truck-friendly restaurants for:', stop.name);
+      
+      // Check if we're at a verified truck stop
+      const stopNameLower = stop.name.toLowerCase();
+      const isAtTruckStop = TRUCK_STOP_BRANDS.some(brand => 
+        stopNameLower.includes(brand.replace("'", '').toLowerCase())
+      );
+      
+      if (!isAtTruckStop) {
+        console.log('[FoodSuggestion] Not at a verified truck stop - using fallback only');
+        return [];
+      }
       
       const { data, error: fnError } = await supabase.functions.invoke('here_browse_pois', {
         body: {
           lat: stop.lat,
           lng: stop.lng,
-          radiusMeters: 300,
-          categories: ['100-1000-0000', '100-1100-0000'], // Restaurants, Fast Food
+          radiusMeters: 150, // STRICT: Only search within truck stop complex
+          categories: ['100-1000-0000', '100-1000-0006'], // Restaurant, Fast Food only
           limit: 10,
         },
       });
@@ -97,8 +113,28 @@ const FoodSuggestionPrompt: React.FC<FoodSuggestionPromptProps> = ({ stop, onDis
       }
 
       if (data?.pois) {
-        const names = data.pois.map((p: any) => p.name).filter(Boolean);
-        console.log('[FoodSuggestion] Found restaurants:', names.length);
+        // STRICT FILTER: Only allow known truck stop attached restaurants
+        const truckFriendlyRestaurants = data.pois.filter((p: any) => {
+          const name = (p.name || '').toLowerCase();
+          const chainName = (p.chainName || '').toLowerCase();
+          const searchText = `${name} ${chainName}`;
+          
+          // Only allow known truck stop restaurant chains
+          const isAttached = TRUCK_STOP_ATTACHED_RESTAURANTS.some(brand =>
+            searchText.includes(brand.toLowerCase())
+          );
+          
+          if (isAttached) {
+            console.log(`[FoodSuggestion] ✅ Truck-friendly: ${p.name}`);
+            return true;
+          }
+          
+          console.log(`[FoodSuggestion] ❌ Excluded (not truck-friendly): ${p.name}`);
+          return false;
+        });
+        
+        const names = truckFriendlyRestaurants.map((p: any) => p.name).filter(Boolean);
+        console.log('[FoodSuggestion] Truck-friendly restaurants found:', names.length);
         setNearbyRestaurants(names);
         return names;
       }
