@@ -149,11 +149,6 @@ const LanguageSwitcher: React.FC<LanguageSwitcherProps> = ({
           </SheetTitle>
         </SheetHeader>
         
-        {/* Debug info - remove after validation */}
-        <div className="text-[10px] text-muted-foreground bg-muted/50 p-2 rounded mb-2 font-mono">
-          Current: {debugInfo.code} → {debugInfo.translationKey} | Sample: "{debugInfo.sampleKey}"
-        </div>
-        
         {/* Search field */}
         <div className="relative mb-3">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
