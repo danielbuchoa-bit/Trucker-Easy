@@ -1,5 +1,4 @@
-import { useLanguage, languageOptions } from '@/i18n/LanguageContext';
-import { Language } from '@/i18n/translations';
+import { useLanguage } from '@/i18n/LanguageContext';
 import { Truck } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
@@ -8,7 +7,7 @@ interface WelcomeScreenProps {
 }
 
 const WelcomeScreen = ({ onComplete }: WelcomeScreenProps) => {
-  const { t, language, setLanguage } = useLanguage();
+  const { t } = useLanguage();
   const navigate = useNavigate();
 
   const handleGetStarted = () => {
@@ -36,30 +35,7 @@ const WelcomeScreen = ({ onComplete }: WelcomeScreenProps) => {
         {t.welcome.tagline}
       </p>
 
-      {/* Language Selection */}
-      <div className="w-full max-w-sm mb-8">
-        <p className="text-sm text-muted-foreground text-center mb-4">
-          {t.welcome.selectLanguage}
-        </p>
-        <div className="flex gap-3 justify-center">
-          {languageOptions.map((option) => (
-            <button
-              key={option.value}
-              onClick={() => setLanguage(option.value as Language)}
-              className={`flex flex-col items-center p-4 rounded-xl border-2 transition-all duration-200 min-w-[90px] ${
-                language === option.value
-                  ? 'border-primary bg-primary/10 text-foreground'
-                  : 'border-border bg-card text-muted-foreground hover:border-primary/50'
-              }`}
-            >
-              <span className="text-2xl mb-1">{option.flag}</span>
-              <span className="text-sm font-medium">{option.label}</span>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Get Started Button */}
+      {/* Get Started Button - no language selection here */}
       <button
         onClick={handleGetStarted}
         className="w-full max-w-sm py-4 px-6 bg-primary text-primary-foreground rounded-xl font-semibold text-lg transition-all duration-200 hover:opacity-90 active:scale-[0.98] glow-primary"
@@ -71,4 +47,3 @@ const WelcomeScreen = ({ onComplete }: WelcomeScreenProps) => {
 };
 
 export default WelcomeScreen;
-
