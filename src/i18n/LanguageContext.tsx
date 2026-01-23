@@ -16,7 +16,7 @@ export interface LanguageOption {
 }
 
 // Languages with FULL translations
-const FULLY_TRANSLATED_LANGUAGES = ['en', 'es', 'pt'] as const;
+const FULLY_TRANSLATED_LANGUAGES = ['en', 'es', 'pt', 'ru', 'fr', 'de', 'it', 'pl', 'uk'] as const;
 
 // Master language list - marks which have full translations
 export const MASTER_LANGUAGE_LIST: LanguageOption[] = [
@@ -24,11 +24,14 @@ export const MASTER_LANGUAGE_LIST: LanguageOption[] = [
   { code: 'en-US', value: 'en', label: 'English', nativeLabel: 'English', flag: '🇺🇸', favorite: true, hasFullTranslation: true },
   { code: 'es', value: 'es', label: 'Spanish', nativeLabel: 'Español', flag: '🇲🇽', favorite: true, hasFullTranslation: true },
   { code: 'pt-BR', value: 'pt', label: 'Portuguese', nativeLabel: 'Português', flag: '🇧🇷', favorite: true, hasFullTranslation: true },
+  { code: 'ru', value: 'ru', label: 'Russian', nativeLabel: 'Русский', flag: '🇷🇺', favorite: true, hasFullTranslation: true },
+  { code: 'fr', value: 'fr', label: 'French', nativeLabel: 'Français', flag: '🇫🇷', favorite: true, hasFullTranslation: true },
+  { code: 'de', value: 'de', label: 'German', nativeLabel: 'Deutsch', flag: '🇩🇪', favorite: true, hasFullTranslation: true },
+  { code: 'it', value: 'it', label: 'Italian', nativeLabel: 'Italiano', flag: '🇮🇹', favorite: true, hasFullTranslation: true },
+  { code: 'pl', value: 'pl', label: 'Polish', nativeLabel: 'Polski', flag: '🇵🇱', favorite: true, hasFullTranslation: true },
+  { code: 'uk', value: 'uk', label: 'Ukrainian', nativeLabel: 'Українська', flag: '🇺🇦', favorite: true, hasFullTranslation: true },
   
-  // === EUROPEAN LANGUAGES (fallback to English) ===
-  { code: 'fr', value: 'en', label: 'French', nativeLabel: 'Français', flag: '🇫🇷', hasFullTranslation: false },
-  { code: 'de', value: 'en', label: 'German', nativeLabel: 'Deutsch', flag: '🇩🇪', hasFullTranslation: false },
-  { code: 'it', value: 'en', label: 'Italian', nativeLabel: 'Italiano', flag: '🇮🇹', hasFullTranslation: false },
+  // === OTHER EUROPEAN LANGUAGES (fallback to English) ===
   { code: 'nl', value: 'en', label: 'Dutch', nativeLabel: 'Nederlands', flag: '🇳🇱', hasFullTranslation: false },
   { code: 'sv', value: 'en', label: 'Swedish', nativeLabel: 'Svenska', flag: '🇸🇪', hasFullTranslation: false },
   { code: 'no', value: 'en', label: 'Norwegian', nativeLabel: 'Norsk', flag: '🇳🇴', hasFullTranslation: false },
@@ -37,7 +40,6 @@ export const MASTER_LANGUAGE_LIST: LanguageOption[] = [
   { code: 'is', value: 'en', label: 'Icelandic', nativeLabel: 'Íslenska', flag: '🇮🇸', hasFullTranslation: false },
   
   // === EASTERN EUROPEAN ===
-  { code: 'pl', value: 'en', label: 'Polish', nativeLabel: 'Polski', flag: '🇵🇱', hasFullTranslation: false },
   { code: 'cs', value: 'en', label: 'Czech', nativeLabel: 'Čeština', flag: '🇨🇿', hasFullTranslation: false },
   { code: 'sk', value: 'en', label: 'Slovak', nativeLabel: 'Slovenčina', flag: '🇸🇰', hasFullTranslation: false },
   { code: 'hu', value: 'en', label: 'Hungarian', nativeLabel: 'Magyar', flag: '🇭🇺', hasFullTranslation: false },
@@ -48,9 +50,7 @@ export const MASTER_LANGUAGE_LIST: LanguageOption[] = [
   { code: 'lv', value: 'en', label: 'Latvian', nativeLabel: 'Latviešu', flag: '🇱🇻', hasFullTranslation: false },
   { code: 'et', value: 'en', label: 'Estonian', nativeLabel: 'Eesti', flag: '🇪🇪', hasFullTranslation: false },
   
-  // === SLAVIC ===
-  { code: 'ru', value: 'en', label: 'Russian', nativeLabel: 'Русский', flag: '🇷🇺', hasFullTranslation: false },
-  { code: 'uk', value: 'en', label: 'Ukrainian', nativeLabel: 'Українська', flag: '🇺🇦', hasFullTranslation: false },
+  // === OTHER SLAVIC ===
   { code: 'be', value: 'en', label: 'Belarusian', nativeLabel: 'Беларуская', flag: '🇧🇾', hasFullTranslation: false },
   { code: 'sr', value: 'en', label: 'Serbian', nativeLabel: 'Српски', flag: '🇷🇸', hasFullTranslation: false },
   { code: 'hr', value: 'en', label: 'Croatian', nativeLabel: 'Hrvatski', flag: '🇭🇷', hasFullTranslation: false },
