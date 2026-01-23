@@ -1,6 +1,6 @@
 import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import { useLanguage } from '@/i18n/LanguageContext';
-import { Search, Filter, MapPin, Navigation, Route, Utensils, Building2, Loader2, RefreshCw, AlertCircle, Truck } from 'lucide-react';
+import { Search, Filter, MapPin, Navigation, Route, Building2, Loader2, RefreshCw, AlertCircle, Truck, Fuel, Scale, UtensilsCrossed, TreePine } from 'lucide-react';
 import BottomNav from '@/components/navigation/BottomNav';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -9,6 +9,8 @@ import { getBrandLogo } from '@/lib/truckStopLogos';
 import LocationErrorCard from '@/components/location/LocationErrorCard';
 import { NextBillionDiagnosticsPanel } from '@/components/diagnostics/NextBillionDiagnosticsPanel';
 import { useNextBillionDiagnostics } from '@/hooks/useNextBillionDiagnostics';
+import RateFacilityModal from '@/components/facility/RateFacilityModal';
+
 interface NearbyPlace {
   id: string;
   name: string;
@@ -34,15 +36,17 @@ const HomeScreen = () => {
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [locationError, setLocationError] = useState<string | null>(null);
   const [locationErrorCode, setLocationErrorCode] = useState<number | undefined>(undefined);
+  const [isRateModalOpen, setIsRateModalOpen] = useState(false);
   
   // Diagnostics panel (5 taps on logo to open)
   const diagnostics = useNextBillionDiagnostics();
+  
   const filters = [
     { id: 'nearMe', label: t.map.nearMe, icon: Navigation },
-    { id: 'truckStops', label: t.map.truckStops },
-    { id: 'weighStations', label: t.map.weighStations },
-    { id: 'restaurants', label: t.map.restaurants },
-    { id: 'restAreas', label: t.map.restAreas },
+    { id: 'truckStops', label: t.map.truckStops, icon: Fuel },
+    { id: 'weighStations', label: t.map.weighStations, icon: Scale },
+    { id: 'restaurants', label: t.map.restaurants, icon: UtensilsCrossed },
+    { id: 'restAreas', label: t.map.restAreas, icon: TreePine },
   ];
 
   // Watch ID for continuous location updates
@@ -392,11 +396,7 @@ const HomeScreen = () => {
               <Route className="w-4 h-4 mr-2" />
               {t.navigation?.calculateRoute || 'Calculate Route'}
             </Button>
-            <Button variant="outline" onClick={() => navigate('/stop-advisor')}>
-              <Utensils className="w-4 h-4 mr-2" />
-              Stop Advisor
-            </Button>
-            <Button variant="outline" onClick={() => navigate('/facility-rating')}>
+            <Button variant="outline" onClick={() => setIsRateModalOpen(true)}>
               <Building2 className="w-4 h-4 mr-2" />
               Rate Facility
             </Button>
@@ -457,8 +457,26 @@ const HomeScreen = () => {
 
         {/* Empty State */}
         {!loading && !error && filteredPlaces.length === 0 && (
-          <div className="bg-card border border-border rounded-xl p-4">
-            <p className="text-sm text-muted-foreground">No results for this filter.</p>
+          <div className="bg-card border border-border rounded-xl p-6 text-center">
+            <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-muted flex items-center justify-center">
+              {activeFilter === 'truckStops' && <Fuel className="w-6 h-6 text-muted-foreground" />}
+              {activeFilter === 'weighStations' && <Scale className="w-6 h-6 text-muted-foreground" />}
+              {activeFilter === 'restaurants' && <UtensilsCrossed className="w-6 h-6 text-muted-foreground" />}
+              {activeFilter === 'restAreas' && <TreePine className="w-6 h-6 text-muted-foreground" />}
+              {activeFilter === 'nearMe' && <MapPin className="w-6 h-6 text-muted-foreground" />}
+            </div>
+            <p className="text-sm font-medium text-foreground mb-1">
+              No truck-friendly locations found
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {activeFilter === 'nearMe' 
+                ? 'No POIs within 10 km of your location'
+                : `No ${filters.find(f => f.id === activeFilter)?.label || 'results'} nearby`}
+            </p>
+            <Button variant="outline" size="sm" onClick={handleRefresh} className="mt-3">
+              <RefreshCw className="w-3 h-3 mr-1" />
+              Refresh
+            </Button>
           </div>
         )}
 
@@ -575,6 +593,13 @@ const HomeScreen = () => {
       <NextBillionDiagnosticsPanel 
         isOpen={diagnostics.isOpen} 
         onClose={diagnostics.close} 
+      />
+
+      {/* Rate Facility Modal */}
+      <RateFacilityModal
+        isOpen={isRateModalOpen}
+        onClose={() => setIsRateModalOpen(false)}
+        userLocation={userLocation}
       />
     </div>
   );
