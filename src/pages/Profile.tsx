@@ -6,6 +6,7 @@ import { useNavigate } from 'react-router-dom';
 import FindDMVModal from '@/components/compliance/FindDMVModal';
 import MedicalCardModal from '@/components/compliance/MedicalCardModal';
 import DriverDocumentsModal from '@/components/profile/DriverDocumentsModal';
+import EnglishQuickReturn from '@/components/settings/EnglishQuickReturn';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
@@ -195,7 +196,10 @@ const ProfileScreen = () => {
     <div className="min-h-screen bg-background pb-20">
       {/* Header */}
       <div className="bg-gradient-to-b from-primary/20 to-background pt-safe">
-        <div className="p-6 text-center">
+        <div className="flex justify-end px-4 pt-2">
+          <EnglishQuickReturn />
+        </div>
+        <div className="p-6 pt-2 text-center">
           <div className="w-24 h-24 rounded-full bg-primary/20 border-4 border-primary mx-auto flex items-center justify-center">
             <User className="w-12 h-12 text-primary" />
           </div>
