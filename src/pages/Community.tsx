@@ -10,6 +10,7 @@ import FacilitiesList from '@/components/facility/FacilitiesList';
 import CreateRoomModal from '@/components/chat/CreateRoomModal';
 import NewsFeed from '@/components/community/NewsFeed';
 import LearnSecureLoadsTab from '@/components/community/LearnSecureLoadsTab';
+import EnglishQuickReturn from '@/components/settings/EnglishQuickReturn';
 import { supabase } from '@/integrations/supabase/client';
 import { formatDistanceToNow } from 'date-fns';
 import { pt, es, enUS } from 'date-fns/locale';
@@ -102,6 +103,7 @@ const CommunityScreen = () => {
         <div className="p-4">
           <div className="flex items-center justify-between mb-4">
             <h1 className="text-2xl font-bold text-foreground">{t.nav.community}</h1>
+            <EnglishQuickReturn />
           </div>
           
           {/* Tabs - 5 tabs now */}

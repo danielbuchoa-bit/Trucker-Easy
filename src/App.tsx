@@ -69,7 +69,6 @@ const App = () => (
                     <PoiFeedbackProvider>
                       <GeofenceProvider>
                         <FacilityGeofenceProvider>
-                          <EnglishQuickReturn />
                           <FloatingChatButton />
                           <EmotionalCheckInModal />
                           <CheckInTrigger />
