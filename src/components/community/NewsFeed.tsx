@@ -8,7 +8,7 @@ interface NewsItem {
   id: string;
   title: string;
   summary: string;
-  image_url: string;
+  image_url: string | null;
   source_url: string;
   source: string;
   category: string;
@@ -54,11 +54,12 @@ const NewsFeed: React.FC = () => {
       if (dbNews && dbNews.length > 0) {
         const latestDate = dbNews[0]?.published_at?.split('T')[0];
         const fetchedAt = dbNews[0]?.fetched_at;
+        const fetchedDate = fetchedAt?.split('T')[0];
         console.log('[NewsFeed] DB news count:', dbNews.length, 'latest date:', latestDate, 'fetched:', fetchedAt);
         setLastUpdate(fetchedAt || null);
         
-        // If we have today's news and not forcing refresh, use cached
-        if (latestDate === today && !force) {
+        // Cache por data de coleta (fetched_at), não por published_at (que pode ser dias atrás)
+        if (fetchedDate === today && !force) {
           console.log('[NewsFeed] Using cached news from today');
           setNews(dbNews as NewsItem[]);
           setLoading(false);
@@ -69,7 +70,7 @@ const NewsFeed: React.FC = () => {
       // Fetch fresh news from edge function
       console.log('[NewsFeed] Calling edge function to refresh...');
       const { data, error: fnError } = await supabase.functions.invoke('fetch_trucking_news', {
-        body: {},
+        body: { forceRefresh: force },
       });
 
       if (fnError) {
@@ -84,18 +85,21 @@ const NewsFeed: React.FC = () => {
         throw fnError;
       }
 
-      console.log('[NewsFeed] Function response:', { 
-        ok: data?.ok, 
-        cached: data?.cached, 
-        itemCount: data?.itemCount,
-        generatedAt: data?.generatedAt 
+      console.log('[NewsFeed] Function response:', {
+        ok: data?.ok,
+        cached: data?.cached,
+        itemCount: data?.itemCount ?? data?.count,
+        generatedAt: data?.generatedAt ?? data?.lastUpdate,
+        warning: data?.warning,
       });
 
-      if (data?.ok && data?.news) {
+      // Compat: aceita formatos antigos e novos da função
+      if (Array.isArray(data?.news) && data.news.length >= 0) {
         setNews(data.news as NewsItem[]);
-        setLastUpdate(data.generatedAt || new Date().toISOString());
+        setLastUpdate((data.generatedAt || data.lastUpdate) ?? new Date().toISOString());
         if (force) {
-          toast.success(data.cached ? 'Notícias já atualizadas' : `${data.news.length} notícias atualizadas!`);
+          const isCached = Boolean(data?.cached);
+          toast.success(isCached ? 'Notícias já atualizadas' : `${data.news.length} notícias atualizadas!`);
         }
       } else {
         throw new Error(data?.error || 'Failed to fetch news');
@@ -206,7 +210,7 @@ const NewsFeed: React.FC = () => {
           {/* Image */}
           <div className="relative h-32 w-full">
             <img 
-              src={item.image_url} 
+              src={item.image_url || 'https://images.unsplash.com/photo-1601584115197-04ecc0da31d7?w=400&h=200&fit=crop'} 
               alt={item.title}
               className="w-full h-full object-cover"
               onError={(e) => {
