@@ -215,6 +215,8 @@ const NearbyPoisOverlay: React.FC<NearbyPoisOverlayProps> = ({
     }
 
     const fetchPois = async () => {
+      // Mark an attempt immediately so network failures don't cause rapid retry loops
+      lastFetchRef.current = { lat, lng, time: now };
       setLoading(true);
       try {
         const { data, error } = await supabase.functions.invoke('here_browse_pois', {

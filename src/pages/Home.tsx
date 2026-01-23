@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, useCallback } from 'react';
+import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import { useLanguage } from '@/i18n/LanguageContext';
 import { Search, Filter, MapPin, Navigation, Route, Utensils, Building2, Loader2, RefreshCw, AlertCircle, Truck } from 'lucide-react';
 import BottomNav from '@/components/navigation/BottomNav';
@@ -46,7 +46,10 @@ const HomeScreen = () => {
   ];
 
   // Watch ID for continuous location updates
-  const watchIdRef = useCallback(() => ({ current: null as number | null }), [])();
+  const watchIdRef = useRef<number | null>(null);
+
+  // Throttle POI refreshes to avoid constant UI flicker
+  const lastPlacesFetchRef = useRef<{ lat: number; lng: number; time: number } | null>(null);
 
   // Get user's current location with watchPosition for continuous updates
   const getUserLocation = useCallback(() => {
@@ -255,6 +258,25 @@ const HomeScreen = () => {
   // Fetch places when location is available
   useEffect(() => {
     if (userLocation) {
+      const now = Date.now();
+      const last = lastPlacesFetchRef.current;
+
+      if (last) {
+        const timeDiff = now - last.time;
+        const movedMeters = calculateDistance(userLocation.lat, userLocation.lng, last.lat, last.lng);
+
+        // Only refresh if enough time has passed OR user moved a meaningful distance
+        if (timeDiff < 20000 && movedMeters < 500) {
+          return;
+        }
+      }
+
+      lastPlacesFetchRef.current = {
+        lat: userLocation.lat,
+        lng: userLocation.lng,
+        time: now,
+      };
+
       fetchNearbyPlaces(userLocation.lat, userLocation.lng);
     }
   }, [userLocation, fetchNearbyPlaces]);
