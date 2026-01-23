@@ -112,7 +112,7 @@ interface ActiveNavigationContextValue {
   positionError: string | null;
   // Navigation engine info
   activeEngine: ActiveEngine;
-  fallbackReason: string | null;
+  lastError: string | null;
 }
 
 const ActiveNavigationContext = createContext<ActiveNavigationContextValue | undefined>(undefined);
@@ -936,7 +936,7 @@ export function ActiveNavigationProvider({ children }: { children: React.ReactNo
         setIsSimulating,
         positionError,
         activeEngine: engineState.activeEngine,
-        fallbackReason: engineState.fallbackReason,
+        lastError: engineState.lastError,
       }}
     >
       {children}

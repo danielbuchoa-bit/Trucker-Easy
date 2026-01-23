@@ -1,19 +1,20 @@
 /**
  * Unified GPS Navigation Engine Hook
  * 
- * Integrates all GPS processing components:
+ * NextBillion-Only GPS Processing:
  * 1. Kalman Filter - Position smoothing and prediction
  * 2. Weighted Segment Selection - Smart route matching
  * 3. HMM Map Matching - Probabilistic path tracking
  * 4. Adaptive Smoothing - Speed-dependent filtering
- * 5. HERE Map Matching - Server-side snap-to-road for complex junctions
+ * 5. Local Snap-to-Route - Client-side snap to polyline
  * 
  * Designed specifically for truck navigation.
+ * 
+ * HERE REMOVED - Now uses local snap-to-route algorithm.
  */
 
-import { useRef, useCallback, useMemo, useEffect } from 'react';
+import { useRef, useCallback, useMemo } from 'react';
 import type { LngLat } from '@/lib/hereFlexiblePolyline';
-import { useHereMapMatching } from './useHereMapMatching';
 import {
   // Constants
   SPEED_THRESHOLDS,
@@ -21,7 +22,6 @@ import {
   COG,
   DEAD_RECKONING,
   SPIKE,
-  getPositionSmoothing,
   getHeadingSmoothing,
   getSpeedSmoothing,
   // Geometry
@@ -36,7 +36,6 @@ import {
   createKalmanState,
   kalmanUpdate,
   isSpike,
-  predictPosition,
   // Weighted Selection
   selectBestSegment,
   calculateSnapStrength,
@@ -44,11 +43,7 @@ import {
   type HMMState,
   createHMMState,
   processHMMObservation,
-  resetHMMState,
 } from '@/lib/gps';
-
-// Feature flag for HERE Map Matching
-const USE_HERE_MAP_MATCHING = true;
 
 // === TYPES ===
 
@@ -87,9 +82,9 @@ export interface NavigationOutput {
   snapStrength: number;
   matchConfidence: number;
   
-  // HERE Map Matching info
-  hereMatchUsed: boolean;
-  hereMatchConfidence: number;
+  // Map matching source (always 'local' now)
+  hereMatchUsed: boolean; // Always false
+  hereMatchConfidence: number; // Always 0
   
   // Timing
   timestamp: number;
@@ -104,17 +99,6 @@ interface PositionHistoryEntry {
 // === MAIN HOOK ===
 
 export function useGpsNavigationEngine() {
-  // HERE Map Matching hook for server-side snap-to-road
-  // Strict configuration for 15m off-route threshold
-  const hereMapMatching = useHereMapMatching({
-    enabled: USE_HERE_MAP_MATCHING,
-    minBatchSize: 3,
-    maxBatchSize: 10,
-    batchIntervalMs: 1500, // Faster updates for precision
-    maxDistanceToAcceptM: 15, // Match 15m threshold
-    minConfidenceThreshold: 0.5, // Higher confidence required
-  });
-  
   // Kalman filter state
   const kalmanRef = useRef<KalmanState | null>(null);
   
@@ -136,10 +120,6 @@ export function useGpsNavigationEngine() {
   
   // Last processed position
   const lastOutputRef = useRef<NavigationOutput | null>(null);
-  
-  // HERE match tracking
-  const hereMatchUsedRef = useRef<boolean>(false);
-  const hereMatchConfidenceRef = useRef<number>(0);
 
   /**
    * Calculate Course-Over-Ground from position history
@@ -192,14 +172,12 @@ export function useGpsNavigationEngine() {
       return smoothedHeadingRef.current || 0;
     }
 
-    let heading = smoothedHeadingRef.current;
     let totalWeight = 0;
     let weightedSum = 0;
 
     // GPS heading (reliable at higher speeds)
     if (gpsHeading !== null && !isNaN(gpsHeading)) {
       const weight = speed > SPEED_THRESHOLDS.MEDIUM ? 0.35 : 0.15;
-      // Convert to weighted average friendly format
       const adjusted = smoothedHeadingRef.current + 
         ((gpsHeading - smoothedHeadingRef.current + 540) % 360 - 180);
       weightedSum += adjusted * weight;
@@ -225,10 +203,10 @@ export function useGpsNavigationEngine() {
     }
 
     if (totalWeight > 0) {
-      heading = (weightedSum / totalWeight + 360) % 360;
+      return (weightedSum / totalWeight + 360) % 360;
     }
 
-    return heading;
+    return smoothedHeadingRef.current;
   }, []);
 
   /**
@@ -288,7 +266,7 @@ export function useGpsNavigationEngine() {
     smoothedSpeedRef.current = lerp(smoothedSpeedRef.current, rawSpeed, speedAlpha);
     const smoothedSpeed = smoothedSpeedRef.current;
 
-    // === 5. MAP MATCHING ===
+    // === 5. LOCAL MAP MATCHING (No HERE - uses route polyline) ===
     let segmentIndex = lastSegmentRef.current;
     let snappedLat = filteredLat;
     let snappedLng = filteredLng;
@@ -296,108 +274,69 @@ export function useGpsNavigationEngine() {
     let snapStrength = 0;
     let matchConfidence = 0;
     let routeBearing: number | null = null;
-    let hereMatchUsed = false;
-    let hereMatchConfidence = 0;
 
     if (routeCoords.length >= 2) {
       // Calculate COG for heading-aware matching
       const cogHeading = calculateCOG();
       const headingForMatch = cogHeading ?? gpsHeading ?? null;
 
-      // === 5a. Try HERE Map Matching first (for complex junctions) ===
-      if (USE_HERE_MAP_MATCHING) {
-        // Add point to HERE matching buffer (async, cached)
-        hereMapMatching.addPoint({
-          lat: filteredLat,
-          lng: filteredLng,
-          heading: headingForMatch ?? undefined,
-          speed: smoothedSpeed,
-          timestamp,
-        });
+      // Use HMM for probabilistic matching
+      const hmmResult = processHMMObservation(
+        hmmRef.current,
+        filteredLat,
+        filteredLng,
+        headingForMatch,
+        timestamp,
+        routeCoords
+      );
 
-        // Check if we have a cached HERE match
-        const hereMatch = hereMapMatching.getMatchedPosition(filteredLat, filteredLng);
-        
-        if (hereMatch.fromCache && hereMatch.confidence > 0.4) {
-          // Use HERE matched position
-          snappedLat = hereMatch.lat;
-          snappedLng = hereMatch.lng;
-          hereMatchConfidence = hereMatch.confidence;
-          hereMatchUsed = true;
-          matchConfidence = hereMatch.confidence;
-          
-          // Calculate distance to route after HERE snap
-          distanceToRoute = haversineDistance(filteredLat, filteredLng, snappedLat, snappedLng);
-          snapStrength = calculateSnapStrength(distanceToRoute, matchConfidence);
-          
-          console.log('[GPS_ENGINE] Using HERE match:', { 
-            confidence: hereMatch.confidence.toFixed(2),
-            distance: distanceToRoute.toFixed(1) 
-          });
-        }
+      // Also use weighted selection for comparison/fallback
+      const weightedResult = selectBestSegment(
+        filteredLat,
+        filteredLng,
+        headingForMatch,
+        smoothedSpeed,
+        routeCoords,
+        lastSegmentRef.current
+      );
+
+      // Choose between HMM and weighted selection based on confidence
+      if (hmmResult.confidence > 0.5 && hmmResult.confidence > weightedResult.confidence * 0.8) {
+        // Use HMM result
+        segmentIndex = hmmResult.segmentIndex;
+        snappedLat = hmmResult.matchedLat;
+        snappedLng = hmmResult.matchedLng;
+        matchConfidence = hmmResult.confidence;
+      } else if (weightedResult.shouldSnap) {
+        // Use weighted selection
+        segmentIndex = weightedResult.bestSegment.index;
+        snappedLat = weightedResult.bestSegment.projectedLat;
+        snappedLng = weightedResult.bestSegment.projectedLng;
+        matchConfidence = weightedResult.confidence;
       }
 
-      // === 5b. Fallback to local HMM/weighted matching ===
-      if (!hereMatchUsed) {
-        // Use HMM for probabilistic matching
-        const hmmResult = processHMMObservation(
-          hmmRef.current,
-          filteredLat,
-          filteredLng,
-          headingForMatch,
-          timestamp,
-          routeCoords
-        );
+      // Calculate distance to route
+      distanceToRoute = haversineDistance(filteredLat, filteredLng, snappedLat, snappedLng);
 
-        // Also use weighted selection for comparison/fallback
-        const weightedResult = selectBestSegment(
-          filteredLat,
-          filteredLng,
-          headingForMatch,
-          smoothedSpeed,
-          routeCoords,
-          lastSegmentRef.current
-        );
+      // Calculate snap strength - FORCE SNAP when within threshold
+      snapStrength = calculateSnapStrength(distanceToRoute, matchConfidence);
 
-        // Choose between HMM and weighted selection based on confidence
-        if (hmmResult.confidence > 0.5 && hmmResult.confidence > weightedResult.confidence * 0.8) {
-          // Use HMM result
-          segmentIndex = hmmResult.segmentIndex;
-          snappedLat = hmmResult.matchedLat;
-          snappedLng = hmmResult.matchedLng;
-          matchConfidence = hmmResult.confidence;
-        } else if (weightedResult.shouldSnap) {
-          // Use weighted selection
-          segmentIndex = weightedResult.bestSegment.index;
-          snappedLat = weightedResult.bestSegment.projectedLat;
-          snappedLng = weightedResult.bestSegment.projectedLng;
-          matchConfidence = weightedResult.confidence;
-        }
-
-        // Calculate distance to route
-        distanceToRoute = haversineDistance(filteredLat, filteredLng, snappedLat, snappedLng);
-
-        // Calculate snap strength - FORCE SNAP when within threshold
-        snapStrength = calculateSnapStrength(distanceToRoute, matchConfidence);
-
-        // Apply FORCED snap when within 15m threshold (route polyline reference)
-        if (distanceToRoute <= SNAP.MAX_DISTANCE_M) {
-          // Force snap when within off-route threshold
-          if (distanceToRoute <= SNAP.FORCE_SNAP_DISTANCE_M) {
-            // 100% snap when very close to route
-            snappedLat = snappedLat;
-            snappedLng = snappedLng;
-          } else {
-            // Progressive snap based on distance
-            const forceSnapStrength = Math.max(snapStrength, 0.8);
-            snappedLat = lerp(filteredLat, snappedLat, forceSnapStrength);
-            snappedLng = lerp(filteredLng, snappedLng, forceSnapStrength);
-          }
+      // Apply FORCED snap when within 15m threshold (route polyline reference)
+      if (distanceToRoute <= SNAP.MAX_DISTANCE_M) {
+        // Force snap when very close to route
+        if (distanceToRoute <= SNAP.FORCE_SNAP_DISTANCE_M) {
+          // 100% snap when very close to route
+          // snappedLat/snappedLng already set above
         } else {
-          // Beyond 15m threshold - still apply soft snap but flag as off-route
-          snappedLat = lerp(filteredLat, snappedLat, snapStrength * 0.3);
-          snappedLng = lerp(filteredLng, snappedLng, snapStrength * 0.3);
+          // Progressive snap based on distance
+          const forceSnapStrength = Math.max(snapStrength, 0.8);
+          snappedLat = lerp(filteredLat, snappedLat, forceSnapStrength);
+          snappedLng = lerp(filteredLng, snappedLng, forceSnapStrength);
         }
+      } else {
+        // Beyond 15m threshold - still apply soft snap but flag as off-route
+        snappedLat = lerp(filteredLat, snappedLat, snapStrength * 0.3);
+        snappedLng = lerp(filteredLng, snappedLng, snapStrength * 0.3);
       }
 
       // Get route bearing for heading calculation
@@ -409,10 +348,6 @@ export function useGpsNavigationEngine() {
 
       lastSegmentRef.current = segmentIndex;
     }
-    
-    // Store HERE match state for output
-    hereMatchUsedRef.current = hereMatchUsed;
-    hereMatchConfidenceRef.current = hereMatchConfidence;
 
     // === 6. HEADING CALCULATION ===
     const cogHeading = calculateCOG();
@@ -446,14 +381,14 @@ export function useGpsNavigationEngine() {
       isOnRoute,
       snapStrength,
       matchConfidence,
-      hereMatchUsed,
-      hereMatchConfidence,
+      hereMatchUsed: false, // Always false now - no HERE
+      hereMatchConfidence: 0, // Always 0 now
       timestamp,
     };
 
     lastOutputRef.current = output;
     return output;
-  }, [calculateCOG, blendHeading, hereMapMatching]);
+  }, [calculateCOG, blendHeading]);
 
   /**
    * Get predicted position (for dead reckoning during GPS gaps)
@@ -499,26 +434,22 @@ export function useGpsNavigationEngine() {
   }, []);
 
   /**
-   * Reset all state (call when route changes)
+   * Reset all state
    */
   const reset = useCallback(() => {
     kalmanRef.current = null;
-    resetHMMState(hmmRef.current);
+    hmmRef.current = createHMMState();
     positionHistoryRef.current = [];
     lastValidHeadingRef.current = 0;
     smoothedHeadingRef.current = 0;
     smoothedSpeedRef.current = 0;
     lastSegmentRef.current = 0;
     lastOutputRef.current = null;
-    hereMatchUsedRef.current = false;
-    hereMatchConfidenceRef.current = 0;
-    hereMapMatching.reset();
-  }, [hereMapMatching]);
+  }, []);
 
   return useMemo(() => ({
     processGpsFix,
     predictCurrentPosition,
     reset,
-    getHereMatchStats: hereMapMatching.getCacheStats,
-  }), [processGpsFix, predictCurrentPosition, reset, hereMapMatching.getCacheStats]);
+  }), [processGpsFix, predictCurrentPosition, reset]);
 }
