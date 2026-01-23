@@ -1,13 +1,15 @@
 import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Heart, Zap, Brain, Activity, Star, TrendingUp, Calendar, AlertCircle } from 'lucide-react';
+import { useLanguage } from '@/i18n/LanguageContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import BottomNav from '@/components/navigation/BottomNav';
+import EnglishQuickReturn from '@/components/settings/EnglishQuickReturn';
 import { useEmotionalCheckIn } from '@/contexts/EmotionalCheckInContext';
 import { format } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
+import { ptBR, enUS, es } from 'date-fns/locale';
 
 const MetricCard: React.FC<{
   icon: React.ElementType;
@@ -43,6 +45,7 @@ const MetricCard: React.FC<{
 
 const WellbeingPage: React.FC = () => {
   const navigate = useNavigate();
+  const { language, t } = useLanguage();
   const { 
     weeklyHistory, 
     insights, 
@@ -53,6 +56,12 @@ const WellbeingPage: React.FC = () => {
     todayMorningCheckIn,
     todayEveningCheckIn
   } = useEmotionalCheckIn();
+
+  const getDateLocale = () => {
+    if (language === 'pt') return ptBR;
+    if (language === 'es') return es;
+    return enUS;
+  };
 
   useEffect(() => {
     refreshHistory();
@@ -87,10 +96,11 @@ const WellbeingPage: React.FC = () => {
           <Button variant="ghost" size="icon" onClick={() => navigate(-1)}>
             <ArrowLeft className="w-5 h-5" />
           </Button>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-1">
             <Heart className="w-5 h-5 text-pink-500" />
-            <h1 className="text-lg font-semibold">Meu Bem-Estar</h1>
+            <h1 className="text-lg font-semibold">{t.profile?.wellbeing || 'My Wellbeing'}</h1>
           </div>
+          <EnglishQuickReturn />
         </div>
       </div>
 

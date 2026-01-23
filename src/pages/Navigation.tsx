@@ -41,6 +41,7 @@ import RouteMap from '@/components/navigation/RouteMap';
 import AddressSearch from '@/components/navigation/AddressSearch';
 import ActiveNavigationView from '@/components/navigation/ActiveNavigationView';
 import BottomNav from '@/components/navigation/BottomNav';
+import EnglishQuickReturn from '@/components/settings/EnglishQuickReturn';
 import { useToast } from '@/hooks/use-toast';
 import { useActiveNavigation } from '@/contexts/ActiveNavigationContext';
 
@@ -274,7 +275,8 @@ const NavigationScreen = () => {
           <button onClick={() => navigate(-1)} className="p-2 -ml-2 text-foreground">
             <ArrowLeft className="w-6 h-6" />
           </button>
-          <h1 className="text-xl font-bold">{t.navigation?.title || 'Route Navigation'}</h1>
+          <h1 className="text-xl font-bold flex-1">{t.navigation?.title || 'Route Navigation'}</h1>
+          <EnglishQuickReturn />
         </div>
       </div>
 

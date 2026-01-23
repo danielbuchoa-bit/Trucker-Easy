@@ -280,6 +280,13 @@ export const translations = {
       byRegion: 'By Region',
       byTrailer: 'By Trailer',
       typeMessage: 'Type a message...',
+      editNickname: 'Edit nickname',
+      enableNotifications: 'Enable notifications',
+      disableNotifications: 'Disable notifications',
+      joinRoom: 'Join room',
+      chooseNickname: 'Choose nickname and join',
+      noMessages: 'No messages yet. Be the first!',
+      enterRoom: 'Join the room to see messages and participate.',
       tabs: {
         news: 'News',
         learn: 'Learn',
@@ -349,6 +356,7 @@ export const translations = {
       reports: 'Reports',
       reviews: 'Reviews',
       messages: 'Messages',
+      wellbeing: 'My Wellbeing',
     },
     
     settings: {
@@ -723,6 +731,13 @@ export const translations = {
       byRegion: 'Por Región',
       byTrailer: 'Por Remolque',
       typeMessage: 'Escribe un mensaje...',
+      editNickname: 'Editar apodo',
+      enableNotifications: 'Activar notificaciones',
+      disableNotifications: 'Desactivar notificaciones',
+      joinRoom: 'Unirse a la sala',
+      chooseNickname: 'Elegir apodo y entrar',
+      noMessages: 'No hay mensajes aún. ¡Sé el primero!',
+      enterRoom: 'Únete a la sala para ver mensajes y participar.',
       tabs: {
         news: 'Noticias',
         learn: 'Aprender',
@@ -792,6 +807,7 @@ export const translations = {
       reports: 'Reportes',
       reviews: 'Reseñas',
       messages: 'Mensajes',
+      wellbeing: 'Mi Bienestar',
     },
     
     settings: {
@@ -1166,6 +1182,13 @@ export const translations = {
       byRegion: 'Por Região',
       byTrailer: 'Por Carreta',
       typeMessage: 'Digite uma mensagem...',
+      editNickname: 'Editar apelido',
+      enableNotifications: 'Ativar notificações',
+      disableNotifications: 'Desativar notificações',
+      joinRoom: 'Entrar na sala',
+      chooseNickname: 'Escolher apelido e entrar',
+      noMessages: 'Nenhuma mensagem ainda. Seja o primeiro!',
+      enterRoom: 'Entre na sala para ver mensagens e participar.',
       tabs: {
         news: 'Notícias',
         learn: 'Aprender',
@@ -1235,6 +1258,7 @@ export const translations = {
       reports: 'Reportes',
       reviews: 'Avaliações',
       messages: 'Mensagens',
+      wellbeing: 'Meu Bem-Estar',
     },
     
     settings: {
