@@ -84,10 +84,10 @@ const NavigationScreen = () => {
   const [loading, setLoading] = useState(false);
   const [alertsLoading, setAlertsLoading] = useState(false);
 
-  // Reverse geocode to get address from coordinates
+  // Reverse geocode to get address from coordinates (using NextBillion)
   const reverseGeocode = async (lat: number, lng: number): Promise<string> => {
     try {
-      const { data, error } = await supabase.functions.invoke('here_reverse_geocode', {
+      const { data, error } = await supabase.functions.invoke('nb_reverse_geocode', {
         body: { lat, lng }
       });
       if (error || !data?.label) {
