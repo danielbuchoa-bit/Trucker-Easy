@@ -265,7 +265,7 @@ const NearbyPoisOverlay: React.FC<NearbyPoisOverlayProps> = ({
     };
 
     fetchPois();
-  }, [lat, lng, heading, fetchRatingsForPois]);
+  }, [lat, lng, heading, onPoisUpdate]); // Removed fetchRatingsForPois - it's now stable
 
   const handleNavigateClick = () => {
     if (!selectedPoi) return;
