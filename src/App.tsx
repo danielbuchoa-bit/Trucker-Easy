@@ -21,6 +21,7 @@ import { DocumentReminderProvider } from "./components/notifications/DocumentRem
 import EmotionalCheckInModal from "./components/wellness/EmotionalCheckInModal";
 import CheckInTrigger from "./components/wellness/CheckInTrigger";
 import EnglishQuickReturn from "./components/settings/EnglishQuickReturn";
+import LanguageSuggestionModal from "./components/settings/LanguageSuggestionModal";
 import WelcomeScreen from "./pages/Welcome";
 import AuthScreen from "./pages/Auth";
 import OnboardingScreen from "./pages/Onboarding";
@@ -64,6 +65,8 @@ const App = () => (
             <DocumentReminderProvider />
             {/* GLOBAL EN PANIC BUTTON - Visible on ALL screens */}
             <EnglishQuickReturn variant="floating" />
+            {/* Language detection suggestion on first access */}
+            <LanguageSuggestionModal />
             <BrowserRouter>
               <ChatProvider>
                 <ActiveNavigationProvider>
