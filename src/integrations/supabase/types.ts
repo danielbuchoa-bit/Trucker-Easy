@@ -555,6 +555,101 @@ export type Database = {
         }
         Relationships: []
       }
+      medication_logs: {
+        Row: {
+          action: string
+          action_at: string
+          created_at: string
+          id: string
+          medication_id: string
+          scheduled_at: string
+          snooze_minutes: number | null
+          user_id: string
+        }
+        Insert: {
+          action: string
+          action_at?: string
+          created_at?: string
+          id?: string
+          medication_id: string
+          scheduled_at: string
+          snooze_minutes?: number | null
+          user_id: string
+        }
+        Update: {
+          action?: string
+          action_at?: string
+          created_at?: string
+          id?: string
+          medication_id?: string
+          scheduled_at?: string
+          snooze_minutes?: number | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "medication_logs_medication_id_fkey"
+            columns: ["medication_id"]
+            isOneToOne: false
+            referencedRelation: "medications"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      medications: {
+        Row: {
+          created_at: string
+          days_of_week: number[] | null
+          dosage_text: string
+          driving_modal_disabled: boolean | null
+          id: string
+          name: string
+          notes: string | null
+          paused: boolean | null
+          reminder_minutes_before: number | null
+          schedule_type: string
+          snooze_enabled: boolean | null
+          snooze_options: number[] | null
+          times_of_day: string[]
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          days_of_week?: number[] | null
+          dosage_text: string
+          driving_modal_disabled?: boolean | null
+          id?: string
+          name: string
+          notes?: string | null
+          paused?: boolean | null
+          reminder_minutes_before?: number | null
+          schedule_type?: string
+          snooze_enabled?: boolean | null
+          snooze_options?: number[] | null
+          times_of_day?: string[]
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          days_of_week?: number[] | null
+          dosage_text?: string
+          driving_modal_disabled?: boolean | null
+          id?: string
+          name?: string
+          notes?: string | null
+          paused?: boolean | null
+          reminder_minutes_before?: number | null
+          schedule_type?: string
+          snooze_enabled?: boolean | null
+          snooze_options?: number[] | null
+          times_of_day?: string[]
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       poi_feedback: {
         Row: {
           cleanliness_rating: number

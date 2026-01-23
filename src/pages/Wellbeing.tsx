@@ -1,12 +1,13 @@
 import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Heart, Zap, Brain, Activity, Star, TrendingUp, Calendar, AlertCircle } from 'lucide-react';
+import { ArrowLeft, Heart, Zap, Brain, Activity, Star, TrendingUp, Calendar, AlertCircle, Pill, ChevronRight } from 'lucide-react';
 import { useLanguage } from '@/i18n/LanguageContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import BottomNav from '@/components/navigation/BottomNav';
 import { useEmotionalCheckIn } from '@/contexts/EmotionalCheckInContext';
+import { useMedications } from '@/hooks/useMedications';
 import { format } from 'date-fns';
 import { ptBR, enUS, es } from 'date-fns/locale';
 
@@ -56,6 +57,9 @@ const WellbeingPage: React.FC = () => {
     todayEveningCheckIn
   } = useEmotionalCheckIn();
 
+  const { medications, getNextReminder, getAdherenceStats } = useMedications();
+  const adherenceStats = getAdherenceStats(7);
+
   const getDateLocale = () => {
     if (language === 'pt') return ptBR;
     if (language === 'es') return es;
@@ -103,6 +107,33 @@ const WellbeingPage: React.FC = () => {
       </div>
 
       <div className="p-4 space-y-6">
+        {/* Medications Quick Access */}
+        <section>
+          <Card 
+            className="border-border cursor-pointer hover:bg-muted/50 transition-colors"
+            onClick={() => navigate('/medications')}
+          >
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-full bg-primary/10">
+                    <Pill className="w-5 h-5 text-primary" />
+                  </div>
+                  <div>
+                    <h3 className="font-medium text-foreground">Medicamentos</h3>
+                    <p className="text-sm text-muted-foreground">
+                      {medications.length > 0 
+                        ? `${medications.filter(m => !m.paused).length} ativo(s) · ${adherenceStats.adherencePercent}% aderência`
+                        : 'Nenhum medicamento cadastrado'}
+                    </p>
+                  </div>
+                </div>
+                <ChevronRight className="w-5 h-5 text-muted-foreground" />
+              </div>
+            </CardContent>
+          </Card>
+        </section>
+
         {/* Quick Actions */}
         <div className="flex gap-3">
           {canDoMorning && (
