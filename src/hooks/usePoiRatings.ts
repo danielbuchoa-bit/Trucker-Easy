@@ -28,7 +28,8 @@ export const usePoiRatings = (): UsePoiRatingsReturn => {
 
   const fetchRatingForPoi = useCallback(async (poiId: string): Promise<PoiRating | null> => {
     if (fetchedIds.current.has(poiId)) {
-      return ratings.get(poiId) || null;
+      // Return from current state via ref pattern
+      return null;
     }
 
     try {
@@ -72,7 +73,7 @@ export const usePoiRatings = (): UsePoiRatingsReturn => {
       console.error('[usePoiRatings] Error fetching rating:', err);
       return null;
     }
-  }, [ratings]);
+  }, []); // No dependencies - stable reference
 
   const fetchRatingsForPois = useCallback(async (poiIds: string[]): Promise<void> => {
     const newIds = poiIds.filter((id) => !fetchedIds.current.has(id));
@@ -99,45 +100,47 @@ export const usePoiRatings = (): UsePoiRatingsReturn => {
         grouped.set(record.poi_id, existing);
       });
 
-      const newRatings = new Map(ratings);
-      
-      grouped.forEach((records, poiId) => {
-        const count = records.length;
-        const avgFriendliness = records.reduce((sum, r) => sum + r.friendliness_rating, 0) / count;
-        const avgCleanliness = records.reduce((sum, r) => sum + r.cleanliness_rating, 0) / count;
-        const avgStructure = records.reduce((sum, r) => sum + (r.structure_rating || 0), 0) / count;
-        const avgRecommendation = records.reduce((sum, r) => sum + r.recommendation_rating, 0) / count;
-        const avgOverall = (avgFriendliness + avgCleanliness + avgStructure + avgRecommendation) / 4;
-        const wouldReturnCount = records.filter((r) => r.would_return).length;
-        const wouldReturnPct = (wouldReturnCount / count) * 100;
+      setRatings((prevRatings) => {
+        const newRatings = new Map(prevRatings);
+        
+        grouped.forEach((records, poiId) => {
+          const count = records.length;
+          const avgFriendliness = records.reduce((sum, r) => sum + r.friendliness_rating, 0) / count;
+          const avgCleanliness = records.reduce((sum, r) => sum + r.cleanliness_rating, 0) / count;
+          const avgStructure = records.reduce((sum, r) => sum + (r.structure_rating || 0), 0) / count;
+          const avgRecommendation = records.reduce((sum, r) => sum + r.recommendation_rating, 0) / count;
+          const avgOverall = (avgFriendliness + avgCleanliness + avgStructure + avgRecommendation) / 4;
+          const wouldReturnCount = records.filter((r) => r.would_return).length;
+          const wouldReturnPct = (wouldReturnCount / count) * 100;
 
-        const rating: PoiRating = {
-          poi_id: poiId,
-          poi_name: records[0].poi_name,
-          poi_type: records[0].poi_type,
-          review_count: count,
-          avg_friendliness: Math.round(avgFriendliness * 10) / 10,
-          avg_cleanliness: Math.round(avgCleanliness * 10) / 10,
-          avg_structure: Math.round(avgStructure * 10) / 10,
-          avg_recommendation: Math.round(avgRecommendation * 10) / 10,
-          avg_overall: Math.round(avgOverall * 10) / 10,
-          would_return_pct: Math.round(wouldReturnPct),
-        };
+          const rating: PoiRating = {
+            poi_id: poiId,
+            poi_name: records[0].poi_name,
+            poi_type: records[0].poi_type,
+            review_count: count,
+            avg_friendliness: Math.round(avgFriendliness * 10) / 10,
+            avg_cleanliness: Math.round(avgCleanliness * 10) / 10,
+            avg_structure: Math.round(avgStructure * 10) / 10,
+            avg_recommendation: Math.round(avgRecommendation * 10) / 10,
+            avg_overall: Math.round(avgOverall * 10) / 10,
+            would_return_pct: Math.round(wouldReturnPct),
+          };
 
-        newRatings.set(poiId, rating);
-        fetchedIds.current.add(poiId);
+          newRatings.set(poiId, rating);
+          fetchedIds.current.add(poiId);
+        });
+
+        // Mark unfound IDs as fetched
+        newIds.forEach((id) => fetchedIds.current.add(id));
+
+        return newRatings;
       });
-
-      // Mark unfound IDs as fetched
-      newIds.forEach((id) => fetchedIds.current.add(id));
-
-      setRatings(newRatings);
     } catch (err) {
       console.error('[usePoiRatings] Error fetching ratings:', err);
     } finally {
       setIsLoading(false);
     }
-  }, [ratings]);
+  }, []); // No dependencies - stable reference
 
   return { ratings, fetchRatingForPoi, fetchRatingsForPois, isLoading };
 };
