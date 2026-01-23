@@ -6,17 +6,23 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type",
 };
 
-interface NewsItem {
-  id: string;
+type Urgency = "normal" | "today" | "alert" | "urgent";
+
+type NewsRowInsert = {
   title: string;
   summary: string;
   image_url: string | null;
   source_url: string;
   source: string;
   category: string;
-  urgency: string;
+  urgency: Urgency;
   published_at: string;
-}
+};
+
+type NewsItemResponse = NewsRowInsert & {
+  // usado só no frontend para key do React; no banco o id é uuid e é gerado automaticamente
+  id: string;
+};
 
 interface NewsAPIArticle {
   title: string;
@@ -28,36 +34,63 @@ interface NewsAPIArticle {
 }
 
 // Categorize article based on title/description keywords
-function categorizeArticle(title: string, description: string): { category: string; urgency: string } {
+function categorizeArticle(title: string, description: string): { category: string; urgency: Urgency } {
   const text = `${title} ${description}`.toLowerCase();
   
-  if (text.includes('diesel') || text.includes('fuel price') || text.includes('gas price')) {
-    return { category: 'Diesel', urgency: 'high' };
+  if (text.includes("diesel") || text.includes("fuel price") || text.includes("gas price")) {
+    return { category: "Diesel Prices", urgency: "today" };
   }
-  if (text.includes('dot') || text.includes('fmcsa') || text.includes('regulation') || text.includes('compliance') || text.includes('eld')) {
-    return { category: 'Regulation', urgency: 'high' };
+  if (
+    text.includes("dot") ||
+    text.includes("fmcsa") ||
+    text.includes("regulation") ||
+    text.includes("compliance") ||
+    text.includes("eld")
+  ) {
+    return { category: "Regulations", urgency: "alert" };
   }
-  if (text.includes('weather') || text.includes('storm') || text.includes('snow') || text.includes('flood') || text.includes('hurricane') || text.includes('tornado')) {
-    return { category: 'Weather', urgency: 'urgent' };
+  if (
+    text.includes("weather") ||
+    text.includes("storm") ||
+    text.includes("snow") ||
+    text.includes("flood") ||
+    text.includes("hurricane") ||
+    text.includes("tornado")
+  ) {
+    return { category: "Weather", urgency: "urgent" };
   }
-  if (text.includes('recall') || text.includes('defect') || text.includes('safety alert')) {
-    return { category: 'Recall', urgency: 'urgent' };
+  if (text.includes("recall") || text.includes("defect") || text.includes("safety alert")) {
+    return { category: "Recall", urgency: "urgent" };
   }
-  if (text.includes('accident') || text.includes('crash') || text.includes('fatality') || text.includes('safety')) {
-    return { category: 'Safety', urgency: 'high' };
+  if (
+    text.includes("accident") ||
+    text.includes("crash") ||
+    text.includes("fatality") ||
+    text.includes("safety")
+  ) {
+    return { category: "Safety", urgency: "alert" };
   }
-  if (text.includes('weigh station') || text.includes('inspection') || text.includes('scale')) {
-    return { category: 'Weigh Station', urgency: 'medium' };
+  if (text.includes("weigh station") || text.includes("inspection") || text.includes("scale")) {
+    return { category: "Weigh Station", urgency: "today" };
   }
-  if (text.includes('freight') || text.includes('logistics') || text.includes('shipping') || text.includes('supply chain') || text.includes('trucking')) {
-    return { category: 'Industry', urgency: 'low' };
+  if (
+    text.includes("freight") ||
+    text.includes("logistics") ||
+    text.includes("shipping") ||
+    text.includes("supply chain") ||
+    text.includes("trucking")
+  ) {
+    return { category: "Industry", urgency: "normal" };
   }
   
-  return { category: 'Industry', urgency: 'low' };
+  return { category: "Industry", urgency: "normal" };
 }
 
 // Fetch news from NewsAPI.org
-async function fetchFromNewsAPI(apiKey: string): Promise<NewsItem[]> {
+const FALLBACK_IMAGE =
+  "https://images.unsplash.com/photo-1601584115197-04ecc0da31d7?w=400&h=200&fit=crop";
+
+async function fetchFromNewsAPI(apiKey: string): Promise<NewsItemResponse[]> {
   const searchQueries = [
     'trucking industry USA',
     'freight logistics',
@@ -108,19 +141,19 @@ async function fetchFromNewsAPI(apiKey: string): Promise<NewsItem[]> {
   console.log(`[NEWSAPI] Total unique articles fetched: ${allArticles.length}`);
   
   // Convert to our format and limit to 20 articles
-  const newsItems: NewsItem[] = allArticles.slice(0, 20).map((article, index) => {
-    const { category, urgency } = categorizeArticle(article.title, article.description || '');
-    
+  const newsItems: NewsItemResponse[] = allArticles.slice(0, 20).map((article, index) => {
+    const { category, urgency } = categorizeArticle(article.title, article.description || "");
+
     return {
-      id: `newsapi_${Date.now()}_${index}`,
+      id: crypto.randomUUID(),
       title: article.title,
-      summary: (article.description || '').slice(0, 300),
-      image_url: article.urlToImage,
+      summary: (article.description || "").slice(0, 300),
+      image_url: article.urlToImage || FALLBACK_IMAGE,
       source_url: article.url,
       source: article.source.name,
       category,
       urgency,
-      published_at: article.publishedAt,
+      published_at: article.publishedAt || new Date().toISOString(),
     };
   });
   
@@ -128,7 +161,7 @@ async function fetchFromNewsAPI(apiKey: string): Promise<NewsItem[]> {
 }
 
 // Fallback: Generate local news if API fails
-function generateFallbackNews(): NewsItem[] {
+function generateFallbackNews(): NewsItemResponse[] {
   const now = new Date();
   const dateStr = now.toISOString().split('T')[0];
   
@@ -192,14 +225,14 @@ function generateFallbackNews(): NewsItem[] {
   ];
   
   return templates.map((t, i) => ({
-    id: `fallback_${dateStr}_${i}`,
+    id: crypto.randomUUID(),
     title: t.title,
     summary: t.summary,
-    image_url: null,
+    image_url: FALLBACK_IMAGE,
     source_url: "#",
     source: t.source,
     category: t.category,
-    urgency: t.urgency,
+    urgency: (t.urgency as Urgency) || "normal",
     published_at: now.toISOString()
   }));
 }
@@ -225,25 +258,27 @@ Deno.serve(async (req) => {
       // No body or invalid JSON, use defaults
     }
 
-    const today = new Date().toISOString().split("T")[0];
+    const nowIso = new Date().toISOString();
+    const today = nowIso.split("T")[0];
 
-    // Check if we have fresh news from today (unless force refresh)
+    // Check if we have fresh news fetched today (unless force refresh)
     if (!forceRefresh) {
       const { data: existingNews, error: fetchError } = await supabase
         .from("trucking_news")
         .select("*")
-        .gte("published_at", `${today}T00:00:00Z`)
-        .order("published_at", { ascending: false })
+        .gte("fetched_at", `${today}T00:00:00Z`)
+        .order("fetched_at", { ascending: false })
         .limit(20);
 
       if (!fetchError && existingNews && existingNews.length >= 5) {
         console.log(`[NEWS] Returning ${existingNews.length} cached news items from today`);
         return new Response(
           JSON.stringify({
+            ok: true,
+            cached: true,
             news: existingNews,
-            source: "cache",
-            lastUpdate: new Date().toISOString(),
-            count: existingNews.length,
+            itemCount: existingNews.length,
+            generatedAt: existingNews[0]?.fetched_at || nowIso,
           }),
           {
             headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -255,7 +290,7 @@ Deno.serve(async (req) => {
     console.log("[NEWS] Fetching fresh news...");
 
     // Fetch from NewsAPI if key is available
-    let newsItems: NewsItem[];
+    let newsItems: NewsItemResponse[];
     let source = "generated";
     
     if (newsApiKey) {
@@ -280,43 +315,56 @@ Deno.serve(async (req) => {
       source = "fallback";
     }
 
-    // Clean up old news (older than 3 days)
-    const threeDaysAgo = new Date();
-    threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+    // Clean up old news (older than 7 days)
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
     
     const { error: deleteOldError } = await supabase
       .from("trucking_news")
       .delete()
-      .lt("published_at", threeDaysAgo.toISOString());
+      .lt("fetched_at", sevenDaysAgo.toISOString());
     
     if (deleteOldError) {
       console.log("[NEWS] Error deleting old news:", deleteOldError.message);
     }
 
-    // Delete today's old news before inserting new (to avoid duplicates)
+    // Delete today's old fetches before inserting new (to avoid duplicates)
     const { error: deleteTodayError } = await supabase
       .from("trucking_news")
       .delete()
-      .gte("published_at", `${today}T00:00:00Z`);
+      .gte("fetched_at", `${today}T00:00:00Z`);
     
     if (deleteTodayError) {
       console.log("[NEWS] Error deleting today's news:", deleteTodayError.message);
     }
 
-    // Insert new news
+    // Insert new news (sem enviar `id` — o banco gera uuid automaticamente)
+    const rowsToInsert: NewsRowInsert[] = newsItems.map((n) => ({
+      title: n.title,
+      summary: n.summary,
+      image_url: n.image_url,
+      source_url: n.source_url,
+      source: n.source,
+      category: n.category,
+      urgency: n.urgency,
+      published_at: n.published_at,
+    }));
+
     const { error: insertError } = await supabase
       .from("trucking_news")
-      .insert(newsItems);
+      .insert(rowsToInsert);
 
     if (insertError) {
       console.error("[NEWS] Insert error:", insertError);
       // Return the news anyway even if insert fails
       return new Response(
         JSON.stringify({
+          // Mantém o app funcionando mesmo se o insert falhar
+          ok: true,
+          cached: false,
           news: newsItems,
-          source: source,
-          lastUpdate: new Date().toISOString(),
-          count: newsItems.length,
+          itemCount: newsItems.length,
+          generatedAt: nowIso,
           warning: `Insert failed: ${insertError.message}`,
         }),
         {
@@ -329,10 +377,11 @@ Deno.serve(async (req) => {
 
     return new Response(
       JSON.stringify({
+        ok: true,
+        cached: false,
         news: newsItems,
-        source: source,
-        lastUpdate: new Date().toISOString(),
-        count: newsItems.length,
+        itemCount: newsItems.length,
+        generatedAt: nowIso,
       }),
       {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -343,6 +392,7 @@ Deno.serve(async (req) => {
     const errorMessage = error instanceof Error ? error.message : "Failed to fetch news";
     return new Response(
       JSON.stringify({
+        ok: false,
         error: errorMessage,
         news: [],
       }),
