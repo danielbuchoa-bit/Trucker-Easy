@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Newspaper, ExternalLink, RefreshCw, MapPin, Clock, AlertCircle } from 'lucide-react';
+import { Newspaper, ExternalLink, RefreshCw, MapPin, Clock, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
@@ -15,6 +15,7 @@ interface NewsItem {
   state?: string;
   urgency: 'normal' | 'today' | 'alert' | 'urgent';
   published_at: string;
+  fetched_at?: string;
 }
 
 const urgencyColors: Record<string, string> = {
@@ -29,44 +30,72 @@ const NewsFeed: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [news, setNews] = useState<NewsItem[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [lastUpdate, setLastUpdate] = useState<string | null>(null);
 
   const fetchNews = async (force = false) => {
     try {
       setError(null);
+      const today = new Date().toISOString().split('T')[0];
+      
+      console.log('[NewsFeed] Fetching news, force:', force, 'today:', today);
       
       // First try to get from database
       const { data: dbNews, error: dbError } = await supabase
         .from('trucking_news')
         .select('*')
         .order('published_at', { ascending: false })
-        .limit(10);
+        .limit(15);
 
       if (dbError) {
         console.error('[NewsFeed] DB error:', dbError);
       }
 
-      // If we have news and not forcing refresh, use cached
-      if (dbNews && dbNews.length > 0 && !force) {
-        setNews(dbNews as NewsItem[]);
-        setLoading(false);
-        return;
+      // Log what we got from DB
+      if (dbNews && dbNews.length > 0) {
+        const latestDate = dbNews[0]?.published_at?.split('T')[0];
+        const fetchedAt = dbNews[0]?.fetched_at;
+        console.log('[NewsFeed] DB news count:', dbNews.length, 'latest date:', latestDate, 'fetched:', fetchedAt);
+        setLastUpdate(fetchedAt || null);
+        
+        // If we have today's news and not forcing refresh, use cached
+        if (latestDate === today && !force) {
+          console.log('[NewsFeed] Using cached news from today');
+          setNews(dbNews as NewsItem[]);
+          setLoading(false);
+          return;
+        }
       }
 
       // Fetch fresh news from edge function
-      console.log('[NewsFeed] Fetching fresh news...');
+      console.log('[NewsFeed] Calling edge function to refresh...');
       const { data, error: fnError } = await supabase.functions.invoke('fetch_trucking_news', {
         body: {},
       });
 
       if (fnError) {
         console.error('[NewsFeed] Function error:', fnError);
+        // Fall back to DB news if available
+        if (dbNews && dbNews.length > 0) {
+          console.log('[NewsFeed] Using cached news due to function error');
+          setNews(dbNews as NewsItem[]);
+          setLoading(false);
+          return;
+        }
         throw fnError;
       }
 
+      console.log('[NewsFeed] Function response:', { 
+        ok: data?.ok, 
+        cached: data?.cached, 
+        itemCount: data?.itemCount,
+        generatedAt: data?.generatedAt 
+      });
+
       if (data?.ok && data?.news) {
         setNews(data.news as NewsItem[]);
+        setLastUpdate(data.generatedAt || new Date().toISOString());
         if (force) {
-          toast.success(data.cached ? 'Notícias já atualizadas' : 'Notícias atualizadas!');
+          toast.success(data.cached ? 'Notícias já atualizadas' : `${data.news.length} notícias atualizadas!`);
         }
       } else {
         throw new Error(data?.error || 'Failed to fetch news');
@@ -142,8 +171,21 @@ const NewsFeed: React.FC = () => {
 
   return (
     <div className="space-y-3">
-      {/* Refresh Button */}
-      <div className="flex justify-end">
+      {/* Header with Refresh Button and Last Update */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          {lastUpdate && (
+            <>
+              <CheckCircle2 className="w-3.5 h-3.5 text-primary" />
+              <span>Atualizado: {new Date(lastUpdate).toLocaleString('pt-BR', { 
+                day: '2-digit', 
+                month: '2-digit', 
+                hour: '2-digit', 
+                minute: '2-digit' 
+              })}</span>
+            </>
+          )}
+        </div>
         <button
           onClick={handleRefresh}
           disabled={refreshing}
