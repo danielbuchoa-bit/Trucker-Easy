@@ -94,12 +94,19 @@ export default function ArrivalPrompt({
       setLoading(true);
       setError(null);
       
+      console.log('[ArrivalPrompt] Starting food recommendation fetch for:', poi.name);
+      
       try {
         // 1. First fetch nearby restaurants
         const restaurantsResult = await fetchNearbyRestaurants(poi.lat, poi.lng, poi.name);
         setNearbyRestaurantsData(restaurantsResult);
         
-        // 2. Then get AI recommendations
+        console.log('[ArrivalPrompt] Restaurant search result:', {
+          source: restaurantsResult?.source,
+          restaurantsFound: restaurantsResult?.restaurants?.length || 0,
+        });
+        
+        // 2. Prepare data for AI recommendations
         let menuItems: { item_name: string; category: string }[] = [];
         let restaurantNames: string[] = [];
         
@@ -113,43 +120,58 @@ export default function ArrivalPrompt({
           offerings.drinks.forEach(item => menuItems.push({ item_name: item, category: 'drinks' }));
         }
 
+        // Build station object with all available context
+        const station = {
+          placeId: poi.id,
+          name: poi.name,
+          brand: detectBrand(poi.name),
+          address: poi.address,
+          lat: poi.lat,
+          lng: poi.lng,
+        };
+
+        // Determine if fallback is needed (no restaurants found)
+        const needsFallback = restaurantNames.length === 0 && menuItems.length === 0;
+
+        console.log('[ArrivalPrompt] Calling food_recommendation API:', {
+          stationName: station.name,
+          stationBrand: station.brand,
+          restaurantsFound: restaurantNames.length,
+          fallbackTriggered: needsFallback,
+        });
+
         const { data, error: fnError } = await supabase.functions.invoke('food_recommendation', {
           body: {
-            profile: userProfile,
+            profile: userProfile ? {
+              diet_type: userProfile.diet_type,
+              allergies: userProfile.allergies,
+              restrictions: userProfile.restrictions,
+              health_goals: userProfile.health_goals,
+              budget_preference: userProfile.budget_preference,
+            } : null,
             menuItems,
             placeType: poi.category === 'truck_stop' ? 'truck stop' : 'gas station',
             stopName: poi.name,
             restaurantNames,
+            station, // CRITICAL: Pass station object for contextual recommendations
+            useFallback: needsFallback,
           },
         });
 
         if (fnError) throw fnError;
         if (data.error) throw new Error(data.error);
 
-        setRecommendation(data);
-        setIsFallbackMode(restaurantsResult?.source === 'fallback');
-      } catch (err) {
-        console.error('Food recommendation error:', err);
-        setError('Could not load recommendations.');
-        // Set fallback recommendations
-        setRecommendation({
-          best_choice: { 
-            item: 'Grilled chicken wrap or salad', 
-            reason: 'High protein, lower carbs, filling' 
-          },
-          alternative: { 
-            item: 'Turkey sandwich on wheat', 
-            reason: 'Lean protein, complex carbs' 
-          },
-          emergency_option: { 
-            item: 'Beef jerky + nuts + water', 
-            reason: 'Protein without fried food' 
-          },
-          avoid: [
-            { item: 'Large fried combos', reason: 'High fat and calories' },
-            { item: 'Sugary drinks and pastries', reason: 'Sugar crash on the road' },
-          ],
+        console.log('[ArrivalPrompt] Recommendation received:', {
+          source: data.source,
+          isConvenienceFallback: data.is_convenience_fallback,
+          bestChoice: data.best_choice?.item,
         });
+
+        setRecommendation(data);
+        setIsFallbackMode(data.is_convenience_fallback || restaurantsResult?.source === 'fallback');
+      } catch (err) {
+        console.error('[ArrivalPrompt] Food recommendation error:', err);
+        setError('Could not load recommendations.');
         setIsFallbackMode(true);
       } finally {
         setLoading(false);
@@ -158,6 +180,24 @@ export default function ArrivalPrompt({
     
     fetchAll();
   }, [poi, profileLoaded, userProfile, fetchNearbyRestaurants]);
+
+  // Helper to detect truck stop brand from name
+  const detectBrand = (name: string): string | undefined => {
+    const n = name.toLowerCase();
+    if (n.includes("love's") || n.includes('loves')) return "Love's";
+    if (n.includes('pilot')) return 'Pilot';
+    if (n.includes('flying j')) return 'Flying J';
+    if (n.includes('ta ') || n.includes('travelcenters')) return 'TA';
+    if (n.includes('petro')) return 'Petro';
+    if (n.includes("buc-ee") || n.includes('bucee')) return "Buc-ee's";
+    if (n.includes('sapp')) return 'Sapp Bros';
+    if (n.includes('ambest')) return 'AMBEST';
+    if (n.includes('shell')) return 'Shell';
+    if (n.includes('chevron')) return 'Chevron';
+    if (n.includes('exxon')) return 'Exxon';
+    if (n.includes('bp ') || n.includes(' bp')) return 'BP';
+    return undefined;
+  };
 
   const getCategoryLabel = (category: string) => {
     switch (category) {
@@ -172,6 +212,8 @@ export default function ArrivalPrompt({
     hasFetchedRef.current = false;
     setLoading(true);
     setError(null);
+    
+    console.log('[ArrivalPrompt] Retrying recommendations for:', poi.name);
     
     try {
       const restaurantsResult = await fetchNearbyRestaurants(poi.lat, poi.lng, poi.name);
@@ -190,23 +232,43 @@ export default function ArrivalPrompt({
         offerings.drinks.forEach(item => menuItems.push({ item_name: item, category: 'drinks' }));
       }
 
+      const station = {
+        placeId: poi.id,
+        name: poi.name,
+        brand: detectBrand(poi.name),
+        address: poi.address,
+        lat: poi.lat,
+        lng: poi.lng,
+      };
+
+      const needsFallback = restaurantNames.length === 0 && menuItems.length === 0;
+
       const { data, error: fnError } = await supabase.functions.invoke('food_recommendation', {
         body: {
-          profile: userProfile,
+          profile: userProfile ? {
+            diet_type: userProfile.diet_type,
+            allergies: userProfile.allergies,
+            restrictions: userProfile.restrictions,
+            health_goals: userProfile.health_goals,
+            budget_preference: userProfile.budget_preference,
+          } : null,
           menuItems,
           placeType: poi.category === 'truck_stop' ? 'truck stop' : 'gas station',
           stopName: poi.name,
           restaurantNames,
+          station,
+          useFallback: needsFallback,
         },
       });
 
       if (fnError) throw fnError;
       if (data.error) throw new Error(data.error);
 
+      console.log('[ArrivalPrompt] Retry successful:', data.source);
       setRecommendation(data);
-      setIsFallbackMode(restaurantsResult?.source === 'fallback');
+      setIsFallbackMode(data.is_convenience_fallback || restaurantsResult?.source === 'fallback');
     } catch (err) {
-      console.error('Retry error:', err);
+      console.error('[ArrivalPrompt] Retry error:', err);
       setError('Could not load recommendations.');
     } finally {
       setLoading(false);
