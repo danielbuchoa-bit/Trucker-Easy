@@ -20,6 +20,7 @@ import FloatingChatButton from "./components/chat/FloatingChatButton";
 import { DocumentReminderProvider } from "./components/notifications/DocumentReminderProvider";
 import EmotionalCheckInModal from "./components/wellness/EmotionalCheckInModal";
 import CheckInTrigger from "./components/wellness/CheckInTrigger";
+import EnglishQuickReturn from "./components/settings/EnglishQuickReturn";
 import WelcomeScreen from "./pages/Welcome";
 import AuthScreen from "./pages/Auth";
 import OnboardingScreen from "./pages/Onboarding";
@@ -68,6 +69,7 @@ const App = () => (
                     <PoiFeedbackProvider>
                       <GeofenceProvider>
                         <FacilityGeofenceProvider>
+                          <EnglishQuickReturn />
                           <FloatingChatButton />
                           <EmotionalCheckInModal />
                           <CheckInTrigger />
