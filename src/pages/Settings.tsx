@@ -82,11 +82,9 @@ const Settings = () => {
                     <FlaskConical className="w-5 h-5 text-warning" />
                   </div>
                   <div>
-                    <p className="font-medium">Road Test Mode</p>
+                    <p className="font-medium">{t.settings.roadTestMode}</p>
                     <p className="text-sm text-muted-foreground">
-                      {language === 'pt' ? 'Ativa diagnósticos e dados reais' : 
-                       language === 'es' ? 'Activa diagnósticos y datos reales' : 
-                       'Enables diagnostics and real data'}
+                      {t.settings.roadTestDesc}
                     </p>
                   </div>
                 </div>
@@ -104,9 +102,7 @@ const Settings = () => {
                     onClick={() => navigate('/road-test-checklist')}
                   >
                     <ClipboardCheck className="w-4 h-4 mr-2" />
-                    {language === 'pt' ? 'Abrir Checklist de Teste' : 
-                     language === 'es' ? 'Abrir Lista de Verificación' : 
-                     'Open Test Checklist'}
+                    {t.settings.openTestChecklist}
                   </Button>
                 </div>
               )}

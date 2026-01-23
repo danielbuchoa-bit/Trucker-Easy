@@ -357,6 +357,20 @@ export const translations = {
       reviews: 'Reviews',
       messages: 'Messages',
       wellbeing: 'My Wellbeing',
+      myRatings: 'My Ratings',
+      ratingsMade: 'ratings made',
+      stopAdvisor: 'Stop Advisor',
+      facilityRating: 'Facility Rating',
+      foodPreferences: 'Food Preferences',
+      favoriteMeals: 'Favorite Meals',
+      complianceDocuments: 'Compliance & Documents',
+      myDocuments: 'My Documents (CDL & Medical)',
+      findDMV: 'Find DMV',
+      drugTestMedical: 'Drug Test & Medical Card',
+      expiringSoon: 'Expiring soon!',
+      guest: 'Guest',
+      signInToView: 'Sign in to view your profile',
+      since: 'Since',
     },
     
     settings: {
@@ -366,6 +380,9 @@ export const translations = {
       darkMode: 'Dark Mode',
       privacy: 'Privacy',
       help: 'Help & Support',
+      roadTestMode: 'Road Test Mode',
+      roadTestDesc: 'Enables diagnostics and real data',
+      openTestChecklist: 'Open Test Checklist',
     },
     
     food: {
@@ -415,6 +432,18 @@ export const translations = {
       enableReminderDesc: 'Ask for bypass/pull-in after passing a station',
       saveHistory: 'Save bypass history',
       saveHistoryDesc: 'Store your bypass reports for stats',
+    },
+
+    location: {
+      enableLocation: 'Enable Location',
+      locationPromptDesc: 'To show nearby stops, weigh stations and restaurants, we need your location.',
+      seeNearbyStops: 'See nearby stops and rest areas',
+      turnByTurnNavigation: 'Accurate turn-by-turn navigation',
+      weighStationAlerts: 'Weigh station alerts on your route',
+      visitedStopReminder: 'Reminder to rate visited stops',
+      locationPrivacy: 'Your location is not shared with other users.',
+      notNow: 'Not Now',
+      allow: 'Allow',
     },
 
     navigation: {
@@ -808,6 +837,20 @@ export const translations = {
       reviews: 'Reseñas',
       messages: 'Mensajes',
       wellbeing: 'Mi Bienestar',
+      myRatings: 'Mis Calificaciones',
+      ratingsMade: 'calificaciones hechas',
+      stopAdvisor: 'Asesor de Paradas',
+      facilityRating: 'Calificar Instalación',
+      foodPreferences: 'Preferencias de Comida',
+      favoriteMeals: 'Comidas Favoritas',
+      complianceDocuments: 'Cumplimiento y Documentos',
+      myDocuments: 'Mis Documentos (CDL y Médico)',
+      findDMV: 'Encontrar DMV',
+      drugTestMedical: 'Prueba de Drogas y Tarjeta Médica',
+      expiringSoon: '¡Expira pronto!',
+      guest: 'Invitado',
+      signInToView: 'Inicia sesión para ver tu perfil',
+      since: 'Desde',
     },
     
     settings: {
@@ -817,6 +860,9 @@ export const translations = {
       darkMode: 'Modo Oscuro',
       privacy: 'Privacidad',
       help: 'Ayuda y Soporte',
+      roadTestMode: 'Modo de Prueba en Carretera',
+      roadTestDesc: 'Activa diagnósticos y datos reales',
+      openTestChecklist: 'Abrir Lista de Verificación',
     },
     
     food: {
@@ -866,6 +912,18 @@ export const translations = {
       enableReminderDesc: 'Preguntar bypass/entrada al pasar una estación',
       saveHistory: 'Guardar historial de bypass',
       saveHistoryDesc: 'Almacenar tus reportes para estadísticas',
+    },
+
+    location: {
+      enableLocation: 'Habilitar Ubicación',
+      locationPromptDesc: 'Para mostrar paradas, básculas y restaurantes cercanos, necesitamos tu ubicación.',
+      seeNearbyStops: 'Ver paradas y áreas de descanso cercanas',
+      turnByTurnNavigation: 'Navegación precisa paso a paso',
+      weighStationAlerts: 'Alertas de básculas en tu ruta',
+      visitedStopReminder: 'Recordatorio para calificar paradas visitadas',
+      locationPrivacy: 'Tu ubicación no se comparte con otros usuarios.',
+      notNow: 'Ahora No',
+      allow: 'Permitir',
     },
 
     navigation: {
@@ -1259,6 +1317,20 @@ export const translations = {
       reviews: 'Avaliações',
       messages: 'Mensagens',
       wellbeing: 'Meu Bem-Estar',
+      myRatings: 'Minhas Avaliações',
+      ratingsMade: 'avaliações feitas',
+      stopAdvisor: 'Assessor de Paradas',
+      facilityRating: 'Avaliar Instalação',
+      foodPreferences: 'Preferências Alimentares',
+      favoriteMeals: 'Refeições Favoritas',
+      complianceDocuments: 'Conformidade e Documentos',
+      myDocuments: 'Meus Documentos (CDL e Médico)',
+      findDMV: 'Encontrar DMV',
+      drugTestMedical: 'Teste de Drogas e Cartão Médico',
+      expiringSoon: 'Expirando em breve!',
+      guest: 'Visitante',
+      signInToView: 'Faça login para ver seu perfil',
+      since: 'Desde',
     },
     
     settings: {
@@ -1268,6 +1340,9 @@ export const translations = {
       darkMode: 'Modo Escuro',
       privacy: 'Privacidade',
       help: 'Ajuda e Suporte',
+      roadTestMode: 'Modo de Teste na Estrada',
+      roadTestDesc: 'Ativa diagnósticos e dados reais',
+      openTestChecklist: 'Abrir Checklist de Teste',
     },
     
     food: {
@@ -1317,6 +1392,18 @@ export const translations = {
       enableReminderDesc: 'Perguntar bypass/entrada ao passar por uma balança',
       saveHistory: 'Salvar histórico de bypass',
       saveHistoryDesc: 'Armazenar seus reportes para estatísticas',
+    },
+
+    location: {
+      enableLocation: 'Ativar Localização',
+      locationPromptDesc: 'Para mostrar postos, balanças e restaurantes próximos, precisamos da sua localização.',
+      seeNearbyStops: 'Ver postos e paradas próximos',
+      turnByTurnNavigation: 'Navegação turn-by-turn precisa',
+      weighStationAlerts: 'Alertas de balanças no seu caminho',
+      visitedStopReminder: 'Lembrete para avaliar postos visitados',
+      locationPrivacy: 'Sua localização não é compartilhada com outros usuários.',
+      notNow: 'Agora Não',
+      allow: 'Permitir',
     },
 
     navigation: {

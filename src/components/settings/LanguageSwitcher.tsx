@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Check, Globe, Search, Star } from 'lucide-react';
+import { Check, Globe, Search, Star, AlertCircle } from 'lucide-react';
 import { useLanguage, LanguageOption } from '@/i18n/LanguageContext';
 import {
   Sheet,
@@ -10,6 +10,7 @@ import {
 } from '@/components/ui/sheet';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 
 interface LanguageSwitcherProps {
@@ -21,18 +22,37 @@ const LanguageSwitcher: React.FC<LanguageSwitcherProps> = ({
   trigger, 
   showCurrentLanguage = true 
 }) => {
-  const { languageCode, setLanguage, t, favoriteLanguages, otherLanguages, availableLanguages } = useLanguage();
+  const { 
+    languageCode, 
+    setLanguage, 
+    t, 
+    favoriteLanguages, 
+    otherLanguages, 
+    availableLanguages,
+    currentLanguageOption,
+    debugInfo 
+  } = useLanguage();
   const [open, setOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
   const handleLanguageSelect = (option: LanguageOption) => {
+    console.log('[LanguageSwitcher] Selected:', option.code, option.label);
+    
     setLanguage(option.code);
     setOpen(false);
     setSearchQuery('');
-    toast.success('Language changed to ' + option.label);
+    
+    // Show toast with language info
+    if (option.hasFullTranslation) {
+      toast.success(`Language: ${option.label}`, {
+        description: option.nativeLabel,
+      });
+    } else {
+      toast.success(`Language: ${option.label}`, {
+        description: `Using English (${option.nativeLabel} not fully translated)`,
+      });
+    }
   };
-
-  const currentLang = availableLanguages.find(l => l.code === languageCode);
 
   // Filter languages by search query (matches English name, native name, or code)
   const filteredFavorites = useMemo(() => {
@@ -56,6 +76,7 @@ const LanguageSwitcher: React.FC<LanguageSwitcherProps> = ({
   }, [otherLanguages, searchQuery]);
 
   const totalResults = filteredFavorites.length + filteredOthers.length;
+  const translatedCount = availableLanguages.filter(l => l.hasFullTranslation).length;
 
   const defaultTrigger = (
     <button className="w-full p-4 flex items-center justify-between">
@@ -65,10 +86,10 @@ const LanguageSwitcher: React.FC<LanguageSwitcherProps> = ({
         </div>
         <span className="font-medium">{t.settings.language}</span>
       </div>
-      {showCurrentLanguage && currentLang && (
+      {showCurrentLanguage && currentLanguageOption && (
         <div className="flex items-center gap-2 text-muted-foreground">
-          <span className="text-xl">{currentLang.flag}</span>
-          <span>{currentLang.label}</span>
+          <span className="text-xl">{currentLanguageOption.flag}</span>
+          <span>{currentLanguageOption.label}</span>
         </div>
       )}
     </button>
@@ -89,7 +110,14 @@ const LanguageSwitcher: React.FC<LanguageSwitcherProps> = ({
         <div className="flex items-center gap-3">
           <span className="text-2xl">{option.flag}</span>
           <div className="text-left">
-            <p className="font-medium text-foreground text-sm">{option.label}</p>
+            <div className="flex items-center gap-2">
+              <p className="font-medium text-foreground text-sm">{option.label}</p>
+              {!option.hasFullTranslation && (
+                <Badge variant="outline" className="text-[10px] px-1 py-0 text-muted-foreground">
+                  EN
+                </Badge>
+              )}
+            </div>
             <p className="text-xs text-muted-foreground">{option.nativeLabel}</p>
           </div>
         </div>
@@ -116,10 +144,15 @@ const LanguageSwitcher: React.FC<LanguageSwitcherProps> = ({
             <Globe className="w-5 h-5" />
             {t.settings.language}
             <span className="text-xs text-muted-foreground font-normal">
-              ({availableLanguages.length} languages)
+              ({translatedCount} fully translated)
             </span>
           </SheetTitle>
         </SheetHeader>
+        
+        {/* Debug info - remove after validation */}
+        <div className="text-[10px] text-muted-foreground bg-muted/50 p-2 rounded mb-2 font-mono">
+          Current: {debugInfo.code} → {debugInfo.translationKey} | Sample: "{debugInfo.sampleKey}"
+        </div>
         
         {/* Search field */}
         <div className="relative mb-3">
@@ -133,6 +166,12 @@ const LanguageSwitcher: React.FC<LanguageSwitcherProps> = ({
           />
         </div>
         
+        {/* Info about translations */}
+        <div className="flex items-start gap-2 text-xs text-muted-foreground bg-muted/30 p-2 rounded-lg mb-3">
+          <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+          <p>Languages marked with <Badge variant="outline" className="text-[10px] px-1 py-0 mx-1">EN</Badge> show English text. Full translations: English, Spanish, Portuguese.</p>
+        </div>
+        
         <ScrollArea className="flex-1 -mx-6 px-6">
           <div className="space-y-4 pb-6">
             {/* Favorites section */}
@@ -140,7 +179,7 @@ const LanguageSwitcher: React.FC<LanguageSwitcherProps> = ({
               <div className="space-y-2">
                 <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wide">
                   <Star className="w-3 h-3 fill-current" />
-                  <span>Popular</span>
+                  <span>Fully Translated</span>
                 </div>
                 <div className="space-y-2">
                   {filteredFavorites.map((option) => (
@@ -154,7 +193,7 @@ const LanguageSwitcher: React.FC<LanguageSwitcherProps> = ({
             {filteredOthers.length > 0 && (
               <div className="space-y-2">
                 <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                  All Languages
+                  All Languages (English UI)
                 </div>
                 <div className="space-y-2">
                   {filteredOthers.map((option) => (
