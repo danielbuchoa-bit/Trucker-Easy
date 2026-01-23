@@ -1,4 +1,6 @@
-export type Language = 'en' | 'es' | 'pt';
+import { russianTranslations, frenchTranslations, germanTranslations, italianTranslations, polishTranslations, ukrainianTranslations } from './additionalTranslations';
+
+export type Language = 'en' | 'es' | 'pt' | 'ru' | 'fr' | 'de' | 'it' | 'pl' | 'uk';
 
 export const translations = {
   en: {
@@ -1440,6 +1442,12 @@ export const translations = {
       continueOn: 'Continue',
     },
   },
+  ru: russianTranslations,
+  fr: frenchTranslations,
+  de: germanTranslations,
+  it: italianTranslations,
+  pl: polishTranslations,
+  uk: ukrainianTranslations,
 } as const;
 
 export type TranslationsForLanguage = typeof translations.en;
