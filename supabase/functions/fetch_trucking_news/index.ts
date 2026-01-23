@@ -25,12 +25,43 @@ type NewsItemResponse = NewsRowInsert & {
 };
 
 interface NewsAPIArticle {
-  title: string;
-  description: string;
-  url: string;
-  urlToImage: string | null;
-  source: { name: string };
-  publishedAt: string;
+  title?: string;
+  description?: string;
+  url?: string;
+  urlToImage?: string | null;
+  source?: { name?: string };
+  publishedAt?: string;
+}
+
+// Normalize string for deduplication
+const norm = (s: string) =>
+  s
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "") // remove accents
+    .replace(/\s+/g, " ")
+    .trim();
+
+// Deduplicate articles by URL or title+source
+function dedupeArticles(articles: NewsAPIArticle[]): NewsAPIArticle[] {
+  const seen = new Set<string>();
+
+  return articles
+    // remove ghost articles
+    .filter((a) => a?.title && a?.url && a.title !== "[Removed]")
+    // sort by most recent
+    .sort((a, b) => (b.publishedAt ?? "").localeCompare(a.publishedAt ?? ""))
+    // dedupe
+    .filter((a) => {
+      const urlKey = a.url ? norm(a.url.split("?")[0]) : "";
+      const titleKey = norm(a.title ?? "");
+      const sourceKey = norm(a.source?.name ?? "");
+      const key = urlKey || `${titleKey}|${sourceKey}`;
+
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
 }
 
 // Categorize article based on title/description keywords
@@ -138,19 +169,25 @@ async function fetchFromNewsAPI(apiKey: string): Promise<NewsItemResponse[]> {
     }
   }
   
-  console.log(`[NEWSAPI] Total unique articles fetched: ${allArticles.length}`);
+  console.log(`[NEWSAPI] Total articles before dedupe: ${allArticles.length}`);
+  
+  // Deduplicate articles
+  const uniqueArticles = dedupeArticles(allArticles);
+  console.log(`[NEWSAPI] Total unique articles after dedupe: ${uniqueArticles.length}`);
   
   // Convert to our format and limit to 20 articles
-  const newsItems: NewsItemResponse[] = allArticles.slice(0, 20).map((article, index) => {
-    const { category, urgency } = categorizeArticle(article.title, article.description || "");
+  const newsItems: NewsItemResponse[] = uniqueArticles.slice(0, 20).map((article) => {
+    const title = article.title ?? "Trucking News";
+    const description = article.description ?? "";
+    const { category, urgency } = categorizeArticle(title, description);
 
     return {
       id: crypto.randomUUID(),
-      title: article.title,
-      summary: (article.description || "").slice(0, 300),
+      title,
+      summary: description.slice(0, 300),
       image_url: article.urlToImage || FALLBACK_IMAGE,
-      source_url: article.url,
-      source: article.source.name,
+      source_url: article.url ?? "#",
+      source: article.source?.name ?? "Unknown",
       category,
       urgency,
       published_at: article.publishedAt || new Date().toISOString(),
