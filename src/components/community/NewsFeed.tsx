@@ -200,74 +200,90 @@ const NewsFeed: React.FC = () => {
         </button>
       </div>
 
-      {/* News Cards */}
-      {news.map((item) => (
-        <a
-          key={item.id}
-          href={item.source_url}
-          target="_blank"
-          rel="noreferrer"
-          className="block rounded-2xl bg-card border border-border p-4 active:scale-[0.99] transition-transform hover:border-primary/50"
-        >
-          <div className="flex gap-4">
-            {item.image_url ? (
-              <img
-                src={item.image_url}
-                alt=""
-                className="h-20 w-28 rounded-xl object-cover flex-none"
-                onError={(e) => {
-                  (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1601584115197-04ecc0da31d7?w=400&h=200&fit=crop';
-                }}
-              />
-            ) : (
-              <div className="h-20 w-28 rounded-xl bg-muted flex-none" />
-            )}
+      {/* News Cards - Image Dominant Layout */}
+      {news.map((item) => {
+        const isPriority = item.urgency === 'urgent' || item.urgency === 'alert';
+        
+        return (
+          <a
+            key={item.id}
+            href={item.source_url}
+            target="_blank"
+            rel="noreferrer"
+            className="block rounded-[20px] bg-card border border-border overflow-hidden active:scale-[0.99] transition-transform hover:border-primary/50"
+          >
+            {/* Image Section - Top Position */}
+            <div className={`relative w-full ${isPriority ? 'h-[240px]' : 'h-[200px]'}`}>
+              {item.image_url ? (
+                <img
+                  src={item.image_url}
+                  alt=""
+                  className="w-full h-full object-cover"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1601584115197-04ecc0da31d7?w=800&h=400&fit=crop';
+                  }}
+                />
+              ) : (
+                <div className="w-full h-full bg-muted flex items-center justify-center">
+                  <Newspaper className="w-12 h-12 text-muted-foreground/50" />
+                </div>
+              )}
+              
+              {/* Priority Alert Badge Overlay */}
+              {isPriority && (
+                <div className="absolute top-3 right-3">
+                  <Badge className={`${urgencyColors[item.urgency]} text-sm px-3 py-1`}>
+                    {item.urgency === 'alert' ? '⚠️ ALERTA' : '🚨 URGENTE'}
+                  </Badge>
+                </div>
+              )}
+            </div>
 
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2 mb-2 flex-wrap">
-                <span className="text-xs px-2 py-1 rounded-full bg-muted text-foreground">
+            {/* Content Section */}
+            <div className="p-4">
+              {/* Meta Badges Row */}
+              <div className="flex items-center gap-2 mb-3 flex-wrap">
+                <span className="text-sm px-3 py-1 rounded-full bg-muted text-foreground font-medium">
                   {item.source}
                 </span>
-                {item.urgency !== 'normal' && (
-                  <Badge className={urgencyColors[item.urgency]}>
-                    {item.urgency === 'today' ? 'HOJE' : item.urgency === 'alert' ? 'ALERTA' : 'URGENTE'}
-                  </Badge>
-                )}
-                <Badge variant="secondary" className="bg-muted text-muted-foreground border-0">
+                <Badge variant="secondary" className="bg-primary/10 text-primary border-0 text-sm">
                   {item.category}
                 </Badge>
                 {item.state && (
-                  <Badge variant="secondary" className="bg-muted text-muted-foreground border-0 flex items-center gap-1">
-                    <MapPin className="w-3 h-3" />
+                  <Badge variant="secondary" className="bg-muted text-muted-foreground border-0 flex items-center gap-1 text-sm">
+                    <MapPin className="w-3.5 h-3.5" />
                     {item.state}
                   </Badge>
                 )}
               </div>
 
-              <h3 className="text-foreground font-semibold text-base leading-snug line-clamp-2">
+              {/* Title - Large & High Contrast */}
+              <h3 className="text-foreground font-semibold text-xl leading-tight line-clamp-2 mb-2">
                 {item.title}
               </h3>
 
+              {/* Description - Readable Size */}
               {item.summary && (
-                <p className="mt-1.5 text-muted-foreground text-sm leading-relaxed line-clamp-2">
+                <p className="text-muted-foreground text-base leading-relaxed line-clamp-2 mb-3">
                   {item.summary}
                 </p>
               )}
 
-              <div className="mt-2 flex items-center justify-between">
-                <span className="text-xs text-muted-foreground flex items-center gap-1">
-                  <Clock className="w-3 h-3" />
+              {/* Footer Row */}
+              <div className="flex items-center justify-between pt-2 border-t border-border/50">
+                <span className="text-sm text-muted-foreground flex items-center gap-1.5 font-medium">
+                  <Clock className="w-4 h-4" />
                   {formatDate(item.published_at)}
                 </span>
-                <span className="text-sm text-primary font-medium flex items-center gap-1">
+                <span className="text-base text-primary font-semibold flex items-center gap-1.5">
                   Ler mais
-                  <ExternalLink className="w-3 h-3" />
+                  <ExternalLink className="w-4 h-4" />
                 </span>
               </div>
             </div>
-          </div>
-        </a>
-      ))}
+          </a>
+        );
+      })}
 
       {/* Empty State */}
       {news.length === 0 && (
