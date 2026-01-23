@@ -62,6 +62,8 @@ const App = () => (
             <LocationPermissionRequest />
             <DriverChatSheet />
             <DocumentReminderProvider />
+            {/* GLOBAL EN PANIC BUTTON - Visible on ALL screens */}
+            <EnglishQuickReturn variant="floating" />
             <BrowserRouter>
               <ChatProvider>
                 <ActiveNavigationProvider>

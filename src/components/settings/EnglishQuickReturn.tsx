@@ -8,21 +8,21 @@ interface EnglishQuickReturnProps {
 }
 
 /**
- * Button to quickly return to English.
- * - inline: For use inside headers (default)
- * - floating: Fixed position overlay
+ * PANIC BUTTON: Always-visible button to quickly return to English.
+ * - floating: Fixed position overlay for global shell (REQUIRED in App.tsx)
+ * - inline: For use inside headers (optional additional placement)
  * Only shows when current language is NOT English.
  * Includes subtle fade/scale animation on appear/disappear.
  */
 const EnglishQuickReturn: React.FC<EnglishQuickReturnProps> = ({ 
-  variant = 'inline',
+  variant = 'floating',
   className = '' 
 }) => {
-  const { language, setLanguage } = useLanguage();
+  const { languageCode, setLanguage } = useLanguage();
   const [isVisible, setIsVisible] = useState(false);
   const [shouldRender, setShouldRender] = useState(false);
 
-  const isNotEnglish = language !== 'en';
+  const isNotEnglish = !languageCode.startsWith('en');
 
   useEffect(() => {
     if (isNotEnglish) {
@@ -46,7 +46,7 @@ const EnglishQuickReturn: React.FC<EnglishQuickReturnProps> = ({
   }
 
   const handleReturnToEnglish = () => {
-    setLanguage('en');
+    setLanguage('en-US');
     toast.success('Language set to English');
   };
 
@@ -58,7 +58,7 @@ const EnglishQuickReturn: React.FC<EnglishQuickReturnProps> = ({
     return (
       <button
         onClick={handleReturnToEnglish}
-        className={`fixed top-4 right-4 z-50 px-3 py-1.5 bg-primary text-primary-foreground rounded-full text-sm font-bold shadow-lg hover:bg-primary/90 transition-all duration-200 ease-out active:scale-95 flex items-center gap-1.5 ${animationClasses} ${className}`}
+        className={`fixed top-4 right-4 z-[9999] px-3 py-1.5 bg-primary text-primary-foreground rounded-full text-sm font-bold shadow-lg hover:bg-primary/90 transition-all duration-200 ease-out active:scale-95 flex items-center gap-1.5 ${animationClasses} ${className}`}
         style={{ marginTop: 'env(safe-area-inset-top, 0px)' }}
         aria-label="Switch to English"
       >

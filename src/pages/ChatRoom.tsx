@@ -6,7 +6,6 @@ import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
 import NicknameModal from '@/components/chat/NicknameModal';
-import EnglishQuickReturn from '@/components/settings/EnglishQuickReturn';
 import { useChatContext } from '@/contexts/ChatContext';
 import MentionInput from '@/components/chat/MentionInput';
 import MentionHighlight, { isUserMentioned } from '@/components/chat/MentionHighlight';
@@ -537,9 +536,7 @@ const ChatRoomScreen = () => {
             </div>
           </div>
           
-          <div className="flex items-center gap-2">
-            <EnglishQuickReturn />
-            {isMember && (
+          {isMember && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button className="w-10 h-10 flex items-center justify-center text-muted-foreground hover:text-foreground">
@@ -575,7 +572,6 @@ const ChatRoomScreen = () => {
                 </DropdownMenuContent>
               </DropdownMenu>
             )}
-          </div>
         </div>
       </div>
 
