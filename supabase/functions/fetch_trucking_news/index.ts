@@ -121,24 +121,79 @@ function categorizeArticle(title: string, description: string): { category: stri
 const FALLBACK_IMAGE =
   "https://images.unsplash.com/photo-1601584115197-04ecc0da31d7?w=400&h=200&fit=crop";
 
-async function fetchFromNewsAPI(apiKey: string): Promise<NewsItemResponse[]> {
-  const searchQueries = [
-    'trucking industry USA',
-    'freight logistics',
-    'diesel fuel prices',
-    'FMCSA regulations',
-    'truck driver',
-    'commercial trucking'
+// Optimized queries for US truck drivers - real-world impact focus
+const SEARCH_QUERIES = [
+  // Road closures & traffic
+  'highway closure OR interstate closure OR road closure truck',
+  // Severe weather affecting trucking
+  'snowstorm trucking OR blizzard highway OR flooding interstate OR high wind advisory truck',
+  // Truck accidents
+  'truck accident OR tractor trailer crash OR overturned truck OR hazmat spill',
+  // Infrastructure
+  'bridge closure truck OR construction zone highway OR lane closure interstate',
+  // Freight market
+  'freight market rates OR trucking capacity OR load demand',
+  // Regulations
+  'FMCSA OR DOT trucking OR Hours of Service OR ELD regulation',
+  // Diesel prices
+  'diesel fuel prices OR diesel price increase',
+];
+
+// Excluded keywords for post-filtering
+const EXCLUDED_KEYWORDS = [
+  'politics', 'election', 'celebrity', 'entertainment', 'sports', 'movie', 'music',
+  'europe', 'asia', 'africa', 'middle east', 'china', 'russia', 'ukraine',
+  'bitcoin', 'crypto', 'stock market', 'wall street'
+];
+
+// Check if article is relevant for truck drivers
+function isRelevantArticle(title: string, description: string): boolean {
+  const text = `${title} ${description}`.toLowerCase();
+  
+  // Exclude irrelevant topics
+  for (const keyword of EXCLUDED_KEYWORDS) {
+    if (text.includes(keyword)) {
+      return false;
+    }
+  }
+  
+  // Must have at least one trucking-related keyword
+  const truckingKeywords = [
+    'truck', 'trucker', 'trucking', 'freight', 'highway', 'interstate', 'dot', 'fmcsa',
+    'diesel', 'semi', 'tractor trailer', 'cdl', 'driver', 'haul', 'load', 'cargo',
+    'weigh station', 'rest area', 'road closure', 'traffic', 'weather', 'storm'
   ];
   
+  return truckingKeywords.some(kw => text.includes(kw));
+}
+
+// Priority scoring for sorting
+function getPriorityScore(title: string, description: string): number {
+  const text = `${title} ${description}`.toLowerCase();
+  
+  // Higher score = higher priority
+  if (text.includes('closure') || text.includes('closed')) return 100;
+  if (text.includes('storm') || text.includes('blizzard') || text.includes('flood')) return 95;
+  if (text.includes('accident') || text.includes('crash') || text.includes('fatality')) return 90;
+  if (text.includes('hazmat') || text.includes('spill')) return 85;
+  if (text.includes('construction') || text.includes('lane closure')) return 70;
+  if (text.includes('fmcsa') || text.includes('regulation') || text.includes('eld')) return 60;
+  if (text.includes('diesel') || text.includes('fuel price')) return 55;
+  if (text.includes('freight') || text.includes('rates') || text.includes('market')) return 50;
+  
+  return 10;
+}
+
+async function fetchFromNewsAPI(apiKey: string): Promise<NewsItemResponse[]> {
   const allArticles: NewsAPIArticle[] = [];
   const seenUrls = new Set<string>();
   
-  for (const query of searchQueries) {
+  for (const query of SEARCH_QUERIES) {
     try {
-      const url = `https://newsapi.org/v2/everything?q=${encodeURIComponent(query)}&language=en&sortBy=publishedAt&pageSize=10`;
+      // Use 'everything' endpoint with language filter
+      const url = `https://newsapi.org/v2/everything?q=${encodeURIComponent(query)}&language=en&sortBy=publishedAt&pageSize=15`;
       
-      console.log(`[NEWSAPI] Fetching: ${query}`);
+      console.log(`[NEWSAPI] Fetching: ${query.substring(0, 50)}...`);
       
       const response = await fetch(url, {
         headers: {
@@ -148,7 +203,7 @@ async function fetchFromNewsAPI(apiKey: string): Promise<NewsItemResponse[]> {
       
       if (!response.ok) {
         const errorText = await response.text();
-        console.error(`[NEWSAPI] Error fetching ${query}: ${response.status} - ${errorText}`);
+        console.error(`[NEWSAPI] Error: ${response.status} - ${errorText}`);
         continue;
       }
       
@@ -156,16 +211,31 @@ async function fetchFromNewsAPI(apiKey: string): Promise<NewsItemResponse[]> {
       
       if (data.articles && Array.isArray(data.articles)) {
         for (const article of data.articles) {
-          // Filter out articles without proper content
-          if (!seenUrls.has(article.url) && article.title && article.description && 
-              article.title !== '[Removed]' && article.description !== '[Removed]') {
-            seenUrls.add(article.url);
-            allArticles.push(article);
+          const title = article.title ?? '';
+          const desc = article.description ?? '';
+          
+          // Filter out invalid articles
+          if (!article.url || !title || title === '[Removed]' || desc === '[Removed]') {
+            continue;
           }
+          
+          // Filter out duplicates by URL
+          if (seenUrls.has(article.url)) {
+            continue;
+          }
+          
+          // Post-filter: check relevance
+          if (!isRelevantArticle(title, desc)) {
+            console.log(`[NEWSAPI] ⛔ Filtered out: ${title.substring(0, 50)}...`);
+            continue;
+          }
+          
+          seenUrls.add(article.url);
+          allArticles.push(article);
         }
       }
     } catch (error) {
-      console.error(`[NEWSAPI] Error with query ${query}:`, error);
+      console.error(`[NEWSAPI] Error with query:`, error);
     }
   }
   
@@ -175,8 +245,17 @@ async function fetchFromNewsAPI(apiKey: string): Promise<NewsItemResponse[]> {
   const uniqueArticles = dedupeArticles(allArticles);
   console.log(`[NEWSAPI] Total unique articles after dedupe: ${uniqueArticles.length}`);
   
+  // Sort by priority (road closures, weather, accidents first)
+  const sortedArticles = uniqueArticles.sort((a, b) => {
+    const scoreA = getPriorityScore(a.title ?? '', a.description ?? '');
+    const scoreB = getPriorityScore(b.title ?? '', b.description ?? '');
+    return scoreB - scoreA;
+  });
+  
+  console.log(`[NEWSAPI] Top priorities:`, sortedArticles.slice(0, 3).map(a => a.title?.substring(0, 40)));
+  
   // Convert to our format and limit to 20 articles
-  const newsItems: NewsItemResponse[] = uniqueArticles.slice(0, 20).map((article) => {
+  const newsItems: NewsItemResponse[] = sortedArticles.slice(0, 20).map((article) => {
     const title = article.title ?? "Trucking News";
     const description = article.description ?? "";
     const { category, urgency } = categorizeArticle(title, description);
