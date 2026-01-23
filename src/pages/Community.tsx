@@ -10,7 +10,6 @@ import FacilitiesList from '@/components/facility/FacilitiesList';
 import CreateRoomModal from '@/components/chat/CreateRoomModal';
 import NewsFeed from '@/components/community/NewsFeed';
 import LearnSecureLoadsTab from '@/components/community/LearnSecureLoadsTab';
-import EnglishQuickReturn from '@/components/settings/EnglishQuickReturn';
 import { supabase } from '@/integrations/supabase/client';
 import { formatDistanceToNow } from 'date-fns';
 import { pt, es, enUS } from 'date-fns/locale';
@@ -101,10 +100,7 @@ const CommunityScreen = () => {
       {/* Header */}
       <div className="sticky top-0 z-40 bg-background/95 backdrop-blur-sm border-b border-border safe-top">
         <div className="p-4">
-          <div className="flex items-center justify-between mb-4">
-            <h1 className="text-2xl font-bold text-foreground">{t.nav.community}</h1>
-            <EnglishQuickReturn />
-          </div>
+          <h1 className="text-2xl font-bold text-foreground mb-4">{t.nav.community}</h1>
           
           {/* Tabs - 5 tabs now */}
           <Tabs value={activeTab} onValueChange={setActiveTab}>

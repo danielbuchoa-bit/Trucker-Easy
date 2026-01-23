@@ -6,7 +6,6 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import BottomNav from '@/components/navigation/BottomNav';
-import EnglishQuickReturn from '@/components/settings/EnglishQuickReturn';
 import { useEmotionalCheckIn } from '@/contexts/EmotionalCheckInContext';
 import { format } from 'date-fns';
 import { ptBR, enUS, es } from 'date-fns/locale';
@@ -96,11 +95,10 @@ const WellbeingPage: React.FC = () => {
           <Button variant="ghost" size="icon" onClick={() => navigate(-1)}>
             <ArrowLeft className="w-5 h-5" />
           </Button>
-          <div className="flex items-center gap-2 flex-1">
+          <div className="flex items-center gap-2">
             <Heart className="w-5 h-5 text-pink-500" />
             <h1 className="text-lg font-semibold">{t.profile?.wellbeing || 'My Wellbeing'}</h1>
           </div>
-          <EnglishQuickReturn />
         </div>
       </div>
 

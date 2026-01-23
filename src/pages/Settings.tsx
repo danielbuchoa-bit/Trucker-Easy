@@ -7,7 +7,6 @@ import BottomNav from '@/components/navigation/BottomNav';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import LanguageSwitcher from '@/components/settings/LanguageSwitcher';
-import EnglishQuickReturn from '@/components/settings/EnglishQuickReturn';
 
 const Settings = () => {
   const { t, language } = useLanguage();
@@ -26,8 +25,7 @@ const Settings = () => {
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
-          <h1 className="text-xl font-bold flex-1">{t.settings.title}</h1>
-          <EnglishQuickReturn />
+          <h1 className="text-xl font-bold">{t.settings.title}</h1>
         </div>
       </div>
 
