@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { X, Globe, MapPin, Truck, Loader2 } from 'lucide-react';
+import { X, Globe, MapPin, Truck, Loader2, AlertCircle, User } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { useLanguage } from '@/i18n/LanguageContext';
@@ -12,14 +12,14 @@ interface CreateRoomModalProps {
 }
 
 const LANGUAGES = [
-  { id: 'all', label: 'Todos os idiomas', flag: '🌍' },
+  { id: 'all', label: 'All Languages', flag: '🌍' },
   { id: 'en', label: 'English', flag: '🇺🇸' },
   { id: 'es', label: 'Español', flag: '🇪🇸' },
   { id: 'pt', label: 'Português', flag: '🇧🇷' },
 ];
 
 const REGIONS = [
-  { id: 'all', label: 'Todas as regiões' },
+  { id: 'all', label: 'All Regions' },
   { id: 'northeast', label: 'Northeast' },
   { id: 'southeast', label: 'Southeast' },
   { id: 'midwest', label: 'Midwest' },
@@ -28,12 +28,14 @@ const REGIONS = [
 ];
 
 const TRAILER_TYPES = [
-  { id: 'all', label: 'Todos os tipos' },
+  { id: 'all', label: 'All Types' },
   { id: 'dry_van', label: 'Dry Van' },
   { id: 'reefer', label: 'Reefer' },
   { id: 'flatbed', label: 'Flatbed' },
   { id: 'tanker', label: 'Tanker' },
 ];
+
+const ROOM_ICONS = ['💬', '🚛', '🛣️', '⛽', '🏠', '🌍', '🔧', '💪', '🎯', '⚡'];
 
 const CreateRoomModal: React.FC<CreateRoomModalProps> = ({ isOpen, onClose }) => {
   const navigate = useNavigate();
@@ -46,33 +48,94 @@ const CreateRoomModal: React.FC<CreateRoomModalProps> = ({ isOpen, onClose }) =>
   const [language, setLanguage] = useState('all');
   const [region, setRegion] = useState('all');
   const [trailerType, setTrailerType] = useState('all');
+  const [icon, setIcon] = useState('💬');
   const [isCreating, setIsCreating] = useState(false);
+  const [recentRoomsCount, setRecentRoomsCount] = useState(0);
+  const [isCheckingSpam, setIsCheckingSpam] = useState(true);
+
+  // Anti-spam: Check how many rooms user created in last hour
+  useEffect(() => {
+    const checkRecentRooms = async () => {
+      if (!currentUserId || !isOpen) {
+        setIsCheckingSpam(false);
+        return;
+      }
+      
+      try {
+        const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+        const { count, error } = await supabase
+          .from('chat_rooms')
+          .select('*', { count: 'exact', head: true })
+          .eq('created_by', currentUserId)
+          .gte('created_at', oneHourAgo);
+
+        if (!error) {
+          setRecentRoomsCount(count || 0);
+          console.log('[CreateRoom] Recent rooms by user:', count);
+        }
+      } catch (err) {
+        console.error('[CreateRoom] Spam check error:', err);
+      } finally {
+        setIsCheckingSpam(false);
+      }
+    };
+
+    checkRecentRooms();
+  }, [currentUserId, isOpen]);
 
   if (!isOpen) return null;
 
+  // Max rooms per hour for anti-spam
+  const MAX_ROOMS_PER_HOUR = 3;
+  const canCreateRoom = recentRoomsCount < MAX_ROOMS_PER_HOUR;
+
   const handleCreate = async () => {
+    // Validation: name required
     if (!name.trim()) {
       toast({
-        title: 'Nome obrigatório',
-        description: 'Digite um nome para a sala.',
+        title: 'Name required',
+        description: 'Please enter a name for the room.',
         variant: 'destructive',
       });
       return;
     }
 
+    // Validation: name length
+    if (name.trim().length > 50) {
+      toast({
+        title: 'Name too long',
+        description: 'Room name must be 50 characters or less.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    // Validation: auth required
     if (!currentUserId) {
       toast({
-        title: 'Login necessário',
-        description: 'Você precisa estar logado para criar uma sala.',
+        title: 'Login required',
+        description: 'You need to be logged in to create a room.',
         variant: 'destructive',
       });
       navigate('/auth');
       return;
     }
 
+    // Anti-spam check
+    if (!canCreateRoom) {
+      toast({
+        title: 'Too many rooms created',
+        description: `You can only create ${MAX_ROOMS_PER_HOUR} rooms per hour. Please wait.`,
+        variant: 'destructive',
+      });
+      return;
+    }
+
     setIsCreating(true);
 
     try {
+      console.log('[CreateRoom] Creating room:', { name: name.trim(), language, region, trailerType, icon });
+      
       // Create the room
       const { data: room, error: roomError } = await supabase
         .from('chat_rooms')
@@ -83,38 +146,56 @@ const CreateRoomModal: React.FC<CreateRoomModalProps> = ({ isOpen, onClose }) =>
           region,
           trailer_type: trailerType,
           created_by: currentUserId,
-          icon: '💬',
+          icon,
         })
         .select()
         .single();
 
-      if (roomError) throw roomError;
+      if (roomError) {
+        console.error('[CreateRoom] Room creation error:', roomError);
+        throw roomError;
+      }
+      
+      console.log('[CreateRoom] Room created:', room.id, room.name);
 
-      // Auto-join the room
+      // Auto-join the room as creator
       const { error: joinError } = await supabase
         .from('chat_room_members')
         .insert({
           room_id: room.id,
           user_id: currentUserId,
-          nickname: 'Admin',
+          nickname: 'Creator',
         });
 
-      if (joinError) throw joinError;
+      if (joinError) {
+        console.error('[CreateRoom] Join error:', joinError);
+        throw joinError;
+      }
+      
+      console.log('[CreateRoom] Joined room as creator');
 
       await refreshMyRooms();
 
       toast({
-        title: 'Sala criada!',
-        description: `"${room.name}" foi criada com sucesso.`,
+        title: 'Room created!',
+        description: `"${room.name}" is ready. You are the creator.`,
       });
 
+      // Reset form
+      setName('');
+      setDescription('');
+      setIcon('💬');
+      setLanguage('all');
+      setRegion('all');
+      setTrailerType('all');
+      
       onClose();
       navigate(`/chat/${room.id}`);
     } catch (error) {
-      console.error('Error creating room:', error);
+      console.error('[CreateRoom] Error:', error);
       toast({
-        title: 'Erro',
-        description: 'Não foi possível criar a sala.',
+        title: 'Error',
+        description: 'Could not create room. Please try again.',
         variant: 'destructive',
       });
     } finally {
@@ -127,7 +208,7 @@ const CreateRoomModal: React.FC<CreateRoomModalProps> = ({ isOpen, onClose }) =>
       <div className="bg-background w-full max-w-lg rounded-t-2xl sm:rounded-2xl max-h-[90vh] overflow-y-auto">
         {/* Header */}
         <div className="sticky top-0 bg-background border-b border-border p-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-foreground">Criar Nova Sala</h2>
+          <h2 className="text-lg font-semibold text-foreground">Create New Room</h2>
           <button
             onClick={onClose}
             className="w-8 h-8 rounded-full bg-secondary flex items-center justify-center"
@@ -136,32 +217,66 @@ const CreateRoomModal: React.FC<CreateRoomModalProps> = ({ isOpen, onClose }) =>
           </button>
         </div>
 
+        {/* Anti-spam warning */}
+        {!canCreateRoom && (
+          <div className="mx-4 mt-4 p-3 bg-destructive/10 border border-destructive/30 rounded-xl flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 text-destructive flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-medium text-destructive">Room limit reached</p>
+              <p className="text-xs text-muted-foreground">You've created {recentRoomsCount} rooms in the last hour. Please wait before creating more.</p>
+            </div>
+          </div>
+        )}
+
         {/* Form */}
         <div className="p-4 space-y-4">
+          {/* Icon Selector */}
+          <div>
+            <label className="text-sm font-medium text-foreground mb-2 block">
+              Room Icon
+            </label>
+            <div className="flex flex-wrap gap-2">
+              {ROOM_ICONS.map((emoji) => (
+                <button
+                  key={emoji}
+                  onClick={() => setIcon(emoji)}
+                  className={`w-10 h-10 text-xl rounded-xl border transition-all ${
+                    icon === emoji
+                      ? 'border-primary bg-primary/10'
+                      : 'border-border bg-card hover:border-primary/50'
+                  }`}
+                >
+                  {emoji}
+                </button>
+              ))}
+            </div>
+          </div>
+          
           {/* Name */}
           <div>
             <label className="text-sm font-medium text-foreground mb-1 block">
-              Nome da sala *
+              Room Name *
             </label>
             <input
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="Ex: Motoristas de Reefer"
+              placeholder="e.g., Reefer Drivers, Northeast Truckers"
               className="w-full h-12 px-4 bg-card border border-border rounded-xl text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
               maxLength={50}
             />
+            <p className="text-xs text-muted-foreground mt-1">{name.length}/50 characters</p>
           </div>
 
           {/* Description */}
           <div>
             <label className="text-sm font-medium text-foreground mb-1 block">
-              Descrição (opcional)
+              Description (optional)
             </label>
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="Sobre o que é essa sala..."
+              placeholder="What's this room about..."
               className="w-full h-20 p-3 bg-card border border-border rounded-xl text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary resize-none"
               maxLength={200}
             />
@@ -171,7 +286,7 @@ const CreateRoomModal: React.FC<CreateRoomModalProps> = ({ isOpen, onClose }) =>
           <div>
             <label className="text-sm font-medium text-foreground mb-2 flex items-center gap-2">
               <Globe className="w-4 h-4" />
-              Idioma
+              Language
             </label>
             <div className="grid grid-cols-2 gap-2">
               {LANGUAGES.map((lang) => (
@@ -195,7 +310,7 @@ const CreateRoomModal: React.FC<CreateRoomModalProps> = ({ isOpen, onClose }) =>
           <div>
             <label className="text-sm font-medium text-foreground mb-2 flex items-center gap-2">
               <MapPin className="w-4 h-4" />
-              Região
+              Region
             </label>
             <select
               value={region}
@@ -214,7 +329,7 @@ const CreateRoomModal: React.FC<CreateRoomModalProps> = ({ isOpen, onClose }) =>
           <div>
             <label className="text-sm font-medium text-foreground mb-2 flex items-center gap-2">
               <Truck className="w-4 h-4" />
-              Tipo de Carreta
+              Trailer Type
             </label>
             <select
               value={trailerType}
@@ -231,19 +346,30 @@ const CreateRoomModal: React.FC<CreateRoomModalProps> = ({ isOpen, onClose }) =>
         </div>
 
         {/* Footer */}
-        <div className="sticky bottom-0 bg-background border-t border-border p-4">
+        <div className="sticky bottom-0 bg-background border-t border-border p-4 space-y-2">
+          {/* Creator Badge Info */}
+          <div className="flex items-center gap-2 text-xs text-muted-foreground justify-center mb-2">
+            <User className="w-3.5 h-3.5" />
+            <span>You'll be marked as the room creator</span>
+          </div>
+          
           <button
             onClick={handleCreate}
-            disabled={isCreating || !name.trim()}
+            disabled={isCreating || !name.trim() || !canCreateRoom || isCheckingSpam}
             className="w-full h-12 bg-primary text-primary-foreground rounded-xl font-medium disabled:opacity-50 flex items-center justify-center gap-2"
           >
-            {isCreating ? (
+            {isCheckingSpam ? (
               <>
                 <Loader2 className="w-5 h-5 animate-spin" />
-                Criando...
+                Checking...
+              </>
+            ) : isCreating ? (
+              <>
+                <Loader2 className="w-5 h-5 animate-spin" />
+                Creating...
               </>
             ) : (
-              'Criar e Entrar'
+              'Create & Enter Room'
             )}
           </button>
         </div>
