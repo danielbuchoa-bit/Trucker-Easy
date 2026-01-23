@@ -1,6 +1,6 @@
 import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import { useLanguage } from '@/i18n/LanguageContext';
-import { Search, Filter, MapPin, Navigation, Route, Building2, Loader2, RefreshCw, AlertCircle, Truck, Fuel, Scale, UtensilsCrossed, TreePine } from 'lucide-react';
+import { Search, Filter, MapPin, Navigation, Route, Building2, Loader2, RefreshCw, AlertCircle, Truck, Fuel, Scale, UtensilsCrossed, TreePine, Info } from 'lucide-react';
 import BottomNav from '@/components/navigation/BottomNav';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -10,6 +10,7 @@ import LocationErrorCard from '@/components/location/LocationErrorCard';
 import { NextBillionDiagnosticsPanel } from '@/components/diagnostics/NextBillionDiagnosticsPanel';
 import { useNextBillionDiagnostics } from '@/hooks/useNextBillionDiagnostics';
 import RateFacilityModal from '@/components/facility/RateFacilityModal';
+import { Badge } from '@/components/ui/badge';
 
 interface NearbyPlace {
   id: string;
@@ -23,7 +24,17 @@ interface NearbyPlace {
   lat: number;
   lng: number;
   address?: string;
+  truckFriendlyConfidence?: 'confirmed' | 'likely' | 'unknown';
 }
+
+// Map filter IDs to API filter types
+const FILTER_TYPE_MAP: Record<string, string> = {
+  nearMe: 'nearMe',
+  truckStops: 'truckStops',
+  weighStations: 'weighStations',
+  restaurants: 'restaurants',
+  restAreas: 'restAreas',
+};
 
 const HomeScreen = () => {
   const { t } = useLanguage();
@@ -37,6 +48,7 @@ const HomeScreen = () => {
   const [locationError, setLocationError] = useState<string | null>(null);
   const [locationErrorCode, setLocationErrorCode] = useState<number | undefined>(undefined);
   const [isRateModalOpen, setIsRateModalOpen] = useState(false);
+  const [lastSearchDebug, setLastSearchDebug] = useState<any>(null);
   
   // Diagnostics panel (5 taps on logo to open)
   const diagnostics = useNextBillionDiagnostics();
@@ -53,7 +65,7 @@ const HomeScreen = () => {
   const watchIdRef = useRef<number | null>(null);
 
   // Throttle POI refreshes to avoid constant UI flicker
-  const lastPlacesFetchRef = useRef<{ lat: number; lng: number; time: number } | null>(null);
+  const lastPlacesFetchRef = useRef<{ lat: number; lng: number; time: number; filter: string } | null>(null);
 
   // Get user's current location with watchPosition for continuous updates
   const getUserLocation = useCallback(() => {
@@ -156,71 +168,94 @@ const HomeScreen = () => {
   }, []);
 
 
-  // Fetch nearby places from NextBillion API
-  const fetchNearbyPlaces = useCallback(async (lat: number, lng: number) => {
+  // Fetch nearby places from NextBillion API with filter-specific query
+  const fetchNearbyPlaces = useCallback(async (lat: number, lng: number, filterType: string) => {
     setLoading(true);
     setError(null);
 
+    console.log(`[POI_SEARCH] Starting search - Filter: ${filterType}, Location: ${lat.toFixed(4)}, ${lng.toFixed(4)}`);
+
     try {
-      // Fetch truck stops using NextBillion
-      const { data: truckStopsData, error: truckStopsError } = await supabase.functions.invoke(
+      // Fetch POIs using NextBillion with filter-specific parameters
+      const { data: poisData, error: poisError } = await supabase.functions.invoke(
         'nb_browse_pois',
         {
-          body: { lat, lng, radius: 32000 }, // 20 miles ≈ 32km
+          body: { 
+            lat, 
+            lng, 
+            radiusMeters: 16000, // Start with 10 miles
+            filterType: FILTER_TYPE_MAP[filterType] || 'nearMe',
+            progressiveRadius: true, // Enable progressive radius expansion
+            limit: 30,
+          },
         }
       );
 
-      if (truckStopsError) throw truckStopsError;
+      if (poisError) throw poisError;
 
-      // Fetch weigh stations from database
-      const { data: weighStations, error: weighError } = await supabase
-        .from('weigh_stations')
-        .select('*')
-        .eq('active', true);
+      console.log(`[POI_SEARCH] Response:`, {
+        count: poisData?.count,
+        radius: poisData?.searchRadius,
+        filter: poisData?.filterType,
+        debug: poisData?.debug,
+      });
 
-      if (weighError) throw weighError;
+      // Store debug info for diagnostics
+      setLastSearchDebug(poisData?.debug);
 
-      // Convert truck stops to NearbyPlace format
-      const truckStopPlaces: NearbyPlace[] = (truckStopsData?.pois || []).map((poi: any) => ({
+      // Convert POIs to NearbyPlace format
+      const poiPlaces: NearbyPlace[] = (poisData?.pois || []).map((poi: any) => ({
         id: poi.id,
         name: poi.title || poi.name,
-        type: 'truckStop' as const,
+        type: poi.poiType || 'truckStop',
         distance: formatDistance(poi.distance),
         distanceMeters: poi.distance,
         lat: poi.position?.lat || poi.lat,
         lng: poi.position?.lng || poi.lng,
         address: poi.address?.label,
         rating: poi.rating,
-        parking: getRandomParkingStatus(), // Would ideally come from real data
+        parking: getRandomParkingStatus(),
+        truckFriendlyConfidence: poi.truckFriendlyConfidence,
       }));
 
-      // Convert weigh stations to NearbyPlace format with distance calculation
-      const weighStationPlaces: NearbyPlace[] = (weighStations || [])
-        .map((ws: any) => {
-          const distance = calculateDistance(lat, lng, ws.lat, ws.lng);
-          return {
-            id: ws.id,
-            name: ws.name,
-            type: 'weighStation' as const,
-            distance: formatDistance(distance),
-            distanceMeters: distance,
-            lat: ws.lat,
-            lng: ws.lng,
-            status: 'open' as const, // Would ideally come from real-time status
-          };
-        })
-        .filter((ws: NearbyPlace) => ws.distanceMeters <= 80000) // Within 50 miles
-        .sort((a: NearbyPlace, b: NearbyPlace) => a.distanceMeters - b.distanceMeters)
-        .slice(0, 5);
+      // For weighStations filter, also fetch from database
+      if (filterType === 'weighStations' || filterType === 'nearMe') {
+        const { data: weighStations, error: weighError } = await supabase
+          .from('weigh_stations')
+          .select('*')
+          .eq('active', true);
 
-      // Combine and sort by distance
-      const allPlaces = [...truckStopPlaces, ...weighStationPlaces].sort(
-        (a, b) => a.distanceMeters - b.distanceMeters
-      );
+        if (!weighError && weighStations) {
+          const weighStationPlaces: NearbyPlace[] = weighStations
+            .map((ws: any) => {
+              const distance = calculateDistance(lat, lng, ws.lat, ws.lng);
+              return {
+                id: ws.id,
+                name: ws.name,
+                type: 'weighStation' as const,
+                distance: formatDistance(distance),
+                distanceMeters: distance,
+                lat: ws.lat,
+                lng: ws.lng,
+                status: 'open' as const,
+                truckFriendlyConfidence: 'confirmed' as const,
+              };
+            })
+            .filter((ws: NearbyPlace) => ws.distanceMeters <= 80000)
+            .sort((a: NearbyPlace, b: NearbyPlace) => a.distanceMeters - b.distanceMeters)
+            .slice(0, 5);
 
+          poiPlaces.push(...weighStationPlaces);
+        }
+      }
+
+      // Sort all places by distance
+      const allPlaces = poiPlaces.sort((a, b) => a.distanceMeters - b.distanceMeters);
+
+      console.log(`[POI_SEARCH] Final places: ${allPlaces.length}`);
       setPlaces(allPlaces);
     } catch (err) {
-      console.error('Error fetching places:', err);
+      console.error('[POI_SEARCH] Error:', err);
       setError('Could not load nearby places. Please try again.');
     } finally {
       setLoading(false);
@@ -259,13 +294,16 @@ const HomeScreen = () => {
     getUserLocation();
   }, [getUserLocation]);
 
-  // Fetch places when location is available
+  // Fetch places when location OR FILTER changes
   useEffect(() => {
     if (userLocation) {
       const now = Date.now();
       const last = lastPlacesFetchRef.current;
 
-      if (last) {
+      // Re-fetch if filter changed OR enough time/distance passed
+      const filterChanged = last?.filter !== activeFilter;
+      
+      if (!filterChanged && last) {
         const timeDiff = now - last.time;
         const movedMeters = calculateDistance(userLocation.lat, userLocation.lng, last.lat, last.lng);
 
@@ -279,13 +317,17 @@ const HomeScreen = () => {
         lat: userLocation.lat,
         lng: userLocation.lng,
         time: now,
+        filter: activeFilter,
       };
 
-      fetchNearbyPlaces(userLocation.lat, userLocation.lng);
+      fetchNearbyPlaces(userLocation.lat, userLocation.lng, activeFilter);
     }
-  }, [userLocation, fetchNearbyPlaces]);
+  }, [userLocation, activeFilter, fetchNearbyPlaces]);
 
+  // Filter places based on active filter (client-side filtering for nearMe)
   const filteredPlaces = useMemo(() => {
+    // For specific filters, places are already filtered server-side
+    // For 'nearMe', show all but we can still apply type filter if needed
     const byType = places.filter((place) => {
       if (activeFilter === 'nearMe') return true;
       if (activeFilter === 'truckStops') return place.type === 'truckStop';
@@ -327,7 +369,15 @@ const HomeScreen = () => {
   };
 
   const handleRefresh = () => {
+    // Force refresh by clearing last fetch ref
+    lastPlacesFetchRef.current = null;
     getUserLocation();
+  };
+
+  const handleFilterChange = (filterId: string) => {
+    console.log(`[FILTER] Changing to: ${filterId}`);
+    setActiveFilter(filterId);
+    // Places will be refetched in useEffect
   };
 
   return (
@@ -355,7 +405,7 @@ const HomeScreen = () => {
             {filters.map((filter) => (
               <button
                 key={filter.id}
-                onClick={() => setActiveFilter(filter.id)}
+                onClick={() => handleFilterChange(filter.id)}
                 className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all ${
                   activeFilter === filter.id
                     ? 'bg-primary text-primary-foreground'
@@ -420,7 +470,7 @@ const HomeScreen = () => {
       {/* Nearby Places List */}
       <div className="p-4">
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-lg font-semibold">{t.map.nearMe}</h2>
+          <h2 className="text-lg font-semibold">{filters.find(f => f.id === activeFilter)?.label || t.map.nearMe}</h2>
           <Button variant="ghost" size="sm" onClick={handleRefresh} disabled={loading}>
             <RefreshCw className={`w-4 h-4 mr-1 ${loading ? 'animate-spin' : ''}`} />
             Refresh
@@ -466,13 +516,18 @@ const HomeScreen = () => {
               {activeFilter === 'nearMe' && <MapPin className="w-6 h-6 text-muted-foreground" />}
             </div>
             <p className="text-sm font-medium text-foreground mb-1">
-              No truck-friendly locations found
+              No locations found
             </p>
             <p className="text-xs text-muted-foreground">
               {activeFilter === 'nearMe' 
-                ? 'No POIs within 10 km of your location'
+                ? 'No POIs within search radius'
                 : `No ${filters.find(f => f.id === activeFilter)?.label || 'results'} nearby`}
             </p>
+            {lastSearchDebug && (
+              <p className="text-xs text-muted-foreground mt-1">
+                Searched up to {(lastSearchDebug.usedRadius / 1609.34).toFixed(1)} mi
+              </p>
+            )}
             <Button variant="outline" size="sm" onClick={handleRefresh} className="mt-3">
               <RefreshCw className="w-3 h-3 mr-1" />
               Refresh
@@ -516,6 +571,12 @@ const HomeScreen = () => {
                     <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0 overflow-hidden">
                       {BrandLogo ? (
                         <BrandLogo className="w-8 h-8" />
+                      ) : place.type === 'restArea' ? (
+                        <TreePine className="w-6 h-6 text-primary" />
+                      ) : place.type === 'restaurant' ? (
+                        <UtensilsCrossed className="w-6 h-6 text-primary" />
+                      ) : place.type === 'weighStation' ? (
+                        <Scale className="w-6 h-6 text-primary" />
                       ) : (
                         <MapPin className="w-6 h-6 text-primary" />
                       )}
@@ -523,8 +584,14 @@ const HomeScreen = () => {
 
                     <div className="flex-1 min-w-0">
                       <h3 className="font-semibold text-foreground truncate">{place.name}</h3>
-                      <div className="flex items-center gap-2 mt-1">
+                      <div className="flex items-center gap-2 mt-1 flex-wrap">
                         <span className="text-sm text-muted-foreground">{place.distance}</span>
+                        {place.truckFriendlyConfidence === 'unknown' && (
+                          <Badge variant="outline" className="text-xs py-0 px-1.5 gap-0.5">
+                            <Info className="w-3 h-3" />
+                            Unverified
+                          </Badge>
+                        )}
                         {place.parking && (
                           <>
                             <span className="text-muted-foreground">•</span>
