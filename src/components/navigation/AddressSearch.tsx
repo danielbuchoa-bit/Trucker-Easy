@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import { Search, MapPin, Loader2 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
-import { HereService, GeocodeResult } from '@/services/HereService';
+import { NextBillionService, GeocodeResult } from '@/services/NextBillionService';
 import { useLanguage } from '@/i18n/LanguageContext';
 import { cn } from '@/lib/utils';
 
@@ -26,7 +26,7 @@ const AddressSearch = ({ placeholder, onSelect, className }: AddressSearchProps)
 
     setLoading(true);
     try {
-      const geocodeResults = await HereService.geocode(searchQuery);
+      const geocodeResults = await NextBillionService.geocode(searchQuery);
       setResults(geocodeResults);
       setShowResults(true);
     } catch (error) {

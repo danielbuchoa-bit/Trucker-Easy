@@ -36,17 +36,14 @@ export const usePoiFeedback = () => {
 // POI types that trigger feedback
 const FEEDBACK_POI_TYPES = ['fuel', 'truck_stop', 'rest_area'];
 
-// HERE category IDs for truck-related POIs - EXPANDED for better coverage
+// NextBillion POI categories for truck-related POIs
 const TRUCK_CATEGORIES = [
-  '700-7850-0000',   // Truck Stop / Service Area
-  '700-7850-0115',   // Truck Stop
-  '700-7600-0000',   // Fueling Station / Gas Station
-  '700-7600-0116',   // Petrol Station
-  '700-7600-0117',   // Diesel Station
-  '700-7600-0324',   // Truck Dealer/Truck Parking
-  '700-7900-0000',   // Auto Service & Maintenance
-  '550-5510-0000',   // Rest Area
-  '550-5510-0358',   // Rest Area with Truck Facilities
+  'fuel_station',
+  'truck_stop',
+  'rest_area',
+  'parking',
+  'diesel',
+  'gas_station',
 ];
 
 // Common truck stop brand names for text-based detection fallback
@@ -110,15 +107,15 @@ export const PoiFeedbackProvider: React.FC<{ children: React.ReactNode }> = ({ c
     return () => subscription.unsubscribe();
   }, []);
 
-  // Fetch nearby POIs using categories AND text search fallback
+  // Fetch nearby POIs using NextBillion
   const fetchNearbyPois = useCallback(async (lat: number, lng: number) => {
     const now = Date.now();
     if (now - lastPoisFetch.current < 20000) return; // Cache for 20s
     lastPoisFetch.current = now;
 
     try {
-      // First try category-based search
-      const { data, error } = await supabase.functions.invoke('here_browse_pois', {
+      // Use NextBillion POI search
+      const { data, error } = await supabase.functions.invoke('nb_browse_pois', {
         body: {
           lat,
           lng,
@@ -132,28 +129,27 @@ export const PoiFeedbackProvider: React.FC<{ children: React.ReactNode }> = ({ c
         console.error('[PoiFeedback] Error fetching POIs:', error);
       }
 
-      let pois = data?.pois || [];
-      console.log('[PoiFeedback] Category search returned:', pois.length, 'POIs');
+      let pois = data?.pois || data?.items || [];
+      console.log('[PoiFeedback] POI search returned:', pois.length, 'POIs');
 
-      // If no POIs found, try text search for known truck stop brands
+      // If no POIs found, try general search
       if (pois.length === 0) {
-        console.log('[PoiFeedback] Trying text search fallback...');
+        console.log('[PoiFeedback] Trying general search fallback...');
         try {
-          const { data: textData } = await supabase.functions.invoke('here_browse_pois', {
+          const { data: fallbackData } = await supabase.functions.invoke('nb_browse_pois', {
             body: {
               lat,
               lng,
               radiusMeters: 800,
-              searchText: 'truck stop gas station fuel',
               limit: 20,
             },
           });
-          if (textData?.pois) {
-            pois = textData.pois;
-            console.log('[PoiFeedback] Text search returned:', pois.length, 'POIs');
+          if (fallbackData?.pois || fallbackData?.items) {
+            pois = fallbackData.pois || fallbackData.items || [];
+            console.log('[PoiFeedback] Fallback search returned:', pois.length, 'POIs');
           }
-        } catch (textErr) {
-          console.error('[PoiFeedback] Text search failed:', textErr);
+        } catch (fallbackErr) {
+          console.error('[PoiFeedback] Fallback search failed:', fallbackErr);
         }
       }
 
@@ -162,14 +158,14 @@ export const PoiFeedbackProvider: React.FC<{ children: React.ReactNode }> = ({ c
         nearbyPoisCache.current.clear();
         pois.forEach((poi: any) => {
           // Check if name matches known truck stop brands
-          const nameLower = (poi.name || '').toLowerCase();
+          const nameLower = (poi.name || poi.title || '').toLowerCase();
           const isTruckStop = TRUCK_STOP_BRANDS.some(brand => nameLower.includes(brand));
           
           nearbyPoisCache.current.set(poi.id, {
             ...poi,
-            position: { lat: poi.lat, lng: poi.lng },
-            title: poi.name,
-            categories: [{ id: isTruckStop ? '700-7850-0000' : (poi.category || '700-7600-0000') }],
+            position: poi.position || { lat: poi.lat, lng: poi.lng },
+            title: poi.title || poi.name,
+            categories: [{ id: isTruckStop ? 'truck_stop' : 'fuel_station' }],
           });
         });
         console.log('[PoiFeedback] Cached POIs:', nearbyPoisCache.current.size);
@@ -208,10 +204,10 @@ export const PoiFeedbackProvider: React.FC<{ children: React.ReactNode }> = ({ c
     return progress.distanceToNextManeuver !== undefined && progress.distanceToNextManeuver < 200;
   }, [isNavigating, progress]);
 
-  // Map HERE category to our type
+  // Map POI category to our type
   const mapPoiType = (category: string): 'fuel' | 'truck_stop' | 'rest_area' => {
-    if (category.includes('7850')) return 'truck_stop'; // Truck Stop category
-    if (category.includes('5510') || category.includes('rest')) return 'rest_area'; // Rest Area
+    if (category.includes('truck_stop') || category.includes('7850')) return 'truck_stop';
+    if (category.includes('rest') || category.includes('5510')) return 'rest_area';
     return 'fuel'; // Default to fuel for gas stations
   };
 

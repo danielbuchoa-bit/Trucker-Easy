@@ -44,21 +44,23 @@ export const useNearbyPoi = (lat: number | null, lng: number | null): UseNearbyP
       setError(null);
 
       try {
-        // Use HERE Browse POIs to find nearby truck stops, gas stations, etc.
-        const { data, error: fnError } = await supabase.functions.invoke('here_browse_pois', {
+        // Use NextBillion Browse POIs to find nearby truck stops, gas stations, etc.
+        const { data, error: fnError } = await supabase.functions.invoke('nb_browse_pois', {
           body: {
             lat,
             lng,
             radius: 500, // 500 meters
-            categories: 'fuel-station,truck-stop,rest-area',
+            categories: ['fuel_station', 'truck_stop', 'rest_area'],
             limit: 1
           }
         });
 
         if (fnError) throw fnError;
 
-        if (data?.items && data.items.length > 0) {
-          const item = data.items[0];
+        const items = data?.pois || data?.items || [];
+        
+        if (items.length > 0) {
+          const item = items[0];
           setPoi({
             name: item.title || item.name || 'Unknown',
             address: item.address?.label || formatAddress(item.address) || '',
@@ -67,7 +69,7 @@ export const useNearbyPoi = (lat: number | null, lng: number | null): UseNearbyP
           });
         } else {
           // Fallback to reverse geocode if no POI found
-          const { data: geoData, error: geoError } = await supabase.functions.invoke('here_reverse_geocode', {
+          const { data: geoData, error: geoError } = await supabase.functions.invoke('nb_reverse_geocode', {
             body: { lat, lng }
           });
 

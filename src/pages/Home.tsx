@@ -97,15 +97,15 @@ const HomeScreen = () => {
     );
   }, []);
 
-  // Fetch nearby places from HERE API
+  // Fetch nearby places from NextBillion API
   const fetchNearbyPlaces = useCallback(async (lat: number, lng: number) => {
     setLoading(true);
     setError(null);
 
     try {
-      // Fetch truck stops
+      // Fetch truck stops using NextBillion
       const { data: truckStopsData, error: truckStopsError } = await supabase.functions.invoke(
-        'here_browse_pois',
+        'nb_browse_pois',
         {
           body: { lat, lng, radius: 32000 }, // 20 miles ≈ 32km
         }
