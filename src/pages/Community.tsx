@@ -27,6 +27,7 @@ interface ChatRoom {
   message_count: number;
   last_message_preview: string | null;
   last_message_at: string | null;
+  created_by: string | null;
 }
 
 const CommunityScreen = () => {
@@ -143,7 +144,7 @@ const CommunityScreen = () => {
         
         {activeTab === 'chat' && (
           <div className="space-y-3">
-            {/* CTA Banner */}
+            {/* Create Room Button - More Prominent */}
             <button
               onClick={() => currentUserId ? setShowCreateModal(true) : navigate('/auth')}
               className="w-full p-4 bg-gradient-to-r from-primary to-primary/80 rounded-2xl text-left"
@@ -153,8 +154,8 @@ const CommunityScreen = () => {
                   <Plus className="w-6 h-6 text-primary-foreground" />
                 </div>
                 <div className="flex-1">
-                  <h3 className="font-semibold text-primary-foreground">Join a chat now</h3>
-                  <p className="text-sm text-primary-foreground/80">Chat with other drivers in real-time</p>
+                  <h3 className="font-semibold text-primary-foreground">+ Create New Room</h3>
+                  <p className="text-sm text-primary-foreground/80">Start your own community chat</p>
                 </div>
                 <ChevronRight className="w-5 h-5 text-primary-foreground" />
               </div>
@@ -192,6 +193,7 @@ const CommunityScreen = () => {
             {/* Communities List */}
             {!loading && filteredCommunities.map((room) => {
               const isMember = myRoomIds.has(room.id);
+              const isDriverCreated = room.created_by !== null; // Rooms created by drivers have created_by
               return (
                 <button
                   key={room.id}
@@ -203,11 +205,17 @@ const CommunityScreen = () => {
                   </div>
 
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <h3 className="font-semibold text-foreground truncate">{room.name}</h3>
                       {isMember && (
                         <span className="px-2 py-0.5 bg-primary/10 text-primary text-xs rounded-full font-medium">
                           Member
+                        </span>
+                      )}
+                      {isDriverCreated && (
+                        <span className="px-2 py-0.5 bg-secondary text-muted-foreground text-xs rounded-full font-medium flex items-center gap-1">
+                          <Users className="w-3 h-3" />
+                          Driver Room
                         </span>
                       )}
                     </div>
