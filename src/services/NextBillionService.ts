@@ -146,6 +146,21 @@ class NextBillionServiceClass {
       message: details?.message,
       resultCount: details?.results || details?.count,
     });
+
+    // Emit custom event for diagnostics panel
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('nb-network-log', {
+        detail: {
+          endpoint,
+          method: 'POST',
+          params: details?.params || {},
+          statusCode: status === 'success' ? 200 : (details?.status || 500),
+          latencyMs: details?.latencyMs || 0,
+          error: status === 'error' ? details?.message : undefined,
+          resultCount: details?.results || details?.count,
+        }
+      }));
+    }
   }
 
   // ============= FORWARD GEOCODING =============

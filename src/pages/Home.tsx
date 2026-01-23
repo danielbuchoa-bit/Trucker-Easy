@@ -1,13 +1,14 @@
 import { useMemo, useState, useEffect, useCallback } from 'react';
 import { useLanguage } from '@/i18n/LanguageContext';
-import { Search, Filter, MapPin, Navigation, Route, Utensils, Building2, Loader2, RefreshCw, AlertCircle } from 'lucide-react';
+import { Search, Filter, MapPin, Navigation, Route, Utensils, Building2, Loader2, RefreshCw, AlertCircle, Truck } from 'lucide-react';
 import BottomNav from '@/components/navigation/BottomNav';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/supabase/client';
 import { getBrandLogo } from '@/lib/truckStopLogos';
 import LocationErrorCard from '@/components/location/LocationErrorCard';
-
+import { NextBillionDiagnosticsPanel } from '@/components/diagnostics/NextBillionDiagnosticsPanel';
+import { useNextBillionDiagnostics } from '@/hooks/useNextBillionDiagnostics';
 interface NearbyPlace {
   id: string;
   name: string;
@@ -33,7 +34,9 @@ const HomeScreen = () => {
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [locationError, setLocationError] = useState<string | null>(null);
   const [locationErrorCode, setLocationErrorCode] = useState<number | undefined>(undefined);
-
+  
+  // Diagnostics panel (5 taps on logo to open)
+  const diagnostics = useNextBillionDiagnostics();
   const filters = [
     { id: 'nearMe', label: t.map.nearMe, icon: Navigation },
     { id: 'truckStops', label: t.map.truckStops },
@@ -42,7 +45,10 @@ const HomeScreen = () => {
     { id: 'restAreas', label: t.map.restAreas },
   ];
 
-  // Get user's current location
+  // Watch ID for continuous location updates
+  const watchIdRef = useCallback(() => ({ current: null as number | null }), [])();
+
+  // Get user's current location with watchPosition for continuous updates
   const getUserLocation = useCallback(() => {
     setLocationError(null);
     setLocationErrorCode(undefined);
@@ -60,8 +66,15 @@ const HomeScreen = () => {
       console.warn('[Location] Not in secure context, geolocation may fail');
     }
 
+    // Clear existing watch
+    if (watchIdRef.current !== null) {
+      navigator.geolocation.clearWatch(watchIdRef.current);
+    }
+
+    // First get current position quickly
     navigator.geolocation.getCurrentPosition(
       (position) => {
+        console.log('[Location] Got initial position:', position.coords.latitude, position.coords.longitude);
         setLocationError(null);
         setLocationErrorCode(undefined);
         setUserLocation({
@@ -70,32 +83,71 @@ const HomeScreen = () => {
         });
       },
       (err) => {
-        console.error('[Location] Geolocation error:', err.code, err.message);
-        setLocationErrorCode(err.code);
-        
-        // More descriptive error messages
-        switch (err.code) {
-          case 1: // PERMISSION_DENIED
-            setLocationError('Permissão de localização negada');
-            break;
-          case 2: // POSITION_UNAVAILABLE
-            setLocationError('Localização indisponível');
-            break;
-          case 3: // TIMEOUT
-            setLocationError('Tempo esgotado ao buscar localização');
-            break;
-          default:
-            setLocationError('Erro ao obter localização');
-        }
-        setLoading(false);
+        console.error('[Location] getCurrentPosition error:', err.code, err.message);
+        handleLocationError(err);
       },
       {
-        enableHighAccuracy: true,
-        timeout: 15000, // Increased timeout for slower devices
+        enableHighAccuracy: false, // Fast first fix
+        timeout: 10000,
         maximumAge: 60000,
       }
     );
+
+    // Then start watching for updates (high accuracy)
+    const watchId = navigator.geolocation.watchPosition(
+      (position) => {
+        console.log('[Location] Watch update:', position.coords.latitude, position.coords.longitude, 'accuracy:', position.coords.accuracy);
+        setLocationError(null);
+        setLocationErrorCode(undefined);
+        setUserLocation({
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+        });
+        setLoading(false);
+      },
+      (err) => {
+        console.error('[Location] watchPosition error:', err.code, err.message);
+        handleLocationError(err);
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 15000,
+        maximumAge: 5000, // Accept positions up to 5 seconds old
+      }
+    );
+
+    watchIdRef.current = watchId;
+    console.log('[Location] Started watching with ID:', watchId);
   }, []);
+
+  const handleLocationError = (err: GeolocationPositionError) => {
+    setLocationErrorCode(err.code);
+    switch (err.code) {
+      case 1: // PERMISSION_DENIED
+        setLocationError('Permissão de localização negada');
+        break;
+      case 2: // POSITION_UNAVAILABLE
+        setLocationError('Localização indisponível');
+        break;
+      case 3: // TIMEOUT
+        setLocationError('Tempo esgotado ao buscar localização');
+        break;
+      default:
+        setLocationError('Erro ao obter localização');
+    }
+    setLoading(false);
+  };
+
+  // Cleanup watch on unmount
+  useEffect(() => {
+    return () => {
+      if (watchIdRef.current !== null) {
+        navigator.geolocation.clearWatch(watchIdRef.current);
+        console.log('[Location] Cleared watch on unmount');
+      }
+    };
+  }, []);
+
 
   // Fetch nearby places from NextBillion API
   const fetchNearbyPlaces = useCallback(async (lat: number, lng: number) => {
@@ -292,10 +344,17 @@ const HomeScreen = () => {
         </div>
       </div>
 
-      {/* Map Placeholder */}
+      {/* Map Placeholder with Diagnostics Trigger */}
       <div className="relative h-[40vh] bg-secondary/30 flex items-center justify-center border-b border-border">
         <div className="text-center">
-          <MapPin className="w-12 h-12 text-primary mx-auto mb-2" />
+          {/* Tappable Logo for Diagnostics (5 taps to open) */}
+          <button 
+            onClick={diagnostics.handleTap}
+            className="focus:outline-none"
+            aria-label="Open diagnostics (tap 5 times)"
+          >
+            <Truck className="w-12 h-12 text-primary mx-auto mb-2" />
+          </button>
           {userLocation ? (
             <p className="text-muted-foreground text-sm">
               📍 {userLocation.lat.toFixed(4)}, {userLocation.lng.toFixed(4)}
@@ -488,6 +547,12 @@ const HomeScreen = () => {
       <BottomNav
         activeTab="map"
         onTabChange={(tab) => navigate(`/${tab === 'map' ? 'home' : tab}`)}
+      />
+
+      {/* NextBillion Diagnostics Panel (5 taps on truck icon to open) */}
+      <NextBillionDiagnosticsPanel 
+        isOpen={diagnostics.isOpen} 
+        onClose={diagnostics.close} 
       />
     </div>
   );
