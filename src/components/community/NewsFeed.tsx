@@ -3,6 +3,7 @@ import { Newspaper, ExternalLink, RefreshCw, MapPin, Clock, AlertCircle, CheckCi
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { useLanguage } from '@/i18n/LanguageContext';
 
 interface NewsItem {
   id: string;
@@ -26,6 +27,7 @@ const urgencyColors: Record<string, string> = {
 };
 
 const NewsFeed: React.FC = () => {
+  const { t, language } = useLanguage();
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [news, setNews] = useState<NewsItem[]>([]);
@@ -37,7 +39,7 @@ const NewsFeed: React.FC = () => {
       setError(null);
       const today = new Date().toISOString().split('T')[0];
       
-      console.log('[NewsFeed] Fetching news, force:', force, 'today:', today);
+      console.log('[NewsFeed] Fetching news, force:', force, 'today:', today, 'language:', language);
       
       // First try to get from database
       const { data: dbNews, error: dbError } = await supabase
@@ -58,7 +60,7 @@ const NewsFeed: React.FC = () => {
         console.log('[NewsFeed] DB news count:', dbNews.length, 'latest date:', latestDate, 'fetched:', fetchedAt);
         setLastUpdate(fetchedAt || null);
         
-        // Cache por data de coleta (fetched_at), não por published_at (que pode ser dias atrás)
+        // Cache by fetched_at date, not published_at
         if (fetchedDate === today && !force) {
           console.log('[NewsFeed] Using cached news from today');
           setNews(dbNews as NewsItem[]);
@@ -70,7 +72,7 @@ const NewsFeed: React.FC = () => {
       // Fetch fresh news from edge function
       console.log('[NewsFeed] Calling edge function to refresh...');
       const { data, error: fnError } = await supabase.functions.invoke('fetch_trucking_news', {
-        body: { forceRefresh: force },
+        body: { forceRefresh: force, language },
       });
 
       if (fnError) {
@@ -93,21 +95,21 @@ const NewsFeed: React.FC = () => {
         warning: data?.warning,
       });
 
-      // Compat: aceita formatos antigos e novos da função
+      // Compat: accept old and new function response formats
       if (Array.isArray(data?.news) && data.news.length >= 0) {
         setNews(data.news as NewsItem[]);
         setLastUpdate((data.generatedAt || data.lastUpdate) ?? new Date().toISOString());
         if (force) {
           const isCached = Boolean(data?.cached);
-          toast.success(isCached ? 'Notícias já atualizadas' : `${data.news.length} notícias atualizadas!`);
+          toast.success(isCached ? t.news.alreadyUpdated : `${data.news.length} ${t.news.newsUpdated}`);
         }
       } else {
         throw new Error(data?.error || 'Failed to fetch news');
       }
     } catch (err) {
       console.error('[NewsFeed] Error:', err);
-      setError('Não foi possível carregar as notícias');
-      toast.error('Erro ao carregar notícias');
+      setError(t.news.errorLoading);
+      toast.error(t.news.errorLoading);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -123,10 +125,6 @@ const NewsFeed: React.FC = () => {
     await fetchNews(true);
   };
 
-  const openNews = (url: string) => {
-    window.open(url, '_blank');
-  };
-
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr);
     const today = new Date();
@@ -134,11 +132,37 @@ const NewsFeed: React.FC = () => {
     yesterday.setDate(yesterday.getDate() - 1);
 
     if (date.toDateString() === today.toDateString()) {
-      return 'Hoje';
+      return t.news.today;
     } else if (date.toDateString() === yesterday.toDateString()) {
-      return 'Ontem';
+      return t.news.yesterday;
     }
-    return date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+    
+    // Use locale-based date format
+    const locale = language === 'pt' ? 'pt-BR' : language === 'es' ? 'es-US' : 'en-US';
+    return date.toLocaleDateString(locale, { day: '2-digit', month: '2-digit' });
+  };
+
+  const formatLastUpdate = (dateStr: string) => {
+    const locale = language === 'pt' ? 'pt-BR' : language === 'es' ? 'es-US' : 'en-US';
+    return new Date(dateStr).toLocaleString(locale, { 
+      day: '2-digit', 
+      month: '2-digit', 
+      hour: '2-digit', 
+      minute: '2-digit' 
+    });
+  };
+
+  const getUrgencyLabel = (urgency: string) => {
+    switch (urgency) {
+      case 'today':
+        return t.news.urgency.today;
+      case 'alert':
+        return `⚠️ ${t.news.urgency.alert}`;
+      case 'urgent':
+        return `🚨 ${t.news.urgency.urgent}`;
+      default:
+        return '';
+    }
   };
 
   if (loading) {
@@ -167,7 +191,7 @@ const NewsFeed: React.FC = () => {
           onClick={handleRefresh}
           className="px-4 py-2 bg-primary text-primary-foreground rounded-lg"
         >
-          Tentar novamente
+          {t.news.tryAgain}
         </button>
       </div>
     );
@@ -181,12 +205,7 @@ const NewsFeed: React.FC = () => {
           {lastUpdate && (
             <>
               <CheckCircle2 className="w-3.5 h-3.5 text-primary" />
-              <span>Atualizado: {new Date(lastUpdate).toLocaleString('pt-BR', { 
-                day: '2-digit', 
-                month: '2-digit', 
-                hour: '2-digit', 
-                minute: '2-digit' 
-              })}</span>
+              <span>{t.news.updated}: {formatLastUpdate(lastUpdate)}</span>
             </>
           )}
         </div>
@@ -196,7 +215,7 @@ const NewsFeed: React.FC = () => {
           className="flex items-center gap-2 px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
         >
           <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
-          {refreshing ? 'Atualizando...' : 'Atualizar'}
+          {refreshing ? t.news.refreshing : t.news.refresh}
         </button>
       </div>
 
@@ -233,7 +252,7 @@ const NewsFeed: React.FC = () => {
               {isPriority && (
                 <div className="absolute top-3 right-3">
                   <Badge className={`${urgencyColors[item.urgency]} text-sm px-3 py-1`}>
-                    {item.urgency === 'alert' ? '⚠️ ALERTA' : '🚨 URGENTE'}
+                    {getUrgencyLabel(item.urgency)}
                   </Badge>
                 </div>
               )}
@@ -276,7 +295,7 @@ const NewsFeed: React.FC = () => {
                   {formatDate(item.published_at)}
                 </span>
                 <span className="text-base text-primary font-semibold flex items-center gap-1.5">
-                  Ler mais
+                  {t.news.readMore}
                   <ExternalLink className="w-4 h-4" />
                 </span>
               </div>
@@ -289,12 +308,12 @@ const NewsFeed: React.FC = () => {
       {news.length === 0 && (
         <div className="text-center py-12">
           <Newspaper className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-          <p className="text-muted-foreground">Nenhuma notícia disponível</p>
+          <p className="text-muted-foreground">{t.news.noNews}</p>
           <button
             onClick={handleRefresh}
             className="mt-4 px-4 py-2 bg-primary text-primary-foreground rounded-lg"
           >
-            Carregar notícias
+            {t.news.loadNews}
           </button>
         </div>
       )}

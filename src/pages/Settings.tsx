@@ -1,24 +1,18 @@
 import { useLanguage } from '@/i18n/LanguageContext';
 import { useBypassSettings } from '@/hooks/useBypassSettings';
 import { useRoadTestSafe } from '@/contexts/RoadTestContext';
-import { ArrowLeft, Scale, Shield, Bell, Globe, Moon, FlaskConical, ClipboardCheck } from 'lucide-react';
+import { ArrowLeft, Scale, Shield, Bell, Moon, FlaskConical, ClipboardCheck } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import BottomNav from '@/components/navigation/BottomNav';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
+import LanguageSwitcher from '@/components/settings/LanguageSwitcher';
 
 const Settings = () => {
-  const { t, language, setLanguage } = useLanguage();
+  const { t, language } = useLanguage();
   const { settings, updateSettings } = useBypassSettings();
   const roadTest = useRoadTestSafe();
   const navigate = useNavigate();
-
-  const handleLanguageChange = () => {
-    const languages: ('en' | 'es' | 'pt')[] = ['en', 'es', 'pt'];
-    const currentIndex = languages.indexOf(language);
-    const nextIndex = (currentIndex + 1) % languages.length;
-    setLanguage(languages[nextIndex]);
-  };
 
   return (
     <div className="min-h-screen bg-background pb-20">
@@ -84,12 +78,16 @@ const Settings = () => {
             <div className="bg-card rounded-xl border border-border divide-y divide-border">
               <div className="p-4 flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-orange-500/10 flex items-center justify-center">
-                    <FlaskConical className="w-5 h-5 text-orange-500" />
+                  <div className="w-10 h-10 rounded-full bg-warning/10 flex items-center justify-center">
+                    <FlaskConical className="w-5 h-5 text-warning" />
                   </div>
                   <div>
                     <p className="font-medium">Road Test Mode</p>
-                    <p className="text-sm text-muted-foreground">Ativa diagnósticos e dados reais</p>
+                    <p className="text-sm text-muted-foreground">
+                      {language === 'pt' ? 'Ativa diagnósticos e dados reais' : 
+                       language === 'es' ? 'Activa diagnósticos y datos reales' : 
+                       'Enables diagnostics and real data'}
+                    </p>
                   </div>
                 </div>
                 <Switch
@@ -106,7 +104,9 @@ const Settings = () => {
                     onClick={() => navigate('/road-test-checklist')}
                   >
                     <ClipboardCheck className="w-4 h-4 mr-2" />
-                    Abrir Checklist de Teste
+                    {language === 'pt' ? 'Abrir Checklist de Teste' : 
+                     language === 'es' ? 'Abrir Lista de Verificación' : 
+                     'Open Test Checklist'}
                   </Button>
                 </div>
               )}
@@ -120,18 +120,7 @@ const Settings = () => {
             {t.settings.title}
           </h2>
           <div className="bg-card rounded-xl border border-border divide-y divide-border">
-            <button
-              onClick={handleLanguageChange}
-              className="w-full p-4 flex items-center justify-between"
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-secondary flex items-center justify-center">
-                  <Globe className="w-5 h-5" />
-                </div>
-                <span className="font-medium">{t.settings.language}</span>
-              </div>
-              <span className="text-muted-foreground uppercase">{language}</span>
-            </button>
+            <LanguageSwitcher />
             <div className="p-4 flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-full bg-secondary flex items-center justify-center">
