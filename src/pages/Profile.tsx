@@ -130,13 +130,13 @@ const ProfileScreen = () => {
   const getDisplayName = () => {
     if (profile?.full_name) return profile.full_name;
     if (profile?.email) return profile.email.split('@')[0];
-    return 'Driver';
+    return t.profile.guest;
   };
 
   const getMemberSince = () => {
     if (!profile?.created_at) return '';
     const year = new Date(profile.created_at).getFullYear();
-    return `Since ${year}`;
+    return `${t.profile.since} ${year}`;
   };
 
   const statsDisplay = [
@@ -146,19 +146,19 @@ const ProfileScreen = () => {
   ];
 
   const menuItems = [
-    { id: 'wellbeing', icon: Smile, label: 'Meu Bem-Estar', route: '/wellbeing' },
+    { id: 'wellbeing', icon: Smile, label: t.profile.wellbeing, route: '/wellbeing' },
     { id: 'bypass', icon: Scale, label: t.bypass.history, route: '/bypass-history' },
-    { id: 'rating-history', icon: History, label: 'Minhas Avaliações', route: '/rating-history' },
-    { id: 'stop-advisor', icon: Utensils, label: 'Stop Advisor', route: '/stop-advisor' },
-    { id: 'facility-rating', icon: Building2, label: 'Facility Rating', route: '/facility-rating' },
-    { id: 'food-prefs', icon: Utensils, label: 'Food Preferences', route: '/food-preferences' },
-    { id: 'favorite-meals', icon: Heart, label: 'Favorite Meals', route: '/favorite-meals' },
+    { id: 'rating-history', icon: History, label: t.profile.myRatings, route: '/rating-history' },
+    { id: 'stop-advisor', icon: Utensils, label: t.profile.stopAdvisor, route: '/stop-advisor' },
+    { id: 'facility-rating', icon: Building2, label: t.profile.facilityRating, route: '/facility-rating' },
+    { id: 'food-prefs', icon: Utensils, label: t.profile.foodPreferences, route: '/food-preferences' },
+    { id: 'favorite-meals', icon: Heart, label: t.profile.favoriteMeals, route: '/favorite-meals' },
   ];
 
   const complianceItems = [
-    { id: 'my-documents', icon: FileText, label: 'My Documents (CDL & Medical)', action: 'documents', hasAlert: documentAlerts > 0 },
-    { id: 'find-dmv', icon: MapPin, label: 'Find DMV', action: 'dmv' },
-    { id: 'medical-card', icon: Stethoscope, label: 'Drug Test & Medical Card', action: 'medical' },
+    { id: 'my-documents', icon: FileText, label: t.profile.myDocuments, action: 'documents', hasAlert: documentAlerts > 0 },
+    { id: 'find-dmv', icon: MapPin, label: t.profile.findDMV, action: 'dmv' },
+    { id: 'medical-card', icon: Stethoscope, label: t.profile.drugTestMedical, action: 'medical' },
   ];
 
   const settingsItems = [
@@ -211,12 +211,12 @@ const ProfileScreen = () => {
             </>
           ) : (
             <>
-              <h1 className="text-xl font-bold text-foreground mt-4">Guest</h1>
+              <h1 className="text-xl font-bold text-foreground mt-4">{t.profile.guest}</h1>
               <button 
                 onClick={() => navigate('/auth')}
                 className="text-primary text-sm mt-1"
               >
-                Sign in to view your profile
+                {t.profile.signInToView}
               </button>
             </>
           )}
@@ -264,7 +264,7 @@ const ProfileScreen = () => {
         <div>
           <h3 className="text-sm font-semibold text-muted-foreground mb-2 px-1 flex items-center gap-2">
             <FileCheck className="w-4 h-4" />
-            Compliance & Documents
+            {t.profile.complianceDocuments}
           </h3>
           <div className="space-y-2">
             {complianceItems.map((item) => {
@@ -287,7 +287,7 @@ const ProfileScreen = () => {
                   </div>
                   <span className="flex-1 font-medium text-foreground">{item.label}</span>
                   {item.hasAlert && (
-                    <span className="text-xs text-warning font-medium">Expiring soon!</span>
+                    <span className="text-xs text-warning font-medium">{t.profile.expiringSoon}</span>
                   )}
                   <ChevronRight className="w-5 h-5 text-muted-foreground" />
                 </button>

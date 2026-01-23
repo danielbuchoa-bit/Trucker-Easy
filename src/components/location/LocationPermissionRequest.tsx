@@ -2,8 +2,10 @@ import { useEffect, useState } from 'react';
 import { MapPin, Navigation, X, Loader2, Bell } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useNotifications } from '@/hooks/useNotifications';
+import { useLanguage } from '@/i18n/LanguageContext';
 
 const LocationPermissionRequest = () => {
+  const { t } = useLanguage();
   const [showPrompt, setShowPrompt] = useState(false);
   const [requesting, setRequesting] = useState(false);
   const [permissionState, setPermissionState] = useState<'prompt' | 'granted' | 'denied' | 'unknown'>('unknown');
@@ -117,13 +119,13 @@ const LocationPermissionRequest = () => {
             <Navigation className="w-8 h-8 text-primary" />
           </div>
           
-          <h2 className="text-xl font-bold text-foreground">Ativar Localização</h2>
+          <h2 className="text-xl font-bold text-foreground">{t.location.enableLocation}</h2>
         </div>
 
         {/* Content */}
         <div className="p-5 space-y-4">
           <p className="text-sm text-muted-foreground text-center">
-            Para mostrar postos, balanças e restaurantes próximos a você, precisamos da sua localização.
+            {t.location.locationPromptDesc}
           </p>
 
           {/* Benefits list */}
@@ -132,30 +134,30 @@ const LocationPermissionRequest = () => {
               <div className="w-8 h-8 bg-primary/10 rounded-full flex items-center justify-center flex-shrink-0">
                 <MapPin className="w-4 h-4 text-primary" />
               </div>
-              <span className="text-foreground">Ver postos e paradas próximos</span>
+              <span className="text-foreground">{t.location.seeNearbyStops}</span>
             </div>
             <div className="flex items-center gap-3 text-sm">
               <div className="w-8 h-8 bg-primary/10 rounded-full flex items-center justify-center flex-shrink-0">
                 <Navigation className="w-4 h-4 text-primary" />
               </div>
-              <span className="text-foreground">Navegação turn-by-turn precisa</span>
+              <span className="text-foreground">{t.location.turnByTurnNavigation}</span>
             </div>
             <div className="flex items-center gap-3 text-sm">
               <div className="w-8 h-8 bg-primary/10 rounded-full flex items-center justify-center flex-shrink-0">
                 ⚠️
               </div>
-              <span className="text-foreground">Alertas de balanças no seu caminho</span>
+              <span className="text-foreground">{t.location.weighStationAlerts}</span>
             </div>
             <div className="flex items-center gap-3 text-sm">
               <div className="w-8 h-8 bg-primary/10 rounded-full flex items-center justify-center flex-shrink-0">
                 <Bell className="w-4 h-4 text-primary" />
               </div>
-              <span className="text-foreground">Lembrete para avaliar postos visitados</span>
+              <span className="text-foreground">{t.location.visitedStopReminder}</span>
             </div>
           </div>
 
           <p className="text-xs text-muted-foreground text-center">
-            Sua localização não é compartilhada com outros usuários.
+            {t.location.locationPrivacy}
           </p>
         </div>
 
@@ -166,7 +168,7 @@ const LocationPermissionRequest = () => {
             onClick={dismissPrompt}
             className="flex-1"
           >
-            Agora Não
+            {t.location.notNow}
           </Button>
           <Button
             onClick={requestPermission}
@@ -178,7 +180,7 @@ const LocationPermissionRequest = () => {
             ) : (
               <Navigation className="w-4 h-4 mr-2" />
             )}
-            Permitir
+            {t.location.allow}
           </Button>
         </div>
       </div>
