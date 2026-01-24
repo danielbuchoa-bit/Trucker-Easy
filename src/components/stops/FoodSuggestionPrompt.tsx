@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { X, Utensils, Sparkles, Loader2, ThumbsUp, AlertTriangle, Ban, ChevronDown, ChevronUp, MapPin, Store, Truck } from 'lucide-react';
+import { X, Utensils, Sparkles, Loader2, ThumbsUp, AlertTriangle, Ban, ChevronDown, ChevronUp, MapPin, Store, Truck, Crown } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
 import { useLanguage } from '@/i18n/LanguageContext';
+import { useFeatureAccess } from '@/hooks/useFeatureAccess';
+import { useNavigate } from 'react-router-dom';
 import type { DriverFoodProfile } from '@/types/stops';
 import { 
   TRUCK_STOP_BRANDS, 
@@ -52,6 +54,8 @@ interface FoodSuggestionPromptProps {
 
 const FoodSuggestionPrompt: React.FC<FoodSuggestionPromptProps> = ({ stop, onDismiss }) => {
   const { t, language } = useLanguage();
+  const navigate = useNavigate();
+  const { canAccess } = useFeatureAccess();
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState(false);
   const [recommendation, setRecommendation] = useState<ConvenienceRecommendation | null>(null);
@@ -59,6 +63,9 @@ const FoodSuggestionPrompt: React.FC<FoodSuggestionPromptProps> = ({ stop, onDis
   const [nearbyRestaurants, setNearbyRestaurants] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isConvenienceFallback, setIsConvenienceFallback] = useState(false);
+
+  // Check if user has access to personalized food suggestions (Gold+)
+  const hasPersonalizedFood = canAccess('personalizedFoodSuggestions');
 
   // Fetch user food profile
   const fetchUserProfile = useCallback(async () => {
@@ -258,6 +265,12 @@ const FoodSuggestionPrompt: React.FC<FoodSuggestionPromptProps> = ({ stop, onDis
   // Load everything on mount
   useEffect(() => {
     const load = async () => {
+      // If user doesn't have access, don't load AI recommendations
+      if (!hasPersonalizedFood) {
+        setLoading(false);
+        return;
+      }
+      
       console.log('[FoodSuggestion] Loading for stop:', stop.name, 'brand:', stop.brand);
       setLoading(true);
       setError(null);
@@ -271,7 +284,57 @@ const FoodSuggestionPrompt: React.FC<FoodSuggestionPromptProps> = ({ stop, onDis
       setLoading(false);
     };
     load();
-  }, [stop.id]);
+  }, [stop.id, hasPersonalizedFood]);
+
+  // If user doesn't have Gold+, show upgrade prompt
+  if (!hasPersonalizedFood) {
+    return (
+      <div className="fixed bottom-20 left-2 right-2 z-50 animate-in slide-in-from-bottom-4 duration-300">
+        <Card className="border-amber-500/30 bg-background/95 backdrop-blur-md shadow-xl">
+          <CardHeader className="pb-2 pt-3 px-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 rounded-full bg-amber-500/20">
+                  <Crown className="w-4 h-4 text-amber-500" />
+                </div>
+                <div>
+                  <CardTitle className="text-sm font-medium">
+                    {language === 'pt' ? 'Sugestões Personalizadas' : 
+                     language === 'es' ? 'Sugerencias Personalizadas' : 
+                     'Personalized Suggestions'}
+                  </CardTitle>
+                  <p className="text-xs text-muted-foreground">
+                    {language === 'pt' ? 'Recurso Gold' : 
+                     language === 'es' ? 'Función Gold' : 
+                     'Gold Feature'}
+                  </p>
+                </div>
+              </div>
+              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onDismiss}>
+                <X className="w-4 h-4" />
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent className="px-4 pb-3">
+            <p className="text-sm text-muted-foreground mb-3">
+              {language === 'pt' ? 'Atualize para Gold para receber sugestões de alimentação personalizadas com IA.' : 
+               language === 'es' ? 'Actualiza a Gold para recibir sugerencias de comida personalizadas con IA.' : 
+               'Upgrade to Gold to get AI-powered personalized food suggestions.'}
+            </p>
+            <Button 
+              className="w-full bg-gradient-to-r from-amber-500 to-amber-600" 
+              onClick={() => navigate('/choose-plan')}
+            >
+              <Crown className="w-4 h-4 mr-2" />
+              {language === 'pt' ? 'Atualizar para Gold' : 
+               language === 'es' ? 'Actualizar a Gold' : 
+               'Upgrade to Gold'}
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed bottom-20 left-2 right-2 z-50 animate-in slide-in-from-bottom-4 duration-300">
