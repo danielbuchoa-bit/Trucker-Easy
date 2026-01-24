@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { useLanguage } from '@/i18n/LanguageContext';
 import PoiRatingPreview from '@/components/poi/PoiRatingPreview';
+import FacilityRatingPreview from '@/components/facility/FacilityRatingPreview';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
@@ -357,11 +358,22 @@ const NavigationScreen = () => {
                 </Button>
               </div>
               
-              {/* Rating Preview for POI destinations */}
+              {/* Rating Preview for POI destinations (truck stops, gas stations, etc.) */}
               {destinationType && ['truck_stop', 'gas_station', 'fueling-station', 'rest_area', 'travel_center'].includes(destinationType) && (
                 <PoiRatingPreview 
                   poiId={destination.id}
                   poiName={destination.title}
+                  className="border border-border"
+                />
+              )}
+              
+              {/* Facility Rating Preview for pickup/delivery locations (no POI type or facility type) */}
+              {(!destinationType || !['truck_stop', 'gas_station', 'fueling-station', 'rest_area', 'travel_center', 'restaurant'].includes(destinationType)) && (
+                <FacilityRatingPreview
+                  facilityName={destination.title}
+                  facilityAddress={destination.address}
+                  lat={destination.lat}
+                  lng={destination.lng}
                   className="border border-border"
                 />
               )}
