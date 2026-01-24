@@ -1,6 +1,9 @@
-import { AlertTriangle, CloudRain, Wind, Snowflake, Sun, CloudLightning, Info } from 'lucide-react';
+import { AlertTriangle, CloudRain, Wind, Snowflake, Sun, CloudLightning, Info, Crown } from 'lucide-react';
 import { WeatherAlert } from '@/services/HereService';
 import { useLanguage } from '@/i18n/LanguageContext';
+import { useNavigate } from 'react-router-dom';
+import { useFeatureAccess } from '@/hooks/useFeatureAccess';
+import { Button } from '@/components/ui/button';
 
 interface WeatherAlertsListProps {
   alerts: WeatherAlert[];
@@ -34,7 +37,52 @@ const getWeatherIcon = (type: string) => {
 };
 
 const WeatherAlertsList = ({ alerts, available, message, loading }: WeatherAlertsListProps) => {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
+  const navigate = useNavigate();
+  const { canAccess } = useFeatureAccess();
+  
+  // Check if user has access to weather alerts (Gold+)
+  const hasWeatherAlerts = canAccess('weatherAlerts');
+  
+  // Show upgrade prompt if user doesn't have Gold+
+  if (!hasWeatherAlerts) {
+    return (
+      <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4">
+        <div className="flex items-center gap-3 mb-3">
+          <div className="w-10 h-10 rounded-full bg-amber-500/20 flex items-center justify-center">
+            <Crown className="w-5 h-5 text-amber-500" />
+          </div>
+          <div>
+            <p className="font-medium text-foreground">
+              {language === 'pt' ? 'Alertas Climáticos' : 
+               language === 'es' ? 'Alertas Climáticos' : 
+               'Weather Alerts'}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {language === 'pt' ? 'Recurso Gold' : 
+               language === 'es' ? 'Función Gold' : 
+               'Gold Feature'}
+            </p>
+          </div>
+        </div>
+        <p className="text-sm text-muted-foreground mb-3">
+          {language === 'pt' ? 'Receba alertas de vento, neve, gelo e chuva na sua rota.' : 
+           language === 'es' ? 'Recibe alertas de viento, nieve, hielo y lluvia en tu ruta.' : 
+           'Get wind, snow, ice, and rain alerts along your route.'}
+        </p>
+        <Button 
+          size="sm" 
+          className="w-full bg-gradient-to-r from-amber-500 to-amber-600"
+          onClick={() => navigate('/choose-plan')}
+        >
+          <Crown className="w-4 h-4 mr-2" />
+          {language === 'pt' ? 'Atualizar para Gold' : 
+           language === 'es' ? 'Actualizar a Gold' : 
+           'Upgrade to Gold'}
+        </Button>
+      </div>
+    );
+  }
 
   if (loading) {
     return (
