@@ -101,6 +101,8 @@ const RoutePoiMarkers: React.FC<RoutePoiMarkersProps> = ({
 
     lastFetchRef.current = { lat: userLat, lng: userLng, time: now };
 
+    const SEARCH_RADIUS_METERS = 48280; // 30 miles
+
     try {
       // Fetch all POI types in parallel
       const [truckStopsResult, weighStationsResult, restAreasResult] = await Promise.all([
@@ -109,9 +111,9 @@ const RoutePoiMarkers: React.FC<RoutePoiMarkersProps> = ({
           body: { 
             lat: userLat, 
             lng: userLng,
-            radiusMeters: 80467, // 50 miles
+            radiusMeters: SEARCH_RADIUS_METERS,
             filterType: 'truckStops',
-            limit: 30,
+            limit: 40,
           },
         }),
         // Weigh stations
@@ -119,9 +121,9 @@ const RoutePoiMarkers: React.FC<RoutePoiMarkersProps> = ({
           body: { 
             lat: userLat, 
             lng: userLng,
-            radiusMeters: 80467, // 50 miles
+            radiusMeters: SEARCH_RADIUS_METERS,
             filterType: 'weighStations',
-            limit: 20,
+            limit: 30,
           },
         }),
         // Rest areas
@@ -129,9 +131,9 @@ const RoutePoiMarkers: React.FC<RoutePoiMarkersProps> = ({
           body: { 
             lat: userLat, 
             lng: userLng,
-            radiusMeters: 80467, // 50 miles
+            radiusMeters: SEARCH_RADIUS_METERS,
             filterType: 'restAreas',
-            limit: 20,
+            limit: 30,
           },
         }),
       ]);
