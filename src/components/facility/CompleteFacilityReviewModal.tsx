@@ -119,8 +119,15 @@ const CompleteFacilityReviewModal: React.FC<CompleteFacilityReviewModalProps> = 
       
       if (error) throw error;
       
-      if (data?.address) {
-        setFacilityAddress(data.address.label || `${userLocation.lat.toFixed(5)}, ${userLocation.lng.toFixed(5)}`);
+      // nb_reverse_geocode returns { label, road, city, state, ... } directly
+      if (data?.label) {
+        setFacilityAddress(data.label);
+      } else if (data?.road || data?.city) {
+        // Fallback to building address from parts
+        const parts = [data.road, data.city, data.stateCode || data.state].filter(Boolean);
+        setFacilityAddress(parts.length > 0 ? parts.join(', ') : `${userLocation.lat.toFixed(5)}, ${userLocation.lng.toFixed(5)}`);
+      } else {
+        setFacilityAddress(`${userLocation.lat.toFixed(5)}, ${userLocation.lng.toFixed(5)}`);
       }
     } catch (err) {
       console.error('Reverse geocode error:', err);
