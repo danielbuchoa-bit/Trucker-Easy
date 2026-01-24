@@ -12,6 +12,9 @@ const logStep = (step: string, details?: any) => {
   console.log(`[CREATE-CHECKOUT] ${step}${detailsStr}`);
 };
 
+// Default to Silver monthly if no priceId provided
+const DEFAULT_PRICE_ID = "price_1Ssvqk2MEO38NbGnrwicv0nZ";
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -24,6 +27,18 @@ serve(async (req) => {
 
   try {
     logStep("Function started");
+
+    // Parse request body for priceId
+    let priceId = DEFAULT_PRICE_ID;
+    try {
+      const body = await req.json();
+      if (body.priceId) {
+        priceId = body.priceId;
+      }
+    } catch {
+      // No body or invalid JSON, use default
+    }
+    logStep("Using price", { priceId });
 
     const authHeader = req.headers.get("Authorization")!;
     const token = authHeader.replace("Bearer ", "");
@@ -48,13 +63,17 @@ serve(async (req) => {
       customer_email: customerId ? undefined : user.email,
       line_items: [
         {
-          price: "price_1Sozhw2MEO38NbGnY1nmqhA1",
+          price: priceId,
           quantity: 1,
         },
       ],
       mode: "subscription",
       success_url: `${req.headers.get("origin")}/subscription?success=true`,
-      cancel_url: `${req.headers.get("origin")}/subscription?canceled=true`,
+      cancel_url: `${req.headers.get("origin")}/choose-plan?canceled=true`,
+      allow_promotion_codes: true,
+      subscription_data: {
+        trial_period_days: 7,
+      },
     });
 
     logStep("Checkout session created", { sessionId: session.id });

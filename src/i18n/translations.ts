@@ -479,6 +479,40 @@ export const translations = {
       arrived: 'You have arrived!',
       continueOn: 'Continue',
     },
+
+    subscription: {
+      choosePlan: 'Choose Your Plan',
+      monthly: 'Monthly',
+      annual: 'Annual',
+      saveUpTo: 'Save up to 17%',
+      mostPopular: 'Most Popular',
+      comingSoon: 'Coming Soon – Phase 2',
+      truckerEasyShipper: 'Trucker Easy Shipper: Loadboard, Broker Integration & More',
+      stayTuned: 'Stay Tuned',
+      cancelAnytime: 'Cancel anytime. No commitment. All plans include a 7-day money-back guarantee.',
+      getPlan: 'Get',
+      upgradeRequired: 'Upgrade Required',
+      currentPlan: 'Current Plan',
+      upgradeTo: 'Upgrade to',
+      manageSubscription: 'Manage Subscription',
+      noSubscription: 'No Active Subscription',
+      choosePlanToAccess: 'Choose a plan to access all Trucker Easy features',
+      subscriptionActive: 'Subscription active',
+      renews: 'Renews',
+      refreshStatus: 'Refresh subscription status',
+      silver: {
+        name: 'Silver',
+        description: 'Essential truck-aware GPS navigation',
+      },
+      gold: {
+        name: 'Gold',
+        description: 'Advanced features for professional drivers',
+      },
+      diamond: {
+        name: 'Diamond',
+        description: 'Premium experience for elite drivers',
+      },
+    },
   },
   
   es: {
