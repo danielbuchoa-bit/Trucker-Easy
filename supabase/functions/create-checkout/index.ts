@@ -72,7 +72,7 @@ serve(async (req) => {
       cancel_url: `${req.headers.get("origin")}/choose-plan?canceled=true`,
       allow_promotion_codes: true,
       subscription_data: {
-        trial_period_days: 7,
+        trial_period_days: 3,
       },
     });
 
