@@ -76,7 +76,9 @@ export default function ChoosePlan({ isOnboarding = false, onComplete }: ChooseP
       if (error) throw error;
 
       if (data.url) {
-        window.location.href = data.url;
+        // Open Stripe Checkout in new tab to avoid iframe/redirect issues
+        window.open(data.url, '_blank');
+        toast.success('Checkout aberto em nova aba. Complete seu pagamento lá!');
       }
     } catch (error) {
       console.error('Error creating checkout:', error);
