@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useCallback, useState } from 'react';
 import mapboxgl from 'mapbox-gl';
 import { supabase } from '@/integrations/supabase/client';
-import { detectBrand, MAJOR_TRUCK_STOP_BRANDS } from '@/lib/truckBrands';
 
 export interface RoutePoi {
   id: string;
@@ -101,7 +100,10 @@ const RoutePoiMarkers: React.FC<RoutePoiMarkersProps> = ({
 
     lastFetchRef.current = { lat: userLat, lng: userLng, time: now };
 
-    const SEARCH_RADIUS_METERS = 48280; // 30 miles
+    // 100 miles radius to find POIs far ahead on route (like TruckerPath shows 53mi rest areas)
+    const SEARCH_RADIUS_METERS = 160934; // 100 miles
+    // Tolerance for how far a POI can be from the route line
+    const ROUTE_TOLERANCE_METERS = 12875; // 8 miles from route centerline
 
     try {
       // Fetch all POI types in parallel
@@ -113,7 +115,7 @@ const RoutePoiMarkers: React.FC<RoutePoiMarkersProps> = ({
             lng: userLng,
             radiusMeters: SEARCH_RADIUS_METERS,
             filterType: 'truckStops',
-            limit: 40,
+            limit: 50,
           },
         }),
         // Weigh stations
@@ -123,7 +125,7 @@ const RoutePoiMarkers: React.FC<RoutePoiMarkersProps> = ({
             lng: userLng,
             radiusMeters: SEARCH_RADIUS_METERS,
             filterType: 'weighStations',
-            limit: 30,
+            limit: 40,
           },
         }),
         // Rest areas
@@ -133,7 +135,7 @@ const RoutePoiMarkers: React.FC<RoutePoiMarkersProps> = ({
             lng: userLng,
             radiusMeters: SEARCH_RADIUS_METERS,
             filterType: 'restAreas',
-            limit: 30,
+            limit: 40,
           },
         }),
       ]);
@@ -141,20 +143,16 @@ const RoutePoiMarkers: React.FC<RoutePoiMarkersProps> = ({
       const allPois: RoutePoi[] = [];
       const seenIds = new Set<string>();
 
-      // Process truck stops
+      // Process truck stops - Accept ALL truck-friendly POIs, not just major brands
       if (truckStopsResult.data?.pois) {
         truckStopsResult.data.pois.forEach((poi: any) => {
-          // Only include major brands
-          const brand = detectBrand(poi.name || poi.title, null);
-          if (!brand || !MAJOR_TRUCK_STOP_BRANDS.includes(brand.key)) return;
-          
           const id = poi.id || `ts-${poi.lat}-${poi.lng}`;
           if (seenIds.has(id)) return;
           seenIds.add(id);
           
-          // Check if near route (within 3 miles)
+          // Check if near route
           const distToRoute = distanceToRoute(poi.lat, poi.lng, routeCoords);
-          if (distToRoute > 4828) return; // 3 miles
+          if (distToRoute > ROUTE_TOLERANCE_METERS) return;
           
           allPois.push({
             id,
@@ -175,9 +173,9 @@ const RoutePoiMarkers: React.FC<RoutePoiMarkersProps> = ({
           if (seenIds.has(id)) return;
           seenIds.add(id);
           
-          // Weigh stations within 5 miles of route
+          // Weigh stations within tolerance of route
           const distToRoute = distanceToRoute(poi.lat, poi.lng, routeCoords);
-          if (distToRoute > 8047) return; // 5 miles
+          if (distToRoute > ROUTE_TOLERANCE_METERS) return;
           
           allPois.push({
             id,
@@ -198,9 +196,9 @@ const RoutePoiMarkers: React.FC<RoutePoiMarkersProps> = ({
           if (seenIds.has(id)) return;
           seenIds.add(id);
           
-          // Rest areas within 3 miles of route
+          // Rest areas within tolerance of route
           const distToRoute = distanceToRoute(poi.lat, poi.lng, routeCoords);
-          if (distToRoute > 4828) return; // 3 miles
+          if (distToRoute > ROUTE_TOLERANCE_METERS) return;
           
           allPois.push({
             id,

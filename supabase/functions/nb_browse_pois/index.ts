@@ -78,8 +78,8 @@ const NB_CATEGORY_MAP: Record<string, { browse: string[]; discover: string[] }> 
   },
 };
 
-// Progressive radius in meters: 30mi, 40mi, 50mi (starting at 30 miles as requested)
-const PROGRESSIVE_RADII = [48280, 64374, 80467];
+// Progressive radius in meters: 50mi, 80mi, 100mi (expanded for long-distance route POIs)
+const PROGRESSIVE_RADII = [80467, 128748, 160934];
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -458,15 +458,21 @@ function checkTruckAllowed(
     return { allowed: true, reason: 'Truck wash', confidence: 'confirmed' };
   }
 
-  // Check for fuel station with diesel (might be truck-friendly)
-  if ((fullText.includes('fuel') || fullText.includes('diesel') || category.includes('fuel')) && 
-      !fullText.includes('restaurant') && !fullText.includes('cafe')) {
-    // Only allow if name matches known brands
-    const knownGasStations = ['shell', 'chevron', 'exxon', 'mobil', 'bp ', 'citgo', 'marathon', 'phillips 66', 'conoco', 'sinclair', 'murphy usa'];
+  // Check for fuel station with diesel - MORE PERMISSIVE for truck stops
+  if ((fullText.includes('fuel') || fullText.includes('diesel') || category.includes('fuel') ||
+       fullText.includes('gas station') || fullText.includes('truck') || fullText.includes('travel')) && 
+      !fullText.includes('restaurant') && !fullText.includes('cafe') && !fullText.includes('diner')) {
+    // Allow truck-related fuel stations
+    if (fullText.includes('truck') || fullText.includes('travel center') || 
+        fullText.includes('diesel') || fullText.includes('fuel stop')) {
+      return { allowed: true, reason: 'Truck fuel stop', confidence: 'likely' };
+    }
+    // Check for generic gas stations - still allow them with unknown confidence
+    const knownGasStations = ['shell', 'chevron', 'exxon', 'mobil', 'bp ', 'citgo', 'marathon', 'phillips 66', 'conoco', 'sinclair', 'murphy usa', 'mapco'];
     for (const gas of knownGasStations) {
       if (title.includes(gas)) {
-        // These are generic gas stations, not truck stops - block them
-        return { allowed: false, reason: `Generic gas station: ${gas}`, confidence: 'unknown' };
+        // These are generic gas stations - allow with unknown confidence for route display
+        return { allowed: true, reason: `Fuel station: ${gas}`, confidence: 'unknown' };
       }
     }
     // Unknown fuel station - allow with unknown confidence
