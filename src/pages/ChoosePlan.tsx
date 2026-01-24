@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -14,6 +14,7 @@ import {
   calculateAnnualSavings,
   SubscriptionTier
 } from '@/lib/subscriptionTiers';
+import { User } from '@supabase/supabase-js';
 
 const TIER_ICONS = {
   shield: Shield,
@@ -30,8 +31,37 @@ export default function ChoosePlan({ isOnboarding = false, onComplete }: ChooseP
   const navigate = useNavigate();
   const [isAnnual, setIsAnnual] = useState(false);
   const [loading, setLoading] = useState<SubscriptionTier | null>(null);
+  const [user, setUser] = useState<User | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+
+  useEffect(() => {
+    const checkAuth = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      setUser(user);
+      setAuthLoading(false);
+    };
+    checkAuth();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_, session) => {
+      setUser(session?.user ?? null);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
 
   const handleSelectPlan = async (tier: TierDefinition) => {
+    // Check if user is authenticated
+    if (!user) {
+      toast.error('Please sign in to subscribe');
+      // Store the intended plan for after login
+      sessionStorage.setItem('pendingPlan', JSON.stringify({
+        tierId: tier.id,
+        isAnnual
+      }));
+      navigate('/auth');
+      return;
+    }
+
     setLoading(tier.id);
     
     try {
