@@ -4,18 +4,22 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Check, Crown, Loader2, ArrowLeft, Settings } from "lucide-react";
+import { Check, Crown, Loader2, ArrowLeft, Settings, Shield, Gem } from "lucide-react";
 import { toast } from "sonner";
+import { useSubscription } from "@/contexts/SubscriptionContext";
+import { SUBSCRIPTION_TIERS, formatPrice, SubscriptionTier } from "@/lib/subscriptionTiers";
 
-const PREMIUM_PRODUCT_ID = "prod_TmYpjOgu87jYO9";
+const TIER_ICONS = {
+  shield: Shield,
+  crown: Crown,
+  gem: Gem,
+};
 
 export default function Subscription() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [loading, setLoading] = useState(false);
-  const [checkingSubscription, setCheckingSubscription] = useState(true);
-  const [subscribed, setSubscribed] = useState(false);
-  const [subscriptionEnd, setSubscriptionEnd] = useState<string | null>(null);
+  const { tier, subscriptionEnd, isLoading, isSubscribed, checkSubscription } = useSubscription();
   const [user, setUser] = useState<any>(null);
 
   useEffect(() => {
@@ -23,64 +27,22 @@ export default function Subscription() {
     const canceled = searchParams.get("canceled");
 
     if (success === "true") {
-      toast.success("Assinatura ativada com sucesso!");
+      toast.success("Subscription activated successfully!");
+      checkSubscription();
       window.history.replaceState({}, "", "/subscription");
     } else if (canceled === "true") {
-      toast.info("Assinatura cancelada");
+      toast.info("Subscription canceled");
       window.history.replaceState({}, "", "/subscription");
     }
-  }, [searchParams]);
+  }, [searchParams, checkSubscription]);
 
   useEffect(() => {
     const checkAuth = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       setUser(user);
-      if (user) {
-        await checkSubscription();
-      } else {
-        setCheckingSubscription(false);
-      }
     };
     checkAuth();
   }, []);
-
-  const checkSubscription = async () => {
-    setCheckingSubscription(true);
-    try {
-      const { data, error } = await supabase.functions.invoke("check-subscription");
-      if (error) throw error;
-      
-      setSubscribed(data.subscribed);
-      setSubscriptionEnd(data.subscription_end);
-    } catch (error) {
-      console.error("Error checking subscription:", error);
-    } finally {
-      setCheckingSubscription(false);
-    }
-  };
-
-  const handleSubscribe = async () => {
-    if (!user) {
-      toast.error("Faça login para assinar");
-      navigate("/auth");
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const { data, error } = await supabase.functions.invoke("create-checkout");
-      if (error) throw error;
-      
-      if (data.url) {
-        window.open(data.url, "_blank");
-      }
-    } catch (error) {
-      console.error("Error creating checkout:", error);
-      toast.error("Erro ao iniciar checkout");
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleManageSubscription = async () => {
     setLoading(true);
@@ -89,26 +51,18 @@ export default function Subscription() {
       if (error) throw error;
       
       if (data.url) {
-        window.open(data.url, "_blank");
+        window.location.href = data.url;
       }
     } catch (error) {
       console.error("Error opening portal:", error);
-      toast.error("Erro ao abrir portal de gerenciamento");
+      toast.error("Failed to open subscription management");
     } finally {
       setLoading(false);
     }
   };
 
-  const features = [
-    "Navegação GPS otimizada para caminhões",
-    "Alertas de estações de pesagem em tempo real",
-    "Relatórios de trânsito colaborativos",
-    "Avaliações de paradas e restaurantes",
-    "Chat entre motoristas ilimitado",
-    "Assistente de voz IA",
-    "Suporte prioritário 24/7",
-    "Sem anúncios",
-  ];
+  const currentTier = tier !== 'none' ? SUBSCRIPTION_TIERS[tier as Exclude<SubscriptionTier, 'none'>] : null;
+  const TierIcon = currentTier ? TIER_ICONS[currentTier.icon] : Crown;
 
   return (
     <div className="min-h-screen bg-background">
@@ -119,54 +73,60 @@ export default function Subscription() {
           className="mb-6"
         >
           <ArrowLeft className="mr-2 h-4 w-4" />
-          Voltar
+          Back
         </Button>
 
         <div className="text-center mb-8">
-          <Crown className="h-12 w-12 text-yellow-500 mx-auto mb-4" />
-          <h1 className="text-3xl font-bold mb-2">TruckNav Premium</h1>
+          <TierIcon className={`h-12 w-12 mx-auto mb-4 ${
+            tier === 'diamond' ? 'text-cyan-500' : 
+            tier === 'gold' ? 'text-yellow-500' : 
+            tier === 'silver' ? 'text-slate-400' : 'text-muted-foreground'
+          }`} />
+          <h1 className="text-3xl font-bold mb-2">
+            {isSubscribed && currentTier ? `${currentTier.name} Plan` : 'Your Subscription'}
+          </h1>
           <p className="text-muted-foreground">
-            Desbloqueie todos os recursos para uma experiência completa na estrada
+            {isSubscribed 
+              ? 'Manage your Trucker Easy subscription'
+              : 'Choose a plan to unlock all features'}
           </p>
         </div>
 
-        <Card className={`relative overflow-hidden ${subscribed ? 'border-green-500 border-2' : 'border-primary'}`}>
-          {subscribed && (
-            <Badge className="absolute top-4 right-4 bg-green-500">
-              Seu Plano
-            </Badge>
-          )}
-          <CardHeader className="text-center pb-2">
-            <CardTitle className="text-2xl">Premium Mensal</CardTitle>
-            <CardDescription>
-              <span className="text-4xl font-bold text-foreground">$7.99</span>
-              <span className="text-muted-foreground">/mês</span>
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <ul className="space-y-3">
-              {features.map((feature, index) => (
-                <li key={index} className="flex items-center gap-3">
-                  <Check className="h-5 w-5 text-green-500 flex-shrink-0" />
-                  <span>{feature}</span>
-                </li>
-              ))}
-            </ul>
+        {isLoading ? (
+          <div className="flex justify-center py-12">
+            <Loader2 className="h-8 w-8 animate-spin" />
+          </div>
+        ) : isSubscribed && currentTier ? (
+          <Card className="border-2 border-primary">
+            <CardHeader className="text-center pb-2">
+              <Badge className="w-fit mx-auto mb-2 bg-primary">Active Plan</Badge>
+              <CardTitle className="text-2xl">{currentTier.name}</CardTitle>
+              <CardDescription>{currentTier.description}</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <ul className="space-y-3">
+                {currentTier.features.map((feature, index) => (
+                  <li key={index} className="flex items-center gap-3">
+                    <Check className="h-5 w-5 text-primary flex-shrink-0" />
+                    <span>{feature}</span>
+                  </li>
+                ))}
+              </ul>
 
-            {checkingSubscription ? (
-              <div className="flex justify-center py-4">
-                <Loader2 className="h-6 w-6 animate-spin" />
+              <div className="bg-primary/10 p-4 rounded-lg text-center">
+                <p className="font-medium text-primary">✓ Subscription active</p>
+                {subscriptionEnd && (
+                  <p className="text-sm mt-1 text-muted-foreground">
+                    Renews: {new Date(subscriptionEnd).toLocaleDateString("en-US", {
+                      year: 'numeric',
+                      month: 'long',
+                      day: 'numeric'
+                    })}
+                  </p>
+                )}
               </div>
-            ) : subscribed ? (
-              <div className="space-y-4">
-                <div className="bg-green-500/10 text-green-700 dark:text-green-400 p-4 rounded-lg text-center">
-                  <p className="font-medium">✓ Assinatura ativa</p>
-                  {subscriptionEnd && (
-                    <p className="text-sm mt-1">
-                      Renova em: {new Date(subscriptionEnd).toLocaleDateString("pt-BR")}
-                    </p>
-                  )}
-                </div>
+
+              <div className="flex flex-col gap-3">
                 <Button 
                   onClick={handleManageSubscription}
                   variant="outline"
@@ -178,41 +138,79 @@ export default function Subscription() {
                   ) : (
                     <Settings className="mr-2 h-4 w-4" />
                   )}
-                  Gerenciar Assinatura
+                  Manage Subscription
                 </Button>
-              </div>
-            ) : (
-              <Button 
-                onClick={handleSubscribe}
-                className="w-full bg-gradient-to-r from-yellow-500 to-orange-500 hover:from-yellow-600 hover:to-orange-600 text-white"
-                size="lg"
-                disabled={loading}
-              >
-                {loading ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <Crown className="mr-2 h-4 w-4" />
-                )}
-                Assinar Premium
-              </Button>
-            )}
 
-            <Button 
-              variant="ghost" 
-              onClick={checkSubscription}
-              className="w-full text-sm"
-              disabled={checkingSubscription}
-            >
-              {checkingSubscription ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : null}
-              Atualizar status da assinatura
-            </Button>
-          </CardContent>
-        </Card>
+                {tier !== 'diamond' && (
+                  <Button 
+                    onClick={() => navigate('/choose-plan')}
+                    className="w-full"
+                  >
+                    Upgrade Plan
+                  </Button>
+                )}
+              </div>
+
+              <Button 
+                variant="ghost" 
+                onClick={checkSubscription}
+                className="w-full text-sm"
+                disabled={isLoading}
+              >
+                {isLoading ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : null}
+                Refresh subscription status
+              </Button>
+            </CardContent>
+          </Card>
+        ) : (
+          <Card>
+            <CardHeader className="text-center">
+              <CardTitle>No Active Subscription</CardTitle>
+              <CardDescription>
+                Choose a plan to access all Trucker Easy features
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-4">
+                {Object.values(SUBSCRIPTION_TIERS).map((tierDef) => {
+                  const Icon = TIER_ICONS[tierDef.icon];
+                  return (
+                    <div 
+                      key={tierDef.id}
+                      className="flex items-center justify-between p-4 border rounded-lg"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className={`w-10 h-10 rounded-full bg-gradient-to-br ${tierDef.color} flex items-center justify-center`}>
+                          <Icon className="h-5 w-5 text-white" />
+                        </div>
+                        <div>
+                          <p className="font-medium">{tierDef.name}</p>
+                          <p className="text-sm text-muted-foreground">
+                            From {formatPrice(tierDef.prices.monthly.amount)}/month
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <Button 
+                onClick={() => navigate('/choose-plan')}
+                className="w-full"
+                size="lg"
+              >
+                <Crown className="mr-2 h-4 w-4" />
+                Choose a Plan
+              </Button>
+            </CardContent>
+          </Card>
+        )}
 
         <p className="text-center text-xs text-muted-foreground mt-6">
-          Cancele a qualquer momento. Sem compromisso.
+          Cancel anytime. No commitment.
         </p>
       </div>
     </div>

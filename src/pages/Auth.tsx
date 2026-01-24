@@ -58,7 +58,8 @@ const AuthScreen = ({ onComplete, onBack }: AuthScreenProps) => {
           title: t.common.success,
           description: t.auth.signup,
         });
-        navigate('/onboarding');
+        // Redirect to plan selection after signup
+        navigate('/choose-plan');
       }
       onComplete();
     } catch (error: any) {
