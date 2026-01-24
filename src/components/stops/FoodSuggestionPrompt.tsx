@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
+import { useLanguage } from '@/i18n/LanguageContext';
 import type { DriverFoodProfile } from '@/types/stops';
 import { 
   TRUCK_STOP_BRANDS, 
@@ -50,6 +51,7 @@ interface FoodSuggestionPromptProps {
 }
 
 const FoodSuggestionPrompt: React.FC<FoodSuggestionPromptProps> = ({ stop, onDismiss }) => {
+  const { t, language } = useLanguage();
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState(false);
   const [recommendation, setRecommendation] = useState<ConvenienceRecommendation | null>(null);
@@ -185,6 +187,7 @@ const FoodSuggestionPrompt: React.FC<FoodSuggestionPromptProps> = ({ stop, onDis
           restaurantNames: restaurants,
           station: station,
           useFallback: needsFallback,
+          language: language, // Pass current app language
         },
       });
 
@@ -236,18 +239,19 @@ const FoodSuggestionPrompt: React.FC<FoodSuggestionPromptProps> = ({ stop, onDis
           restaurantNames: [],
           station: station,
           useFallback: true,
+          language: language, // Pass current app language
         },
       });
 
       if (fnError || data.error) {
-        setError('Erro ao obter sugestões');
+        setError(t.food.errorGettingSuggestions);
         return;
       }
 
       setIsConvenienceFallback(true);
       setRecommendation(data);
     } catch (err) {
-      setError('Erro ao obter sugestões');
+      setError(t.food.errorGettingSuggestions);
     }
   };
 
@@ -284,7 +288,7 @@ const FoodSuggestionPrompt: React.FC<FoodSuggestionPromptProps> = ({ stop, onDis
               </div>
               <div>
                 <CardTitle className="text-sm font-medium">
-                  {isConvenienceFallback ? 'Sugestões da Conveniência' : 'Sugestões Alimentares'}
+                  {isConvenienceFallback ? t.food.convenienceSuggestions : t.food.foodSuggestions}
                 </CardTitle>
                 <div className="flex items-center gap-1 text-xs text-muted-foreground">
                   <MapPin className="w-3 h-3" />
@@ -323,7 +327,7 @@ const FoodSuggestionPrompt: React.FC<FoodSuggestionPromptProps> = ({ stop, onDis
             <div className="flex items-center gap-2 py-2">
               <Loader2 className="w-4 h-4 animate-spin text-primary" />
               <span className="text-sm text-muted-foreground">
-                {isConvenienceFallback ? 'Buscando opções na conveniência...' : 'Analisando opções...'}
+                {isConvenienceFallback ? t.food.searchingConvenience : t.food.analyzingOptions}
               </span>
             </div>
           ) : error ? (
@@ -337,7 +341,7 @@ const FoodSuggestionPrompt: React.FC<FoodSuggestionPromptProps> = ({ stop, onDis
               {isConvenienceFallback && (
                 <div className="flex items-center gap-1.5 text-xs text-muted-foreground bg-muted/50 rounded px-2 py-1">
                   <Store className="w-3 h-3" />
-                  <span>Sugestões da conveniência do posto</span>
+                  <span>{t.food.convenienceFromStation}</span>
                 </div>
               )}
 
@@ -345,7 +349,7 @@ const FoodSuggestionPrompt: React.FC<FoodSuggestionPromptProps> = ({ stop, onDis
               <div className="p-2.5 rounded-lg bg-green-500/10 border border-green-500/20">
                 <div className="flex items-center gap-2 mb-1">
                   <ThumbsUp className="w-3.5 h-3.5 text-green-600" />
-                  <span className="text-xs font-medium text-green-700 dark:text-green-400">Melhor Opção</span>
+                  <span className="text-xs font-medium text-green-700 dark:text-green-400">{t.food.bestOption}</span>
                   <Sparkles className="w-3 h-3 text-primary ml-auto" />
                 </div>
                 <p className="font-semibold text-sm">{recommendation.best_choice.item}</p>
@@ -366,7 +370,7 @@ const FoodSuggestionPrompt: React.FC<FoodSuggestionPromptProps> = ({ stop, onDis
                 <>
                   <div className="p-2.5 rounded-lg bg-blue-500/10 border border-blue-500/20">
                     <Badge variant="secondary" className="bg-blue-500/20 text-blue-700 dark:text-blue-400 text-xs mb-1">
-                      Alternativa
+                      {t.food.alternative}
                     </Badge>
                     <p className="font-medium text-sm">{recommendation.alternative.item}</p>
                     <p className="text-xs text-muted-foreground">{recommendation.alternative.reason}</p>
@@ -385,7 +389,7 @@ const FoodSuggestionPrompt: React.FC<FoodSuggestionPromptProps> = ({ stop, onDis
                   <div className="p-2.5 rounded-lg bg-yellow-500/10 border border-yellow-500/20">
                     <div className="flex items-center gap-1 mb-1">
                       <AlertTriangle className="w-3.5 h-3.5 text-yellow-600" />
-                      <span className="text-xs font-medium text-yellow-700 dark:text-yellow-400">Se não tiver nada</span>
+                      <span className="text-xs font-medium text-yellow-700 dark:text-yellow-400">{t.food.ifNothingElse}</span>
                     </div>
                     <p className="font-medium text-sm">{recommendation.emergency_option.item}</p>
                     <p className="text-xs text-muted-foreground">{recommendation.emergency_option.reason}</p>
@@ -405,7 +409,7 @@ const FoodSuggestionPrompt: React.FC<FoodSuggestionPromptProps> = ({ stop, onDis
                     <div className="p-2.5 rounded-lg bg-red-500/10 border border-red-500/20">
                       <div className="flex items-center gap-1 mb-1.5">
                         <Ban className="w-3.5 h-3.5 text-red-600" />
-                        <span className="text-xs font-medium text-red-700 dark:text-red-400">Evitar</span>
+                        <span className="text-xs font-medium text-red-700 dark:text-red-400">{t.food.avoid}</span>
                       </div>
                       <div className="space-y-1">
                         {recommendation.avoid.slice(0, 3).map((item, idx) => (
@@ -421,7 +425,7 @@ const FoodSuggestionPrompt: React.FC<FoodSuggestionPromptProps> = ({ stop, onDis
                   {/* Nearby restaurants - only if not fallback */}
                   {!isConvenienceFallback && nearbyRestaurants.length > 0 && (
                     <div className="pt-2 border-t border-border">
-                      <p className="text-xs text-muted-foreground mb-1.5">Restaurantes próximos:</p>
+                      <p className="text-xs text-muted-foreground mb-1.5">{t.food.nearbyRestaurants}</p>
                       <div className="flex flex-wrap gap-1">
                         {nearbyRestaurants.slice(0, 5).map((name, idx) => (
                           <Badge key={idx} variant="outline" className="text-xs">
@@ -436,13 +440,13 @@ const FoodSuggestionPrompt: React.FC<FoodSuggestionPromptProps> = ({ stop, onDis
 
               {!expanded && (
                 <p className="text-xs text-muted-foreground text-center">
-                  Toque em ↑ para ver mais opções
+                  {t.food.tapToSeeMore}
                 </p>
               )}
             </div>
           ) : (
             <p className="text-sm text-muted-foreground py-2">
-              Nenhuma sugestão disponível no momento.
+              {t.food.noSuggestions}
             </p>
           )}
         </CardContent>
