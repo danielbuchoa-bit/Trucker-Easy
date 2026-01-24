@@ -174,7 +174,11 @@ const HomeScreen = () => {
     setLoading(true);
     setError(null);
 
-    console.log(`[POI_SEARCH] Starting search - Filter: ${filterType}, Location: ${lat.toFixed(4)}, ${lng.toFixed(4)}`);
+    const startTime = Date.now();
+    console.log(`[POI_SEARCH] ========== STARTING SEARCH ==========`);
+    console.log(`[POI_SEARCH] Filter: ${filterType}`);
+    console.log(`[POI_SEARCH] Location: ${lat.toFixed(6)}, ${lng.toFixed(6)}`);
+    console.log(`[POI_SEARCH] Timestamp: ${new Date().toISOString()}`);
 
     try {
       // Fetch POIs using NextBillion with filter-specific parameters
@@ -192,17 +196,40 @@ const HomeScreen = () => {
         }
       );
 
-      if (poisError) throw poisError;
+      const elapsed = Date.now() - startTime;
 
-      console.log(`[POI_SEARCH] Response:`, {
-        count: poisData?.count,
-        radius: poisData?.searchRadius,
-        filter: poisData?.filterType,
-        debug: poisData?.debug,
-      });
+      if (poisError) {
+        console.error(`[POI_SEARCH] API Error after ${elapsed}ms:`, poisError);
+        
+        // Show specific error messages
+        if (poisError.message?.includes('429')) {
+          setError('Rate limit exceeded. Please wait a moment and try again.');
+        } else if (poisError.message?.includes('401') || poisError.message?.includes('403')) {
+          setError('API authorization error. Please contact support.');
+        } else if (poisError.message?.includes('timeout') || poisError.message?.includes('TIMEOUT')) {
+          setError('Request timed out. Check your connection and try again.');
+        } else {
+          setError(`API Error: ${poisError.message || 'Unknown error'}`);
+        }
+        throw poisError;
+      }
+
+      console.log(`[POI_SEARCH] Response received in ${elapsed}ms`);
+      console.log(`[POI_SEARCH] Raw count: ${poisData?.count || 0}`);
+      console.log(`[POI_SEARCH] Provider: ${poisData?.provider || 'unknown'}`);
+      console.log(`[POI_SEARCH] Radius used: ${poisData?.searchRadius}m (${((poisData?.searchRadius || 0) / 1609.34).toFixed(1)} mi)`);
+      console.log(`[POI_SEARCH] Debug:`, JSON.stringify(poisData?.debug, null, 2));
 
       // Store debug info for diagnostics
       setLastSearchDebug(poisData?.debug);
+
+      // Check if API returned error in response body
+      if (poisData?.error) {
+        console.warn(`[POI_SEARCH] API returned error in body: ${poisData.error}`);
+        if (!poisData?.pois?.length) {
+          setError(`Search failed: ${poisData.error}`);
+        }
+      }
 
       // Convert POIs to NearbyPlace format
       const poiPlaces: NearbyPlace[] = (poisData?.pois || []).map((poi: any) => ({
@@ -218,6 +245,8 @@ const HomeScreen = () => {
         parking: getRandomParkingStatus(),
         truckFriendlyConfidence: poi.truckFriendlyConfidence,
       }));
+
+      console.log(`[POI_SEARCH] Converted POIs: ${poiPlaces.length}`);
 
       // For weighStations filter, also fetch from database
       if (filterType === 'weighStations' || filterType === 'nearMe') {
@@ -246,6 +275,7 @@ const HomeScreen = () => {
             .sort((a: NearbyPlace, b: NearbyPlace) => a.distanceMeters - b.distanceMeters)
             .slice(0, 5);
 
+          console.log(`[POI_SEARCH] Added ${weighStationPlaces.length} weigh stations from DB`);
           poiPlaces.push(...weighStationPlaces);
         }
       }
@@ -253,11 +283,26 @@ const HomeScreen = () => {
       // Sort all places by distance
       const allPlaces = poiPlaces.sort((a, b) => a.distanceMeters - b.distanceMeters);
 
-      console.log(`[POI_SEARCH] Final places: ${allPlaces.length}`);
+      console.log(`[POI_SEARCH] ========== FINAL RESULT ==========`);
+      console.log(`[POI_SEARCH] Total places: ${allPlaces.length}`);
+      console.log(`[POI_SEARCH] Types: ${JSON.stringify(allPlaces.reduce((acc, p) => { acc[p.type] = (acc[p.type] || 0) + 1; return acc; }, {} as Record<string, number>))}`);
+      
       setPlaces(allPlaces);
-    } catch (err) {
-      console.error('[POI_SEARCH] Error:', err);
-      setError('Could not load nearby places. Please try again.');
+      
+      // Clear any previous error if we got results
+      if (allPlaces.length > 0) {
+        setError(null);
+      }
+    } catch (err: any) {
+      console.error('[POI_SEARCH] ========== ERROR ==========');
+      console.error('[POI_SEARCH] Error type:', err?.name || 'Unknown');
+      console.error('[POI_SEARCH] Error message:', err?.message || String(err));
+      console.error('[POI_SEARCH] Full error:', err);
+      
+      // Only set generic error if not already set by specific handler above
+      if (!error) {
+        setError('Could not load nearby places. Please try again.');
+      }
     } finally {
       setLoading(false);
     }
@@ -531,9 +576,14 @@ const HomeScreen = () => {
                 : `No ${filters.find(f => f.id === activeFilter)?.label || 'results'} nearby`}
             </p>
             {lastSearchDebug && (
-              <p className="text-xs text-muted-foreground mt-1">
-                Searched up to {(lastSearchDebug.usedRadius / 1609.34).toFixed(1)} mi
-              </p>
+              <div className="mt-2 p-2 bg-muted/50 rounded text-xs text-muted-foreground text-left">
+                <p>🔍 Searched up to {((lastSearchDebug.usedRadius || 0) / 1609.34).toFixed(1)} mi</p>
+                <p>🌐 Provider: {lastSearchDebug.provider || 'unknown'}</p>
+                {lastSearchDebug.nbRateLimited && (
+                  <p className="text-warning">⚠️ NextBillion rate limited, used HERE fallback</p>
+                )}
+                <p>📍 Radii tried: {(lastSearchDebug.triedRadii || []).map((r: number) => `${(r/1609.34).toFixed(0)}mi`).join(', ')}</p>
+              </div>
             )}
             <Button variant="outline" size="sm" onClick={handleRefresh} className="mt-3">
               <RefreshCw className="w-3 h-3 mr-1" />
