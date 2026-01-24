@@ -53,21 +53,27 @@ serve(async (req) => {
     const customerId = customers.data[0].id;
     logStep("Found Stripe customer", { customerId });
 
+    // Check for active or trialing subscriptions
     const subscriptions = await stripe.subscriptions.list({
       customer: customerId,
-      status: "active",
-      limit: 1,
+      status: "all",
+      limit: 10,
     });
 
-    const hasActiveSub = subscriptions.data.length > 0;
+    // Find the first active or trialing subscription
+    const activeSubscription = subscriptions.data.find(
+      (sub: Stripe.Subscription) => sub.status === "active" || sub.status === "trialing"
+    );
+
+    const hasActiveSub = !!activeSubscription;
     let productId = null;
     let subscriptionEnd = null;
 
-    if (hasActiveSub) {
-      const subscription = subscriptions.data[0];
-      subscriptionEnd = new Date(subscription.current_period_end * 1000).toISOString();
-      productId = subscription.items.data[0].price.product;
-      logStep("Active subscription found", { productId, endDate: subscriptionEnd });
+    if (hasActiveSub && activeSubscription) {
+      subscriptionEnd = new Date(activeSubscription.current_period_end * 1000).toISOString();
+      const priceProduct = activeSubscription.items.data[0].price.product;
+      productId = typeof priceProduct === 'string' ? priceProduct : priceProduct.id;
+      logStep("Active subscription found", { productId, status: activeSubscription.status, endDate: subscriptionEnd });
     }
 
     return new Response(JSON.stringify({
