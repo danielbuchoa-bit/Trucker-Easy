@@ -21,6 +21,7 @@ import VoiceControls from './VoiceControls';
 import SimulationControls from './SimulationControls';
 import LocationContextBar from './LocationContextBar';
 import NearbyPoisOverlay from './NearbyPoisOverlay';
+import RoutePoiMarkers, { type RoutePoi } from './RoutePoiMarkers';
 import ArrivalPrompt from './ArrivalPrompt';
 import ArrivalDebugPanel from './ArrivalDebugPanel';
 import CursorDebugPanel, { type CursorDebugInfo } from './CursorDebugPanel';
@@ -975,6 +976,20 @@ const ActiveNavigationView = () => {
           name: poi.chainName || poi.name,
           address: poi.address,
         })}
+      />
+
+      {/* Route POI Markers - Truck Stops, Weigh Stations, Rest Areas on Map */}
+      <RoutePoiMarkers
+        map={map.current}
+        mapReady={mapReady}
+        routeCoords={routeCoords}
+        userLat={userPosition?.lat ?? null}
+        userLng={userPosition?.lng ?? null}
+        enabled={routeCoords.length > 0}
+        onPoiClick={(poi) => {
+          console.log('[RoutePoiMarkers] POI clicked:', poi.name, poi.poiType);
+          // Could open a detail sheet or navigate to POI
+        }}
       />
 
       {/* Camera monitoring removed per user request */}

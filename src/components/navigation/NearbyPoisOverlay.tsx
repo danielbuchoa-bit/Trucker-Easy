@@ -51,11 +51,8 @@ interface NearbyPoisOverlayProps {
   onPoisUpdate?: (pois: Poi[]) => void;
 }
 
-// HERE category IDs - Truck Stops AND Gas Stations for driver convenience
-const TRUCK_CATEGORIES = [
-  '700-7850-0000',   // Truck Stop / Service Area
-  '700-7600-0000',   // Fueling Station / Gas Station
-];
+// POI filter types for nb_browse_pois
+const POI_FILTER_TYPE = 'truckStops';
 
 // Color to hex mapping for generic logos
 const COLOR_TO_HEX: Record<string, string> = {
@@ -219,13 +216,12 @@ const NearbyPoisOverlay: React.FC<NearbyPoisOverlayProps> = ({
       lastFetchRef.current = { lat, lng, time: now };
       setLoading(true);
       try {
-        const { data, error } = await supabase.functions.invoke('here_browse_pois', {
+        const { data, error } = await supabase.functions.invoke('nb_browse_pois', {
           body: { 
             lat, 
             lng,
-            heading: heading ?? undefined,
             radiusMeters: 48280, // 30 miles
-            categories: TRUCK_CATEGORIES,
+            filterType: 'truckStops',
             limit: 10,
           },
         });
