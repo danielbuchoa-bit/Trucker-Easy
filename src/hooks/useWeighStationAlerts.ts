@@ -6,11 +6,11 @@ import { haversineDistance, matchPositionToRoute } from '@/lib/navigationUtils';
 
 // Constants
 const MILES_TO_METERS = 1609.34;
-const ALERT_DISTANCE_MILES = 50;
+const ALERT_DISTANCE_MILES = 30; // Alert at 30 miles as requested
 const ALERT_DISTANCE_M = ALERT_DISTANCE_MILES * MILES_TO_METERS;
-const MAX_CROSS_TRACK_MILES = 1.5;
+const MAX_CROSS_TRACK_MILES = 2.0; // Increased to catch more stations near route
 const MAX_CROSS_TRACK_M = MAX_CROSS_TRACK_MILES * MILES_TO_METERS;
-const GEOFENCE_RADIUS_MILES = 0.3;
+const GEOFENCE_RADIUS_MILES = 0.5; // Larger geofence for detection
 const GEOFENCE_RADIUS_M = GEOFENCE_RADIUS_MILES * MILES_TO_METERS;
 const REPORTS_CACHE_TIME_MS = 5 * 60 * 1000; // 5 minutes
 const STATUS_WINDOW_MINUTES = 90;
@@ -247,16 +247,23 @@ export function useWeighStationAlerts({
     return () => clearInterval(interval);
   }, [enabled, routeCoords, userRouteIndex, fetchStations, fetchReportsForStation, calculateStatus]);
 
-  // Check for 50-mile alerts
+  // Check for 30-mile alerts
   useEffect(() => {
     if (!enabled || stationsOnRoute.length === 0) return;
 
+    console.log('[WEIGH_ALERT] Checking', stationsOnRoute.length, 'stations on route');
+    
     for (const stationOnRoute of stationsOnRoute) {
       const distanceMiles = stationOnRoute.distanceAlongRouteM / MILES_TO_METERS;
       
-      // Check if within 50 miles and not yet alerted
+      console.log('[WEIGH_ALERT] Station:', stationOnRoute.station.name, 
+        'at', distanceMiles.toFixed(1), 'miles,',
+        'status:', stationOnRoute.status,
+        'alerted:', alertedStationIds.has(stationOnRoute.station.id));
+      
+      // Check if within 30 miles and not yet alerted
       if (distanceMiles <= ALERT_DISTANCE_MILES && !alertedStationIds.has(stationOnRoute.station.id)) {
-        console.log('[WEIGH_ALERT] Triggering 50-mile alert for:', stationOnRoute.station.name);
+        console.log('[WEIGH_ALERT] Triggering 30-mile alert for:', stationOnRoute.station.name);
         setPendingAlert(stationOnRoute);
         setAlertedStationIds(prev => new Set([...prev, stationOnRoute.station.id]));
         break; // Only one alert at a time

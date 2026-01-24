@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Scale, X, CheckCircle } from 'lucide-react';
+import { Scale, X, CheckCircle, ChevronLeft, ChevronRight } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { StationOnRoute, StationStatus, ReportOutcome } from '@/hooks/useWeighStationAlerts';
 import { useToast } from '@/hooks/use-toast';
@@ -13,7 +13,13 @@ interface WeighStationQuestionnaireProps {
   onSkip: () => void;
 }
 
-type Step = 'status' | 'outcome' | 'submitting' | 'done';
+// Extended status to match Trucker Path style
+type ExtendedStatus = 'OPEN' | 'ACTIVELY_MONITORED' | 'CLOSED';
+
+// Outcome options for second step
+type TrafficLevel = 'NOBODY' | 'SOMEBODY' | 'WAITING';
+
+type Step = 'status' | 'traffic' | 'submitting' | 'done';
 
 const WeighStationQuestionnaire = ({
   station,
@@ -25,9 +31,20 @@ const WeighStationQuestionnaire = ({
 }: WeighStationQuestionnaireProps) => {
   const [visible, setVisible] = useState(false);
   const [step, setStep] = useState<Step>('status');
-  const [selectedStatus, setSelectedStatus] = useState<StationStatus | null>(null);
-  const [timeLeft, setTimeLeft] = useState(60);
+  const [selectedStatus, setSelectedStatus] = useState<ExtendedStatus | null>(null);
+  const [selectedTraffic, setSelectedTraffic] = useState<TrafficLevel | null>(null);
+  const [timeLeft, setTimeLeft] = useState(45);
   const { toast } = useToast();
+
+  // Determine direction from station name or route
+  const direction = station.station.name.toLowerCase().includes('west') || 
+                    station.station.name.toLowerCase().includes('wb') ? 'West Bound' :
+                    station.station.name.toLowerCase().includes('east') || 
+                    station.station.name.toLowerCase().includes('eb') ? 'East Bound' :
+                    station.station.name.toLowerCase().includes('north') || 
+                    station.station.name.toLowerCase().includes('nb') ? 'North Bound' :
+                    station.station.name.toLowerCase().includes('south') || 
+                    station.station.name.toLowerCase().includes('sb') ? 'South Bound' : null;
 
   useEffect(() => {
     requestAnimationFrame(() => setVisible(true));
@@ -56,14 +73,22 @@ const WeighStationQuestionnaire = ({
     setTimeout(onSkip, 300);
   }, [onSkip]);
 
-  const handleStatusSelect = (status: StationStatus) => {
+  const handleStatusSelect = (status: ExtendedStatus) => {
     setSelectedStatus(status);
-    setStep('outcome');
+    // If closed, we can skip traffic step since nobody is there
+    if (status === 'CLOSED') {
+      handleSubmit(status, null);
+    } else {
+      setStep('traffic');
+    }
   };
 
-  const handleOutcomeSelect = async (outcome: ReportOutcome) => {
-    if (!selectedStatus) return;
+  const handleTrafficSelect = (traffic: TrafficLevel) => {
+    setSelectedTraffic(traffic);
+    handleSubmit(selectedStatus!, traffic);
+  };
 
+  const handleSubmit = async (status: ExtendedStatus, traffic: TrafficLevel | null) => {
     setStep('submitting');
 
     try {
@@ -79,10 +104,23 @@ const WeighStationQuestionnaire = ({
         return;
       }
 
+      // Map extended status to database status
+      const dbStatus: StationStatus = status === 'CLOSED' ? 'CLOSED' : 'OPEN';
+      
+      // Map traffic level to outcome
+      let outcome: ReportOutcome = 'UNKNOWN';
+      if (status === 'CLOSED') {
+        outcome = 'BYPASS';
+      } else if (traffic === 'NOBODY') {
+        outcome = 'BYPASS';
+      } else if (traffic === 'SOMEBODY' || traffic === 'WAITING') {
+        outcome = 'WEIGHED';
+      }
+
       const { error } = await supabase.from('weigh_station_reports').insert({
         station_id: station.station.id,
         user_id: user.id,
-        status_reported: selectedStatus,
+        status_reported: dbStatus,
         outcome,
         lat: userLat,
         lng: userLng,
@@ -113,70 +151,115 @@ const WeighStationQuestionnaire = ({
     }
   };
 
+  const handleBack = () => {
+    setStep('status');
+    setSelectedStatus(null);
+  };
+
   const renderStatusStep = () => (
     <div className="space-y-4">
-      <h2 className="text-2xl font-black text-center text-foreground">
-        WAS THE STATION:
+      {/* Direction tabs */}
+      {direction && (
+        <div className="flex border-b border-border">
+          <button className="flex-1 py-2 text-sm font-medium text-primary border-b-2 border-primary">
+            ← {direction}
+          </button>
+          <button className="flex-1 py-2 text-sm font-medium text-muted-foreground">
+            → {direction === 'West Bound' ? 'East Bound' : 
+               direction === 'East Bound' ? 'West Bound' :
+               direction === 'North Bound' ? 'South Bound' : 'North Bound'}
+          </button>
+        </div>
+      )}
+
+      <h2 className="text-xl font-bold text-foreground">
+        What's the weigh Station like?
       </h2>
 
-      <div className="space-y-3">
+      <div className="flex gap-2">
+        {/* Open - Green */}
         <button
           onClick={() => handleStatusSelect('OPEN')}
-          className="w-full py-5 bg-green-500 hover:bg-green-600 rounded-2xl transition-all active:scale-[0.98]"
+          className="flex-1 py-4 px-3 bg-green-500 hover:bg-green-600 rounded-xl transition-all active:scale-[0.98]"
         >
-          <span className="text-2xl font-black text-white">OPEN</span>
+          <span className="text-lg font-bold text-white">Open</span>
         </button>
 
+        {/* Actively Monitored - Yellow/Amber */}
+        <button
+          onClick={() => handleStatusSelect('ACTIVELY_MONITORED')}
+          className="flex-1 py-4 px-3 bg-amber-500 hover:bg-amber-600 rounded-xl transition-all active:scale-[0.98]"
+        >
+          <span className="text-lg font-bold text-white leading-tight">Actively<br/>Monitored</span>
+        </button>
+
+        {/* Closed - Red */}
         <button
           onClick={() => handleStatusSelect('CLOSED')}
-          className="w-full py-5 bg-red-500 hover:bg-red-600 rounded-2xl transition-all active:scale-[0.98]"
+          className="flex-1 py-4 px-3 bg-red-500 hover:bg-red-600 rounded-xl transition-all active:scale-[0.98]"
         >
-          <span className="text-2xl font-black text-white">CLOSED</span>
+          <span className="text-lg font-bold text-white">Closed</span>
         </button>
+      </div>
 
-        <button
-          onClick={() => handleStatusSelect('UNKNOWN')}
-          className="w-full py-5 bg-gray-500 hover:bg-gray-600 rounded-2xl transition-all active:scale-[0.98]"
-        >
-          <span className="text-xl font-bold text-white">DON'T KNOW / DIDN'T SEE</span>
-        </button>
+      {/* Station info */}
+      <div className="text-sm text-muted-foreground pt-2">
+        <p className="font-medium text-foreground">{station.station.name}</p>
+        {station.station.state && <p>{station.station.state}</p>}
       </div>
     </div>
   );
 
-  const renderOutcomeStep = () => (
+  const renderTrafficStep = () => (
     <div className="space-y-4">
-      <h2 className="text-2xl font-black text-center text-foreground">
-        WHAT HAPPENED TO YOU?
+      {/* Back button */}
+      <button
+        onClick={handleBack}
+        className="flex items-center gap-1 text-muted-foreground text-sm"
+      >
+        <ChevronLeft className="w-4 h-4" />
+        Back
+      </button>
+
+      {/* Status indicator */}
+      <div className="flex items-center gap-2">
+        <div className={`w-3 h-3 rounded-full ${
+          selectedStatus === 'OPEN' ? 'bg-green-500' : 
+          selectedStatus === 'ACTIVELY_MONITORED' ? 'bg-amber-500' : 'bg-red-500'
+        }`} />
+        <span className="text-sm font-medium text-muted-foreground">
+          {selectedStatus === 'OPEN' ? 'Open' : 
+           selectedStatus === 'ACTIVELY_MONITORED' ? 'Actively Monitored' : 'Closed'}
+        </span>
+      </div>
+
+      <h2 className="text-xl font-bold text-foreground">
+        What's happening there?
       </h2>
 
-      <div className="space-y-3">
+      <div className="flex gap-2">
+        {/* Nobody */}
         <button
-          onClick={() => handleOutcomeSelect('BYPASS')}
-          className="w-full py-5 bg-green-500 hover:bg-green-600 rounded-2xl transition-all active:scale-[0.98]"
+          onClick={() => handleTrafficSelect('NOBODY')}
+          className="flex-1 py-4 px-3 bg-card border-2 border-primary/50 hover:border-primary hover:bg-card/80 rounded-xl transition-all active:scale-[0.98]"
         >
-          <span className="text-2xl font-black text-white">GOT BYPASS</span>
+          <span className="text-lg font-bold text-primary">Nobody</span>
         </button>
 
+        {/* Somebody */}
         <button
-          onClick={() => handleOutcomeSelect('WEIGHED')}
-          className="w-full py-5 bg-amber-500 hover:bg-amber-600 rounded-2xl transition-all active:scale-[0.98]"
+          onClick={() => handleTrafficSelect('SOMEBODY')}
+          className="flex-1 py-4 px-3 bg-card border-2 border-primary/50 hover:border-primary hover:bg-card/80 rounded-xl transition-all active:scale-[0.98]"
         >
-          <span className="text-2xl font-black text-white">HAD TO WEIGH</span>
+          <span className="text-lg font-bold text-primary">Somebody</span>
         </button>
 
+        {/* Somebody is waiting */}
         <button
-          onClick={() => handleOutcomeSelect('INSPECTED')}
-          className="w-full py-5 bg-red-500 hover:bg-red-600 rounded-2xl transition-all active:scale-[0.98]"
+          onClick={() => handleTrafficSelect('WAITING')}
+          className="flex-1 py-4 px-3 bg-card border-2 border-primary/50 hover:border-primary hover:bg-card/80 rounded-xl transition-all active:scale-[0.98]"
         >
-          <span className="text-2xl font-black text-white">WAS INSPECTED</span>
-        </button>
-
-        <button
-          onClick={() => handleOutcomeSelect('UNKNOWN')}
-          className="w-full py-5 bg-gray-500 hover:bg-gray-600 rounded-2xl transition-all active:scale-[0.98]"
-        >
-          <span className="text-xl font-bold text-white">PREFER NOT TO SAY</span>
+          <span className="text-lg font-bold text-primary leading-tight">Somebody<br/>is waiting</span>
         </button>
       </div>
     </div>
@@ -206,6 +289,7 @@ const WeighStationQuestionnaire = ({
           transition-opacity duration-300
           ${visible ? 'opacity-100' : 'opacity-0'}
         `}
+        onClick={handleSkip}
       />
 
       {/* Sheet */}
@@ -222,49 +306,36 @@ const WeighStationQuestionnaire = ({
           <div className="w-12 h-1.5 rounded-full bg-muted" />
         </div>
 
-        {/* Header */}
-        <div className="px-4 pb-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-2xl bg-amber-500/20 flex items-center justify-center">
-              <Scale className="w-6 h-6 text-amber-500" />
-            </div>
-            <div>
-              <p className="text-sm text-muted-foreground">You passed</p>
-              <h3 className="text-lg font-bold text-foreground">
-                {station.station.name}
-              </h3>
-            </div>
-          </div>
-          <button
-            onClick={handleSkip}
-            className="w-10 h-10 rounded-full bg-muted flex items-center justify-center"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
+        {/* Close button - top right */}
+        <button
+          onClick={handleSkip}
+          className="absolute top-4 right-4 w-8 h-8 rounded-full bg-muted/50 flex items-center justify-center"
+        >
+          <X className="w-4 h-4" />
+        </button>
 
         {/* Timer bar */}
-        {(step === 'status' || step === 'outcome') && (
-          <div className="h-1 bg-muted mx-4 rounded-full overflow-hidden">
+        {(step === 'status' || step === 'traffic') && (
+          <div className="h-1 bg-muted mx-4 rounded-full overflow-hidden mb-4">
             <div
               className="h-full bg-primary transition-all duration-1000 ease-linear"
-              style={{ width: `${(timeLeft / 60) * 100}%` }}
+              style={{ width: `${(timeLeft / 45) * 100}%` }}
             />
           </div>
         )}
 
         {/* Content */}
-        <div className="px-4 py-6 pb-10">
+        <div className="px-4 py-4 pb-10">
           {step === 'status' && renderStatusStep()}
-          {step === 'outcome' && renderOutcomeStep()}
+          {step === 'traffic' && renderTrafficStep()}
           {step === 'submitting' && renderSubmitting()}
           {step === 'done' && renderDone()}
 
           {/* Skip button */}
-          {(step === 'status' || step === 'outcome') && (
+          {(step === 'status' || step === 'traffic') && (
             <button
               onClick={handleSkip}
-              className="w-full mt-4 py-3 text-muted-foreground font-medium"
+              className="w-full mt-4 py-2 text-muted-foreground text-sm"
             >
               Skip ({timeLeft}s)
             </button>
