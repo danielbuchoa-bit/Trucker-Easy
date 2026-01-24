@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Loader2, MapPin, Clock, Star, Lightbulb, Truck, Bath } from 'lucide-react';
+import { Loader2, MapPin, Clock, Star, Lightbulb, Truck, Bath, Fuel, Users, ParkingCircle, Coffee, ThumbsUp, ThumbsDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
@@ -19,6 +19,8 @@ interface CompleteFacilityReviewModalProps {
   prefilledAddress?: string;
 }
 
+type LocationType = 'facility' | 'gas_station';
+
 const TIME_OPTIONS = [
   { value: '0-30', label: '< 30 min' },
   { value: '30-60', label: '30-60 min' },
@@ -36,33 +38,71 @@ const CompleteFacilityReviewModal: React.FC<CompleteFacilityReviewModalProps> = 
   const [submitting, setSubmitting] = useState(false);
   const [loadingAddress, setLoadingAddress] = useState(false);
   
-  // Identification fields
+  // Type selector
+  const [locationType, setLocationType] = useState<LocationType>('facility');
+  
+  // Common fields
   const [facilityName, setFacilityName] = useState(prefilledName);
   const [facilityAddress, setFacilityAddress] = useState(prefilledAddress);
-  const [facilityType, setFacilityType] = useState<'shipper' | 'receiver' | 'both'>('shipper');
+  const [notes, setNotes] = useState('');
   
-  // Star ratings (1-5)
+  // ============ FACILITY RATINGS ============
+  const [facilityType, setFacilityType] = useState<'shipper' | 'receiver' | 'both'>('shipper');
   const [friendlyStaff, setFriendlyStaff] = useState(0);
   const [loadingTime, setLoadingTime] = useState(0);
   const [easyAccess, setEasyAccess] = useState(0);
   const [bathroomAvailable, setBathroomAvailable] = useState(0);
   const [driverFacilities, setDriverFacilities] = useState(0);
-  
-  // Time question
   const [tookTooLong, setTookTooLong] = useState<'yes' | 'no' | ''>('');
   const [waitTimeMinutes, setWaitTimeMinutes] = useState('');
   
-  // Notes
-  const [notes, setNotes] = useState('');
+  // ============ GAS STATION RATINGS ============
+  const [gsOverallRating, setGsOverallRating] = useState(0);
+  const [gsStructureRating, setGsStructureRating] = useState(0);
+  const [gsCleanlinessRating, setGsCleanlinessRating] = useState(0);
+  const [gsFriendlinessRating, setGsFriendlinessRating] = useState(0);
+  const [gsFuelPriceRating, setGsFuelPriceRating] = useState(0);
+  const [gsFoodRating, setGsFoodRating] = useState(0);
+  const [gsWouldReturn, setGsWouldReturn] = useState<boolean | null>(null);
 
-  // Calculate final rating (average of non-zero ratings)
+  // Calculate final rating based on type
   const calculateFinalRating = () => {
-    const ratings = [friendlyStaff, loadingTime, easyAccess, bathroomAvailable, driverFacilities].filter(r => r > 0);
-    if (ratings.length === 0) return 0;
-    return ratings.reduce((sum, r) => sum + r, 0) / ratings.length;
+    if (locationType === 'facility') {
+      const ratings = [friendlyStaff, loadingTime, easyAccess, bathroomAvailable, driverFacilities].filter(r => r > 0);
+      if (ratings.length === 0) return 0;
+      return ratings.reduce((sum, r) => sum + r, 0) / ratings.length;
+    } else {
+      // Gas station: use overall rating as primary, average with details if provided
+      if (gsOverallRating === 0) return 0;
+      const ratings = [gsOverallRating, gsStructureRating, gsCleanlinessRating, gsFriendlinessRating].filter(r => r > 0);
+      return ratings.reduce((sum, r) => sum + r, 0) / ratings.length;
+    }
   };
 
   const finalRating = calculateFinalRating();
+
+  // Handle type change - reset relevant ratings
+  const handleTypeChange = (newType: LocationType) => {
+    setLocationType(newType);
+    // Reset all ratings when switching types
+    if (newType === 'facility') {
+      setGsOverallRating(0);
+      setGsStructureRating(0);
+      setGsCleanlinessRating(0);
+      setGsFriendlinessRating(0);
+      setGsFuelPriceRating(0);
+      setGsFoodRating(0);
+      setGsWouldReturn(null);
+    } else {
+      setFriendlyStaff(0);
+      setLoadingTime(0);
+      setEasyAccess(0);
+      setBathroomAvailable(0);
+      setDriverFacilities(0);
+      setTookTooLong('');
+      setWaitTimeMinutes('');
+    }
+  };
 
   // Use current location for address
   const useCurrentLocation = async () => {
@@ -91,12 +131,12 @@ const CompleteFacilityReviewModal: React.FC<CompleteFacilityReviewModalProps> = 
 
   const handleSubmit = async () => {
     if (!facilityName.trim()) {
-      toast({ title: 'Facility name is required', variant: 'destructive' });
+      toast({ title: locationType === 'facility' ? 'Facility name is required' : 'Gas station name is required', variant: 'destructive' });
       return;
     }
     
     if (!facilityAddress.trim()) {
-      toast({ title: 'Facility address is required', variant: 'destructive' });
+      toast({ title: 'Address is required', variant: 'destructive' });
       return;
     }
     
@@ -116,42 +156,57 @@ const CompleteFacilityReviewModal: React.FC<CompleteFacilityReviewModalProps> = 
         return;
       }
 
-      // Map wait time range to minutes
-      const avgWaitMinutesMap: Record<string, number> = {
-        '0-30': 15,
-        '30-60': 45,
-        '60-120': 90,
-        '120+': 150,
-      };
+      if (locationType === 'facility') {
+        // Save to facility_ratings table
+        const avgWaitMinutesMap: Record<string, number> = {
+          '0-30': 15,
+          '30-60': 45,
+          '60-120': 90,
+          '120+': 150,
+        };
 
-      // Build review data matching facility_ratings table schema
-      const reviewData = {
-        facility_name: facilityName.trim(),
-        facility_type: facilityType,
-        address: facilityAddress.trim(),
-        lat: userLocation?.lat || null,
-        lng: userLocation?.lng || null,
-        user_id: user.id,
-        overall_rating: Math.round(finalRating * 10) / 10,
-        staff_rating: friendlyStaff || null,
-        wait_time_rating: loadingTime || null,
-        dock_access_rating: easyAccess || null,
-        restroom_rating: bathroomAvailable || null,
-        avg_wait_minutes: waitTimeMinutes ? avgWaitMinutesMap[waitTimeMinutes] : null,
-        comment: notes.trim() || null,
-        tags: [] as string[],
-      };
+        const reviewData = {
+          facility_name: facilityName.trim(),
+          facility_type: facilityType,
+          address: facilityAddress.trim(),
+          lat: userLocation?.lat || null,
+          lng: userLocation?.lng || null,
+          user_id: user.id,
+          overall_rating: Math.round(finalRating * 10) / 10,
+          staff_rating: friendlyStaff || null,
+          wait_time_rating: loadingTime || null,
+          dock_access_rating: easyAccess || null,
+          restroom_rating: bathroomAvailable || null,
+          avg_wait_minutes: waitTimeMinutes ? avgWaitMinutesMap[waitTimeMinutes] : null,
+          comment: notes.trim() || null,
+          tags: [] as string[],
+        };
 
-      const { error } = await supabase.from('facility_ratings').insert(reviewData);
+        const { error } = await supabase.from('facility_ratings').insert(reviewData);
+        if (error) throw error;
+      } else {
+        // Save to poi_feedback table (gas station)
+        const poiData = {
+          poi_id: `manual_${Date.now()}`, // Manual entry
+          poi_name: facilityName.trim(),
+          poi_type: 'fuel' as const,
+          user_id: user.id,
+          friendliness_rating: gsFriendlinessRating || gsOverallRating,
+          cleanliness_rating: gsCleanlinessRating || gsOverallRating,
+          structure_rating: gsStructureRating || null,
+          recommendation_rating: gsOverallRating,
+          would_return: gsWouldReturn,
+        };
 
-      if (error) throw error;
+        const { error } = await supabase.from('poi_feedback').insert(poiData);
+        if (error) throw error;
+      }
       
       toast({ 
         title: 'Thanks! Your rating was saved.', 
         description: `${facilityName} - ${finalRating.toFixed(1)}/5 stars` 
       });
       
-      // Reset form and close
       resetForm();
       onClose();
     } catch (error) {
@@ -163,8 +218,11 @@ const CompleteFacilityReviewModal: React.FC<CompleteFacilityReviewModalProps> = 
   };
 
   const resetForm = () => {
+    setLocationType('facility');
     setFacilityName(prefilledName);
     setFacilityAddress(prefilledAddress);
+    setNotes('');
+    // Facility
     setFacilityType('shipper');
     setFriendlyStaff(0);
     setLoadingTime(0);
@@ -173,10 +231,16 @@ const CompleteFacilityReviewModal: React.FC<CompleteFacilityReviewModalProps> = 
     setDriverFacilities(0);
     setTookTooLong('');
     setWaitTimeMinutes('');
-    setNotes('');
+    // Gas station
+    setGsOverallRating(0);
+    setGsStructureRating(0);
+    setGsCleanlinessRating(0);
+    setGsFriendlinessRating(0);
+    setGsFuelPriceRating(0);
+    setGsFoodRating(0);
+    setGsWouldReturn(null);
   };
 
-  // Reset when modal opens
   useEffect(() => {
     if (isOpen) {
       resetForm();
@@ -189,54 +253,114 @@ const CompleteFacilityReviewModal: React.FC<CompleteFacilityReviewModalProps> = 
         <SheetHeader className="pb-4 border-b border-border">
           <SheetTitle className="flex items-center gap-2">
             <Star className="w-5 h-5 text-facility-action" />
-            Rate Facility
+            Rate Location
           </SheetTitle>
         </SheetHeader>
 
         <div className="py-4 space-y-5">
-          {/* SECTION 1: Identification */}
+          {/* TYPE SELECTOR - Facility vs Gas Station */}
+          <div className="space-y-3">
+            <Label className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+              What are you rating?
+            </Label>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => handleTypeChange('facility')}
+                className={cn(
+                  "flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all",
+                  locationType === 'facility'
+                    ? "border-facility-action bg-facility-action/10"
+                    : "border-border bg-card hover:border-muted-foreground"
+                )}
+              >
+                <Truck className={cn(
+                  "w-8 h-8",
+                  locationType === 'facility' ? "text-facility-action" : "text-muted-foreground"
+                )} />
+                <span className={cn(
+                  "font-medium text-sm",
+                  locationType === 'facility' ? "text-facility-action" : "text-foreground"
+                )}>
+                  Facility
+                </span>
+                <span className="text-xs text-muted-foreground text-center">
+                  Pickup / Delivery
+                </span>
+              </button>
+              
+              <button
+                type="button"
+                onClick={() => handleTypeChange('gas_station')}
+                className={cn(
+                  "flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all",
+                  locationType === 'gas_station'
+                    ? "border-facility-action bg-facility-action/10"
+                    : "border-border bg-card hover:border-muted-foreground"
+                )}
+              >
+                <Fuel className={cn(
+                  "w-8 h-8",
+                  locationType === 'gas_station' ? "text-facility-action" : "text-muted-foreground"
+                )} />
+                <span className={cn(
+                  "font-medium text-sm",
+                  locationType === 'gas_station' ? "text-facility-action" : "text-foreground"
+                )}>
+                  Gas Station
+                </span>
+                <span className="text-xs text-muted-foreground text-center">
+                  Truck Stop / Fuel
+                </span>
+              </button>
+            </div>
+          </div>
+
+          {/* SECTION: Identification */}
           <div className="space-y-4">
             <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
-              Facility Information
+              {locationType === 'facility' ? 'Facility Information' : 'Gas Station Information'}
             </h3>
             
-            {/* Facility Name */}
+            {/* Name */}
             <div className="space-y-2">
               <Label htmlFor="facilityName" className="flex items-center gap-2">
-                <Truck className="w-4 h-4" />
-                Facility Name *
+                {locationType === 'facility' ? <Truck className="w-4 h-4" /> : <Fuel className="w-4 h-4" />}
+                {locationType === 'facility' ? 'Facility Name *' : 'Gas Station Name *'}
               </Label>
               <Input
                 id="facilityName"
-                placeholder="Company name"
+                placeholder={locationType === 'facility' ? "Company name" : "Station name"}
                 value={facilityName}
                 onChange={(e) => setFacilityName(e.target.value)}
                 className="h-12 text-base"
               />
             </div>
             
-            {/* Facility Type */}
-            <div className="space-y-2">
-              <Label>Type *</Label>
-              <RadioGroup
-                value={facilityType}
-                onValueChange={(v) => setFacilityType(v as typeof facilityType)}
-                className="flex gap-4"
-              >
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="shipper" id="type-shipper" />
-                  <Label htmlFor="type-shipper">Shipper</Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="receiver" id="type-receiver" />
-                  <Label htmlFor="type-receiver">Receiver</Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="both" id="type-both" />
-                  <Label htmlFor="type-both">Both</Label>
-                </div>
-              </RadioGroup>
-            </div>
+            {/* Facility Type (only for facility) */}
+            {locationType === 'facility' && (
+              <div className="space-y-2">
+                <Label>Type *</Label>
+                <RadioGroup
+                  value={facilityType}
+                  onValueChange={(v) => setFacilityType(v as typeof facilityType)}
+                  className="flex gap-4"
+                >
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="shipper" id="type-shipper" />
+                    <Label htmlFor="type-shipper">Shipper</Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="receiver" id="type-receiver" />
+                    <Label htmlFor="type-receiver">Receiver</Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="both" id="type-both" />
+                    <Label htmlFor="type-both">Both</Label>
+                  </div>
+                </RadioGroup>
+              </div>
+            )}
             
             {/* Address */}
             <div className="space-y-2">
@@ -274,120 +398,243 @@ const CompleteFacilityReviewModal: React.FC<CompleteFacilityReviewModalProps> = 
             </div>
           </div>
 
-          {/* SECTION 2: Star Ratings */}
-          <div className="space-y-4 pt-2">
-            <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
-              Your Experience
-            </h3>
-            
-            <div className="space-y-4 bg-card/50 rounded-xl p-4 border border-border">
-              <div className="space-y-1">
-                <Label className="text-sm">Friendly staff?</Label>
-                <StarRating
-                  rating={friendlyStaff}
-                  interactive
-                  onChange={setFriendlyStaff}
-                  size="lg"
-                />
-              </div>
-              
-              <div className="space-y-1">
-                <Label className="text-sm">Loading/Unloading time</Label>
-                <p className="text-xs text-muted-foreground">1 = very slow, 5 = fast</p>
-                <StarRating
-                  rating={loadingTime}
-                  interactive
-                  onChange={setLoadingTime}
-                  size="lg"
-                />
-              </div>
-              
-              <div className="space-y-1">
-                <Label className="text-sm">Easy access for trucks?</Label>
-                <StarRating
-                  rating={easyAccess}
-                  interactive
-                  onChange={setEasyAccess}
-                  size="lg"
-                />
-              </div>
-              
-              <div className="space-y-1">
-                <Label className="text-sm flex items-center gap-1">
-                  <Bath className="w-4 h-4" />
-                  Bathrooms available?
-                </Label>
-                <StarRating
-                  rating={bathroomAvailable}
-                  interactive
-                  onChange={setBathroomAvailable}
-                  size="lg"
-                />
-              </div>
-              
-              <div className="space-y-1">
-                <Label className="text-sm">Driver facilities / structure?</Label>
-                <p className="text-xs text-muted-foreground">Lounge, vending, parking, etc.</p>
-                <StarRating
-                  rating={driverFacilities}
-                  interactive
-                  onChange={setDriverFacilities}
-                  size="lg"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* SECTION 3: Time */}
-          <div className="space-y-4 pt-2">
-            <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-2">
-              <Clock className="w-4 h-4" />
-              Wait Time
-            </h3>
-            
-            <div className="space-y-3">
-              <Label>Did it take too long?</Label>
-              <div className="flex gap-2">
-                <Button
-                  type="button"
-                  variant={tookTooLong === 'yes' ? 'default' : 'outline'}
-                  onClick={() => setTookTooLong('yes')}
-                  className="flex-1 h-12"
-                >
-                  Yes
-                </Button>
-                <Button
-                  type="button"
-                  variant={tookTooLong === 'no' ? 'default' : 'outline'}
-                  onClick={() => setTookTooLong('no')}
-                  className="flex-1 h-12"
-                >
-                  No
-                </Button>
-              </div>
-              
-              {tookTooLong === 'yes' && (
-                <div className="space-y-2">
-                  <Label>How long did you wait?</Label>
-                  <div className="flex flex-wrap gap-2">
-                    {TIME_OPTIONS.map((opt) => (
-                      <Button
-                        key={opt.value}
-                        type="button"
-                        variant={waitTimeMinutes === opt.value ? 'default' : 'outline'}
-                        size="sm"
-                        onClick={() => setWaitTimeMinutes(opt.value)}
-                      >
-                        {opt.label}
-                      </Button>
-                    ))}
+          {/* SECTION: FACILITY RATINGS */}
+          {locationType === 'facility' && (
+            <>
+              <div className="space-y-4 pt-2">
+                <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+                  Your Experience
+                </h3>
+                
+                <div className="space-y-4 bg-card/50 rounded-xl p-4 border border-border">
+                  <div className="space-y-1">
+                    <Label className="text-sm">Friendly staff?</Label>
+                    <StarRating
+                      rating={friendlyStaff}
+                      interactive
+                      onChange={setFriendlyStaff}
+                      size="lg"
+                    />
+                  </div>
+                  
+                  <div className="space-y-1">
+                    <Label className="text-sm">Loading/Unloading time</Label>
+                    <p className="text-xs text-muted-foreground">1 = very slow, 5 = fast</p>
+                    <StarRating
+                      rating={loadingTime}
+                      interactive
+                      onChange={setLoadingTime}
+                      size="lg"
+                    />
+                  </div>
+                  
+                  <div className="space-y-1">
+                    <Label className="text-sm">Easy access for trucks?</Label>
+                    <StarRating
+                      rating={easyAccess}
+                      interactive
+                      onChange={setEasyAccess}
+                      size="lg"
+                    />
+                  </div>
+                  
+                  <div className="space-y-1">
+                    <Label className="text-sm flex items-center gap-1">
+                      <Bath className="w-4 h-4" />
+                      Bathrooms available?
+                    </Label>
+                    <StarRating
+                      rating={bathroomAvailable}
+                      interactive
+                      onChange={setBathroomAvailable}
+                      size="lg"
+                    />
+                  </div>
+                  
+                  <div className="space-y-1">
+                    <Label className="text-sm">Driver facilities / structure?</Label>
+                    <p className="text-xs text-muted-foreground">Lounge, vending, parking, etc.</p>
+                    <StarRating
+                      rating={driverFacilities}
+                      interactive
+                      onChange={setDriverFacilities}
+                      size="lg"
+                    />
                   </div>
                 </div>
-              )}
-            </div>
-          </div>
+              </div>
 
-          {/* SECTION 4: Final Rating */}
+              {/* Wait Time Section (Facility only) */}
+              <div className="space-y-4 pt-2">
+                <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-2">
+                  <Clock className="w-4 h-4" />
+                  Wait Time
+                </h3>
+                
+                <div className="space-y-3">
+                  <Label>Did it take too long?</Label>
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      variant={tookTooLong === 'yes' ? 'default' : 'outline'}
+                      onClick={() => setTookTooLong('yes')}
+                      className="flex-1 h-12"
+                    >
+                      Yes
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={tookTooLong === 'no' ? 'default' : 'outline'}
+                      onClick={() => setTookTooLong('no')}
+                      className="flex-1 h-12"
+                    >
+                      No
+                    </Button>
+                  </div>
+                  
+                  {tookTooLong === 'yes' && (
+                    <div className="space-y-2">
+                      <Label>How long did you wait?</Label>
+                      <div className="flex flex-wrap gap-2">
+                        {TIME_OPTIONS.map((opt) => (
+                          <Button
+                            key={opt.value}
+                            type="button"
+                            variant={waitTimeMinutes === opt.value ? 'default' : 'outline'}
+                            size="sm"
+                            onClick={() => setWaitTimeMinutes(opt.value)}
+                          >
+                            {opt.label}
+                          </Button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* SECTION: GAS STATION RATINGS */}
+          {locationType === 'gas_station' && (
+            <div className="space-y-4 pt-2">
+              <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+                Your Experience
+              </h3>
+              
+              <div className="space-y-4 bg-card/50 rounded-xl p-4 border border-border">
+                {/* Overall Rating */}
+                <div className="space-y-1">
+                  <Label className="text-base font-medium">Overall Rating *</Label>
+                  <StarRating
+                    rating={gsOverallRating}
+                    interactive
+                    onChange={setGsOverallRating}
+                    size="lg"
+                  />
+                </div>
+                
+                {/* Detailed Ratings */}
+                <div className="pt-2 border-t border-border space-y-3">
+                  <Label className="text-muted-foreground text-xs">Detailed Ratings (optional)</Label>
+                  
+                  <div className="flex items-center gap-2">
+                    <ParkingCircle className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                    <div className="flex-1">
+                      <Label className="text-sm">Structure (parking, amenities)</Label>
+                      <StarRating
+                        rating={gsStructureRating}
+                        interactive
+                        onChange={setGsStructureRating}
+                        size="md"
+                      />
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center gap-2">
+                    <Bath className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                    <div className="flex-1">
+                      <Label className="text-sm">Cleanliness (bathrooms, common areas)</Label>
+                      <StarRating
+                        rating={gsCleanlinessRating}
+                        interactive
+                        onChange={setGsCleanlinessRating}
+                        size="md"
+                      />
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center gap-2">
+                    <Users className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                    <div className="flex-1">
+                      <Label className="text-sm">Staff friendliness</Label>
+                      <StarRating
+                        rating={gsFriendlinessRating}
+                        interactive
+                        onChange={setGsFriendlinessRating}
+                        size="md"
+                      />
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center gap-2">
+                    <Fuel className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                    <div className="flex-1">
+                      <Label className="text-sm">Fuel price</Label>
+                      <StarRating
+                        rating={gsFuelPriceRating}
+                        interactive
+                        onChange={setGsFuelPriceRating}
+                        size="md"
+                      />
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center gap-2">
+                    <Coffee className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                    <div className="flex-1">
+                      <Label className="text-sm">Food options</Label>
+                      <StarRating
+                        rating={gsFoodRating}
+                        interactive
+                        onChange={setGsFoodRating}
+                        size="md"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Would Return */}
+                <div className="pt-2 border-t border-border space-y-2">
+                  <Label>Would you return?</Label>
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      variant={gsWouldReturn === true ? 'default' : 'outline'}
+                      size="sm"
+                      className="flex-1 gap-1"
+                      onClick={() => setGsWouldReturn(true)}
+                    >
+                      <ThumbsUp className="w-4 h-4" />
+                      Yes
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={gsWouldReturn === false ? 'destructive' : 'outline'}
+                      size="sm"
+                      className="flex-1 gap-1"
+                      onClick={() => setGsWouldReturn(false)}
+                    >
+                      <ThumbsDown className="w-4 h-4" />
+                      No
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* SECTION: Final Rating */}
           {finalRating > 0 && (
             <div className="bg-facility-action/10 rounded-xl p-4 border border-facility-action/30">
               <div className="flex items-center justify-between">
@@ -414,7 +661,7 @@ const CompleteFacilityReviewModal: React.FC<CompleteFacilityReviewModalProps> = 
             </div>
           )}
 
-          {/* SECTION 5: Notes */}
+          {/* SECTION: Notes */}
           <div className="space-y-2">
             <Label className="flex items-center gap-2">
               <Lightbulb className="w-4 h-4" />
