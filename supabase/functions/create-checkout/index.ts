@@ -68,7 +68,7 @@ serve(async (req) => {
         },
       ],
       mode: "subscription",
-      success_url: `${req.headers.get("origin")}/subscription?success=true`,
+      success_url: `${req.headers.get("origin")}/subscription/success`,
       cancel_url: `${req.headers.get("origin")}/choose-plan?canceled=true`,
       allow_promotion_codes: true,
       subscription_data: {

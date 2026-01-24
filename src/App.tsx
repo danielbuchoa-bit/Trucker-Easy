@@ -44,6 +44,7 @@ import FacilityDetailScreen from "./pages/FacilityDetail";
 import FoodPreferencesScreen from "./pages/FoodPreferences";
 import FavoriteMealsScreen from "./pages/FavoriteMeals";
 import SubscriptionScreen from "./pages/Subscription";
+import SubscriptionSuccessScreen from "./pages/SubscriptionSuccess";
 import ChoosePlanScreen from "./pages/ChoosePlan";
 import RatingHistoryScreen from "./pages/RatingHistory";
 import RoadTestChecklist from "./pages/RoadTestChecklist";
@@ -105,6 +106,7 @@ const App = () => (
                                 <Route path="/food-preferences" element={<FoodPreferencesScreen />} />
                                 <Route path="/favorite-meals" element={<FavoriteMealsScreen />} />
                                 <Route path="/subscription" element={<SubscriptionScreen />} />
+                                <Route path="/subscription/success" element={<SubscriptionSuccessScreen />} />
                                 <Route path="/choose-plan" element={<ChoosePlanScreen />} />
                                 <Route path="/rating-history" element={<RatingHistoryScreen />} />
                                 <Route path="/road-test-checklist" element={<RoadTestChecklist />} />
