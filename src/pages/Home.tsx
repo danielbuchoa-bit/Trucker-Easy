@@ -1,6 +1,6 @@
 import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import { useLanguage } from '@/i18n/LanguageContext';
-import { Search, Filter, MapPin, Navigation, Route, Building2, Loader2, RefreshCw, AlertCircle, Truck, Fuel, Scale, UtensilsCrossed, TreePine, Info, Star } from 'lucide-react';
+import { Search, Filter, MapPin, Navigation, Route, Building2, Loader2, RefreshCw, AlertCircle, Truck, Fuel, Scale, TreePine, Info, Star, Droplets } from 'lucide-react';
 import BottomNav from '@/components/navigation/BottomNav';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -19,7 +19,7 @@ import PoiReviewsModal from '@/components/poi/PoiReviewsModal';
 interface NearbyPlace {
   id: string;
   name: string;
-  type: 'truckStop' | 'weighStation' | 'restaurant' | 'restArea';
+  type: 'truckStop' | 'weighStation' | 'restArea' | 'truckWash';  // TRUCK-ONLY types (no restaurant)
   distance: string;
   distanceMeters: number;
   parking?: 'available' | 'limited' | 'full';
@@ -31,13 +31,13 @@ interface NearbyPlace {
   truckFriendlyConfidence?: 'confirmed' | 'likely' | 'unknown';
 }
 
-// Map filter IDs to API filter types
+// Map filter IDs to API filter types - TRUCK ONLY
 const FILTER_TYPE_MAP: Record<string, string> = {
   nearMe: 'nearMe',
   truckStops: 'truckStops',
   weighStations: 'weighStations',
-  restaurants: 'restaurants',
   restAreas: 'restAreas',
+  truckWash: 'truckWash',
 };
 
 const HomeScreen = () => {
@@ -61,12 +61,13 @@ const HomeScreen = () => {
   // Diagnostics panel (5 taps on logo to open)
   const diagnostics = useNextBillionDiagnostics();
   
+  // TRUCK-ONLY filter tabs (no restaurants)
   const filters = [
     { id: 'nearMe', label: t.map.nearMe, icon: Navigation },
     { id: 'truckStops', label: t.map.truckStops, icon: Fuel },
     { id: 'weighStations', label: t.map.weighStations, icon: Scale },
-    { id: 'restaurants', label: t.map.restaurants, icon: UtensilsCrossed },
     { id: 'restAreas', label: t.map.restAreas, icon: TreePine },
+    { id: 'truckWash', label: 'Truck Wash', icon: Droplets },
   ];
 
   // Watch ID for continuous location updates
@@ -378,15 +379,15 @@ const HomeScreen = () => {
   }, [userLocation, activeFilter, fetchNearbyPlaces]);
 
   // Filter places based on active filter (client-side filtering for nearMe)
+  // TRUCK-ONLY: No restaurant filter
   const filteredPlaces = useMemo(() => {
     // For specific filters, places are already filtered server-side
-    // For 'nearMe', show all but we can still apply type filter if needed
     const byType = places.filter((place) => {
       if (activeFilter === 'nearMe') return true;
       if (activeFilter === 'truckStops') return place.type === 'truckStop';
       if (activeFilter === 'weighStations') return place.type === 'weighStation';
-      if (activeFilter === 'restaurants') return place.type === 'restaurant';
       if (activeFilter === 'restAreas') return place.type === 'restArea';
+      if (activeFilter === 'truckWash') return place.type === 'truckWash' || place.name.toLowerCase().includes('wash') || place.name.toLowerCase().includes('beacon');
       return true;
     });
 
@@ -585,8 +586,8 @@ const HomeScreen = () => {
             <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-muted flex items-center justify-center">
               {activeFilter === 'truckStops' && <Fuel className="w-6 h-6 text-muted-foreground" />}
               {activeFilter === 'weighStations' && <Scale className="w-6 h-6 text-muted-foreground" />}
-              {activeFilter === 'restaurants' && <UtensilsCrossed className="w-6 h-6 text-muted-foreground" />}
               {activeFilter === 'restAreas' && <TreePine className="w-6 h-6 text-muted-foreground" />}
+              {activeFilter === 'truckWash' && <Droplets className="w-6 h-6 text-muted-foreground" />}
               {activeFilter === 'nearMe' && <MapPin className="w-6 h-6 text-muted-foreground" />}
             </div>
             <p className="text-sm font-medium text-foreground mb-1">
@@ -652,12 +653,12 @@ const HomeScreen = () => {
                         <BrandLogo className="w-8 h-8" />
                       ) : place.type === 'restArea' ? (
                         <TreePine className="w-6 h-6 text-primary" />
-                      ) : place.type === 'restaurant' ? (
-                        <UtensilsCrossed className="w-6 h-6 text-primary" />
+                      ) : place.type === 'truckWash' ? (
+                        <Droplets className="w-6 h-6 text-primary" />
                       ) : place.type === 'weighStation' ? (
                         <Scale className="w-6 h-6 text-primary" />
                       ) : (
-                        <MapPin className="w-6 h-6 text-primary" />
+                        <Fuel className="w-6 h-6 text-primary" />
                       )}
                     </div>
 
