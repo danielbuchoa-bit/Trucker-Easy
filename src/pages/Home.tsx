@@ -196,7 +196,7 @@ const HomeScreen = () => {
           body: { 
             lat, 
             lng, 
-            radiusMeters: 16000, // Start with 10 miles
+            radiusMeters: 48280, // Start with 30 miles
             filterType: FILTER_TYPE_MAP[filterType] || 'nearMe',
             progressiveRadius: true, // Enable progressive radius expansion
             limit: 30,
