@@ -1,13 +1,12 @@
 import { useLanguage } from '@/i18n/LanguageContext';
 import { useBypassSettings } from '@/hooks/useBypassSettings';
 import { useRoadTestSafe } from '@/contexts/RoadTestContext';
-import { ArrowLeft, Scale, Shield, Bell, Moon, FlaskConical, ClipboardCheck } from 'lucide-react';
+import { ArrowLeft, Scale, Shield, Bell, Moon, FlaskConical, ClipboardCheck, HelpCircle, Mail } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import BottomNav from '@/components/navigation/BottomNav';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import LanguageSwitcher from '@/components/settings/LanguageSwitcher';
-
 const Settings = () => {
   const { t, language } = useLanguage();
   const { settings, updateSettings } = useBypassSettings();
@@ -135,6 +134,30 @@ const Settings = () => {
               </div>
               <Switch defaultChecked />
             </div>
+          </div>
+        </div>
+
+        {/* Help & Support */}
+        <div className="space-y-2">
+          <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide px-1">
+            {t.settings.help}
+          </h2>
+          <div className="bg-card rounded-xl border border-border divide-y divide-border">
+            <a 
+              href="mailto:info@truckereasy.com?subject=TruckerEasy Support"
+              className="p-4 flex items-center justify-between hover:bg-muted/50 transition-colors"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+                  <Mail className="w-5 h-5 text-primary" />
+                </div>
+                <div>
+                  <p className="font-medium">{t.settings.contactSupport}</p>
+                  <p className="text-sm text-muted-foreground">info@truckereasy.com</p>
+                </div>
+              </div>
+              <HelpCircle className="w-5 h-5 text-muted-foreground" />
+            </a>
           </div>
         </div>
       </div>
