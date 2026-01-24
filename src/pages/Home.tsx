@@ -12,6 +12,9 @@ import { useNextBillionDiagnostics } from '@/hooks/useNextBillionDiagnostics';
 import CompleteFacilityReviewModal from '@/components/facility/CompleteFacilityReviewModal';
 import MapBackground from '@/components/map/MapBackground';
 import { Badge } from '@/components/ui/badge';
+import { useBatchPoiRatings } from '@/hooks/useBatchPoiRatings';
+import PoiRatingBadgeInline from '@/components/poi/PoiRatingBadgeInline';
+import PoiReviewsModal from '@/components/poi/PoiReviewsModal';
 
 interface NearbyPlace {
   id: string;
@@ -50,6 +53,10 @@ const HomeScreen = () => {
   const [locationErrorCode, setLocationErrorCode] = useState<number | undefined>(undefined);
   const [isRateModalOpen, setIsRateModalOpen] = useState(false);
   const [lastSearchDebug, setLastSearchDebug] = useState<any>(null);
+  const [reviewsModalPoi, setReviewsModalPoi] = useState<NearbyPlace | null>(null);
+  
+  // Batch POI ratings for performance
+  const { fetchBatchRatings, getRating, generatePoiKey, clearCache: clearRatingsCache } = useBatchPoiRatings();
   
   // Diagnostics panel (5 taps on logo to open)
   const diagnostics = useNextBillionDiagnostics();
@@ -388,6 +395,21 @@ const HomeScreen = () => {
     return byType.filter((p) => p.name.toLowerCase().includes(q));
   }, [activeFilter, places, searchQuery]);
 
+  // Fetch batch ratings when places change
+  useEffect(() => {
+    if (filteredPlaces.length > 0) {
+      // Prepare POI data for batch rating fetch
+      const poisForRatings = filteredPlaces.map(p => ({
+        id: p.id,
+        name: p.name,
+        lat: p.lat,
+        lng: p.lng,
+        type: p.type,
+      }));
+      fetchBatchRatings(poisForRatings);
+    }
+  }, [filteredPlaces, fetchBatchRatings]);
+
   const getParkingColor = (status: string) => {
     switch (status) {
       case 'available':
@@ -669,14 +691,18 @@ const HomeScreen = () => {
                           </>
                         )}
                       </div>
+                      
+                      {/* Rating Badge from batch ratings */}
+                      {getRating(place) && (
+                        <div className="mt-1">
+                          <PoiRatingBadgeInline
+                            rating={getRating(place)}
+                            onClick={() => setReviewsModalPoi(place)}
+                            compact
+                          />
+                        </div>
+                      )}
                     </div>
-
-                    {place.rating && (
-                      <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                        <span className="text-primary">★</span>
-                        <span>{place.rating}</span>
-                      </div>
-                    )}
                   </button>
 
                   {/* Navigate Button */}
@@ -725,6 +751,23 @@ const HomeScreen = () => {
         onClose={() => setIsRateModalOpen(false)}
         userLocation={userLocation}
       />
+
+      {/* POI Reviews Modal */}
+      {reviewsModalPoi && (
+        <PoiReviewsModal
+          open={!!reviewsModalPoi}
+          onClose={() => setReviewsModalPoi(null)}
+          poi={{
+            id: reviewsModalPoi.id,
+            name: reviewsModalPoi.name,
+            lat: reviewsModalPoi.lat,
+            lng: reviewsModalPoi.lng,
+            address: reviewsModalPoi.address,
+            type: reviewsModalPoi.type,
+          }}
+          summary={getRating(reviewsModalPoi)}
+        />
+      )}
     </div>
   );
 };
