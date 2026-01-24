@@ -78,8 +78,8 @@ const NB_CATEGORY_MAP: Record<string, { browse: string[]; discover: string[] }> 
   },
 };
 
-// Progressive radius in meters: 5mi, 10mi, 25mi, 50mi
-const PROGRESSIVE_RADII = [8047, 16093, 40234, 80467];
+// Progressive radius in meters: 30mi, 40mi, 50mi (starting at 30 miles as requested)
+const PROGRESSIVE_RADII = [48280, 64374, 80467];
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
