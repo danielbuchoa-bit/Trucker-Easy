@@ -40,7 +40,7 @@ export const MedicationReminderProvider: React.FC<{ children: React.ReactNode }>
   const checkIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // Check if a reminder should fire
-  const shouldFireReminder = useCallback((medication: Medication): { shouldFire: boolean; scheduledTime: Date | null } => {
+  const shouldFireReminder = useCallback((medication: Medication, todayLogs: Set<string>): { shouldFire: boolean; scheduledTime: Date | null } => {
     if (medication.paused) return { shouldFire: false, scheduledTime: null };
 
     const now = new Date();
@@ -58,13 +58,20 @@ export const MedicationReminderProvider: React.FC<{ children: React.ReactNode }>
       const scheduledMinutes = hours * 60 + minutes;
       const reminderMinutes = scheduledMinutes - medication.reminder_minutes_before;
 
-      // Allow a 2-minute window for the reminder
-      if (currentMinutes >= reminderMinutes && currentMinutes <= scheduledMinutes + 2) {
-        // Check if we already fired this reminder today
+      // Allow a 60-minute window AFTER the scheduled time for catch-up reminders
+      // This ensures if the app was closed at 9:00, opening at 9:30 will still show the reminder
+      if (currentMinutes >= reminderMinutes && currentMinutes <= scheduledMinutes + 60) {
+        // Check if already logged this specific time today (taken, snoozed, or skipped)
+        const logKey = `${medication.id}-${time}`;
+        if (todayLogs.has(logKey)) {
+          continue; // Already handled this time slot today
+        }
+        
+        // Check if we already fired this reminder in this session
         const todayKey = `${medication.id}-${now.toDateString()}-${time}`;
         const lastFired = lastCheckedRef.current.get(todayKey);
         
-        if (!lastFired || Date.now() - lastFired > 30 * 60 * 1000) { // 30 min cooldown
+        if (!lastFired || Date.now() - lastFired > 30 * 60 * 1000) { // 30 min cooldown for re-showing
           lastCheckedRef.current.set(todayKey, Date.now());
           
           const scheduledTime = new Date(now);
@@ -78,12 +85,33 @@ export const MedicationReminderProvider: React.FC<{ children: React.ReactNode }>
     return { shouldFire: false, scheduledTime: null };
   }, []);
 
+  // Build a set of today's logs for quick lookup
+  const getTodayLogsSet = useCallback((): Set<string> => {
+    const todayLogs = new Set<string>();
+    const today = new Date().toDateString();
+    
+    // This will be populated from localStorage as a quick cache
+    const cachedLogs = localStorage.getItem('medication_logs_today');
+    if (cachedLogs) {
+      try {
+        const parsed = JSON.parse(cachedLogs);
+        if (parsed.date === today && Array.isArray(parsed.logs)) {
+          parsed.logs.forEach((key: string) => todayLogs.add(key));
+        }
+      } catch (e) {
+        // Ignore parse errors
+      }
+    }
+    return todayLogs;
+  }, []);
+
   // Check all medications for reminders
   const checkReminders = useCallback(() => {
     const newReminders: PendingReminder[] = [];
+    const todayLogs = getTodayLogsSet();
 
     medications.forEach(medication => {
-      const { shouldFire, scheduledTime } = shouldFireReminder(medication);
+      const { shouldFire, scheduledTime } = shouldFireReminder(medication, todayLogs);
       if (shouldFire && scheduledTime) {
         // Check if already in pending
         const exists = pendingReminders.some(r => r.medication.id === medication.id);
@@ -113,11 +141,41 @@ export const MedicationReminderProvider: React.FC<{ children: React.ReactNode }>
         }
       }
     }
-  }, [medications, shouldFireReminder, pendingReminders, activeReminder, isDrivingMode, toast]);
+  }, [medications, shouldFireReminder, getTodayLogsSet, pendingReminders, activeReminder, isDrivingMode, toast]);
+
+  // Save log to localStorage cache for quick lookup
+  const cacheLogAction = useCallback((medicationId: string, time: string) => {
+    const today = new Date().toDateString();
+    const key = `${medicationId}-${time}`;
+    
+    try {
+      const cached = localStorage.getItem('medication_logs_today');
+      let data = { date: today, logs: [] as string[] };
+      
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (parsed.date === today) {
+          data = parsed;
+        }
+      }
+      
+      if (!data.logs.includes(key)) {
+        data.logs.push(key);
+      }
+      
+      localStorage.setItem('medication_logs_today', JSON.stringify(data));
+    } catch (e) {
+      // Ignore storage errors
+    }
+  }, []);
 
   // Handle reminder actions
   const handleTaken = useCallback(async () => {
     if (!activeReminder) return;
+    
+    // Get the time string from the scheduled time
+    const timeStr = `${String(activeReminder.scheduledTime.getHours()).padStart(2, '0')}:${String(activeReminder.scheduledTime.getMinutes()).padStart(2, '0')}`;
+    cacheLogAction(activeReminder.medication.id, timeStr);
     
     await logAction(activeReminder.medication.id, activeReminder.scheduledTime, 'taken');
     
@@ -129,7 +187,7 @@ export const MedicationReminderProvider: React.FC<{ children: React.ReactNode }>
     setPendingReminders(prev => prev.filter(r => r.medication.id !== activeReminder.medication.id));
     setShowModal(false);
     setActiveReminder(null);
-  }, [activeReminder, logAction, toast]);
+  }, [activeReminder, logAction, cacheLogAction, toast]);
 
   const handleSnooze = useCallback(async (minutes: number) => {
     if (!activeReminder) return;
@@ -142,6 +200,11 @@ export const MedicationReminderProvider: React.FC<{ children: React.ReactNode }>
     
     // Schedule snooze reminder
     setTimeout(() => {
+      // Clear the cache for this reminder so it can fire again
+      const timeStr = `${String(activeReminder.scheduledTime.getHours()).padStart(2, '0')}:${String(activeReminder.scheduledTime.getMinutes()).padStart(2, '0')}`;
+      const todayKey = `${activeReminder.medication.id}-${new Date().toDateString()}-${timeStr}`;
+      lastCheckedRef.current.delete(todayKey);
+      
       setPendingReminders(prev => [...prev, activeReminder]);
       toast({
         title: `💊 Lembrete: ${activeReminder.medication.name}`,
@@ -162,12 +225,16 @@ export const MedicationReminderProvider: React.FC<{ children: React.ReactNode }>
   const handleSkip = useCallback(async () => {
     if (!activeReminder) return;
     
+    // Get the time string from the scheduled time
+    const timeStr = `${String(activeReminder.scheduledTime.getHours()).padStart(2, '0')}:${String(activeReminder.scheduledTime.getMinutes()).padStart(2, '0')}`;
+    cacheLogAction(activeReminder.medication.id, timeStr);
+    
     await logAction(activeReminder.medication.id, activeReminder.scheduledTime, 'skipped');
     
     setPendingReminders(prev => prev.filter(r => r.medication.id !== activeReminder.medication.id));
     setShowModal(false);
     setActiveReminder(null);
-  }, [activeReminder, logAction]);
+  }, [activeReminder, logAction, cacheLogAction]);
 
   const dismissReminder = useCallback((medicationId: string) => {
     setPendingReminders(prev => prev.filter(r => r.medication.id !== medicationId));
