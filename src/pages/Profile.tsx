@@ -166,8 +166,8 @@ const ProfileScreen = () => {
     { id: 'language', icon: Globe, label: t.settings.language, action: 'language' },
     { id: 'notifications', icon: Bell, label: t.settings.notifications },
     { id: 'darkMode', icon: Moon, label: t.settings.darkMode },
-    { id: 'privacy', icon: Shield, label: t.settings.privacy },
-    { id: 'help', icon: HelpCircle, label: t.settings.help },
+    { id: 'privacy', icon: Shield, label: t.settings.privacy, route: '/privacy' },
+    { id: 'help', icon: HelpCircle, label: t.settings.help, route: '/settings' },
   ];
 
   const handleLanguageChange = () => {
