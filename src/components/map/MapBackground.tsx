@@ -44,7 +44,7 @@ const MapBackground: React.FC<MapBackgroundProps> = ({
 
         map.current = new mapboxgl.Map({
           container: mapContainer.current!,
-          style: 'mapbox://styles/mapbox/dark-v11',
+          style: 'mapbox://styles/mapbox/satellite-streets-v12',
           center: center as [number, number],
           zoom: userLocation ? 14 : 4,
           attributionControl: false,

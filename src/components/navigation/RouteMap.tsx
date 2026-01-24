@@ -168,7 +168,7 @@ const RouteMap = ({ routePolyline, originLat, originLng, destLat, destLng, speed
 
         map.current = new mapboxgl.Map({
           container: mapContainer.current!,
-          style: 'mapbox://styles/mapbox/navigation-night-v1',
+          style: 'mapbox://styles/mapbox/satellite-streets-v12',
           zoom: initialZoom,
           center: initialCenter,
         });
