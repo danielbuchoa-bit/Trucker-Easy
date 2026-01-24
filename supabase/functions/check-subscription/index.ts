@@ -70,9 +70,19 @@ serve(async (req) => {
     let subscriptionEnd = null;
 
     if (hasActiveSub && activeSubscription) {
-      subscriptionEnd = new Date(activeSubscription.current_period_end * 1000).toISOString();
-      const priceProduct = activeSubscription.items.data[0].price.product;
-      productId = typeof priceProduct === 'string' ? priceProduct : priceProduct.id;
+      // Safely handle the period end date
+      const periodEnd = activeSubscription.current_period_end;
+      if (periodEnd && typeof periodEnd === 'number') {
+        subscriptionEnd = new Date(periodEnd * 1000).toISOString();
+      } else if (activeSubscription.trial_end && typeof activeSubscription.trial_end === 'number') {
+        // For trialing subscriptions, use trial_end if current_period_end is not available
+        subscriptionEnd = new Date(activeSubscription.trial_end * 1000).toISOString();
+      }
+      
+      const priceProduct = activeSubscription.items.data[0]?.price?.product;
+      if (priceProduct) {
+        productId = typeof priceProduct === 'string' ? priceProduct : priceProduct.id;
+      }
       logStep("Active subscription found", { productId, status: activeSubscription.status, endDate: subscriptionEnd });
     }
 
