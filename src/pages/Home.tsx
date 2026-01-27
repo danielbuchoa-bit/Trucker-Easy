@@ -1,6 +1,6 @@
 import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import { useLanguage } from '@/i18n/LanguageContext';
-import { Search, Filter, MapPin, Navigation, Route, Building2, Loader2, RefreshCw, AlertCircle, Truck, Fuel, Scale, TreePine, Info, Star, Droplets } from 'lucide-react';
+import { Search, Filter, MapPin, Navigation, Route, Building2, Loader2, RefreshCw, AlertCircle, Truck, Fuel, Scale, TreePine, Info, Star, Droplets, LogIn } from 'lucide-react';
 import BottomNav from '@/components/navigation/BottomNav';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -48,12 +48,35 @@ const HomeScreen = () => {
   const [places, setPlaces] = useState<NearbyPlace[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [authError, setAuthError] = useState<boolean>(false);
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [locationError, setLocationError] = useState<string | null>(null);
   const [locationErrorCode, setLocationErrorCode] = useState<number | undefined>(undefined);
   const [isRateModalOpen, setIsRateModalOpen] = useState(false);
   const [lastSearchDebug, setLastSearchDebug] = useState<any>(null);
   const [reviewsModalPoi, setReviewsModalPoi] = useState<NearbyPlace | null>(null);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
+  
+  // Check authentication status
+  useEffect(() => {
+    const checkAuth = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      setIsAuthenticated(!!session);
+    };
+    checkAuth();
+    
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setIsAuthenticated(!!session);
+      if (!session) {
+        setAuthError(true);
+      } else {
+        setAuthError(false);
+      }
+    });
+    
+    return () => subscription.unsubscribe();
+  }, []);
   
   // Batch POI ratings for performance
   const { fetchBatchRatings, getRating, generatePoiKey, clearCache: clearRatingsCache } = useBatchPoiRatings();
@@ -212,7 +235,11 @@ const HomeScreen = () => {
         // Show specific error messages
         if (poisError.message?.includes('429')) {
           setError('Rate limit exceeded. Please wait a moment and try again.');
-        } else if (poisError.message?.includes('401') || poisError.message?.includes('403')) {
+        } else if (poisError.message?.includes('401') || poisError.message?.includes('Unauthorized')) {
+          // Auth error - user needs to log in
+          setAuthError(true);
+          setError('Please log in to view nearby places.');
+        } else if (poisError.message?.includes('403')) {
           setError('API authorization error. Please contact support.');
         } else if (poisError.message?.includes('timeout') || poisError.message?.includes('TIMEOUT')) {
           setError('Request timed out. Check your connection and try again.');
@@ -569,8 +596,21 @@ const HomeScreen = () => {
           </div>
         )}
 
-        {/* Error State */}
-        {error && !loading && (
+        {/* Auth Error State */}
+        {authError && !loading && (
+          <div className="bg-card border border-border rounded-xl p-6 text-center">
+            <LogIn className="w-10 h-10 text-primary mx-auto mb-3" />
+            <h3 className="font-semibold text-foreground mb-2">Login Required</h3>
+            <p className="text-sm text-muted-foreground mb-4">Please log in to view nearby truck stops, weigh stations, and rest areas.</p>
+            <Button onClick={() => navigate('/auth')} className="w-full">
+              <LogIn className="w-4 h-4 mr-2" />
+              Log In / Sign Up
+            </Button>
+          </div>
+        )}
+
+        {/* Error State (non-auth) */}
+        {error && !authError && !loading && (
           <div className="bg-card border border-border rounded-xl p-4 text-center">
             <AlertCircle className="w-8 h-8 text-destructive mx-auto mb-2" />
             <p className="text-sm text-muted-foreground">{error}</p>
