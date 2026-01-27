@@ -59,6 +59,25 @@ export function usePoiSearch(options: UsePoiSearchOptions = {}) {
   }, []);
 
   /**
+   * Get authenticated session token for API calls
+   */
+  const getAuthToken = useCallback(async (): Promise<string> => {
+    try {
+      const { data: { session }, error } = await supabase.auth.getSession();
+      if (error) {
+        console.warn('[usePoiSearch] Failed to get session:', error.message);
+      }
+      if (session?.access_token) {
+        return session.access_token;
+      }
+    } catch (err) {
+      console.warn('[usePoiSearch] Error getting auth session:', err);
+    }
+    // Fallback to anon key if no session (unauthenticated user)
+    return import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+  }, []);
+
+  /**
    * Execute the actual API call with retries
    */
   const executeSearch = useCallback(async (
@@ -77,6 +96,9 @@ export function usePoiSearch(options: UsePoiSearchOptions = {}) {
 
     const startTime = Date.now();
     
+    // Get the real session token for authorization
+    const accessToken = await getAuthToken();
+    
     try {
       // Call edge function and capture full response for status code
       const response = await fetch(
@@ -86,7 +108,7 @@ export function usePoiSearch(options: UsePoiSearchOptions = {}) {
           headers: {
             'Content-Type': 'application/json',
             'apikey': import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-            'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+            'Authorization': `Bearer ${accessToken}`,
           },
           body: JSON.stringify({
             lat,
@@ -176,7 +198,7 @@ export function usePoiSearch(options: UsePoiSearchOptions = {}) {
 
       throw err;
     }
-  }, [config.maxRetries]);
+  }, [config.maxRetries, getAuthToken]);
 
   /**
    * Search for POIs with debouncing and caching
