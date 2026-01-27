@@ -8,25 +8,50 @@ const corsHeaders = {
 };
 
 /**
- * TRUCK-ONLY POI Browse API - P0-1 Fix
+ * TRUCK-ONLY POI Browse API - P0-1 Fix v2
  * 
  * Implements:
+ * - Server-side caching (45 min TTL)
+ * - Per-user rate limiting (extracted from auth header)
  * - Request logging with timing
  * - Retry-After header handling
- * - Rate limit tracking
- * - Exponential backoff for 429s
+ * - Proper 429 detection and backoff
  * 
  * This API ONLY returns POIs relevant to semi-trucks (53ft):
  * - Truck stops / Travel centers (Pilot, Flying J, Love's, TA, Petro, etc.)
  * - DOT Weigh Stations / Inspection Stations
  * - Blue Beacon Truck Wash
  * - Rest Areas with truck parking
- * - Walmart (only if truck-friendly verified)
+ * - Major fuel stations (Shell, Chevron, etc.)
  * 
  * NO restaurants, retail, or random local businesses.
  */
 
-// Rate limit tracking (per worker instance)
+// ============ SERVER-SIDE CACHE ============
+interface CacheEntry {
+  data: any;
+  timestamp: number;
+  geohash: string;
+}
+
+const serverCache = new Map<string, CacheEntry>();
+const CACHE_TTL_MS = 45 * 60 * 1000; // 45 minutes
+const CACHE_MAX_ENTRIES = 500;
+
+// ============ PER-USER RATE LIMITING ============
+interface UserRateLimit {
+  requestCount: number;
+  windowStart: number;
+  isBlocked: boolean;
+  blockedUntil: number;
+}
+
+const userRateLimits = new Map<string, UserRateLimit>();
+const USER_RATE_LIMIT_WINDOW_MS = 60000; // 1 minute
+const USER_MAX_REQUESTS_PER_WINDOW = 20;
+const USER_BLOCK_DURATION_MS = 30000; // 30 seconds
+
+// Global rate limit tracking (for external API calls)
 let rateLimitState = {
   lastRequest: 0,
   requestCount: 0,
@@ -52,6 +77,13 @@ const ALLOWED_TRUCK_BRANDS = [
   'casey', 'kum & go', 'kum and go',
   'speedway', 'racetrac', 'raceway', 'sheetz', 'wawa',
   'blue beacon', 'bluebeacon', 'truck wash',
+];
+
+// Major fuel stations that often serve trucks (allow with 'likely' confidence)
+const TRUCK_FRIENDLY_FUEL_BRANDS = [
+  'shell', 'chevron', 'exxon', 'mobil', 'bp', 'citgo', 
+  'marathon', 'phillips 66', 'conoco', 'sinclair', 
+  'murphy usa', 'mapco', '76', 'texaco', 'arco', 'sunoco', 'valero',
 ];
 
 // HERE category IDs - TRUCK FOCUSED ONLY
@@ -96,10 +128,139 @@ const NB_CATEGORY_MAP: Record<string, { browse: string[]; discover: string[] }> 
   },
 };
 
-// Progressive radius in meters: 50mi, 80mi, 100mi (expanded for long-distance route POIs)
-const PROGRESSIVE_RADII = [80467, 128748, 160934];
+// Progressive radius in meters: 25mi, 40mi, 60mi (scaled for truck search)
+// NearMe capped at 25mi default, OnRoute extends further
+const PROGRESSIVE_RADII = [40234, 64374, 96561];
 
-// Check internal rate limiting
+// ============ GEOHASH HELPERS ============
+const BASE32 = '0123456789bcdefghjkmnpqrstuvwxyz';
+
+function encodeGeohash(lat: number, lng: number, precision: number = 5): string {
+  let latRange = [-90, 90];
+  let lngRange = [-180, 180];
+  let geohash = '';
+  let bit = 0;
+  let ch = 0;
+  let isEven = true;
+
+  while (geohash.length < precision) {
+    if (isEven) {
+      const mid = (lngRange[0] + lngRange[1]) / 2;
+      if (lng >= mid) {
+        ch |= 1 << (4 - bit);
+        lngRange[0] = mid;
+      } else {
+        lngRange[1] = mid;
+      }
+    } else {
+      const mid = (latRange[0] + latRange[1]) / 2;
+      if (lat >= mid) {
+        ch |= 1 << (4 - bit);
+        latRange[0] = mid;
+      } else {
+        latRange[1] = mid;
+      }
+    }
+    isEven = !isEven;
+    if (bit < 4) {
+      bit++;
+    } else {
+      geohash += BASE32[ch];
+      bit = 0;
+      ch = 0;
+    }
+  }
+  return geohash;
+}
+
+function getCacheKey(lat: number, lng: number, filterType: string, radiusM: number): string {
+  const geohash = encodeGeohash(lat, lng);
+  const roundedRadius = Math.round(radiusM / 5000) * 5000;
+  return `poi_${geohash}_${filterType}_${roundedRadius}`;
+}
+
+// Check and update server cache
+function getFromCache(key: string): any | null {
+  const entry = serverCache.get(key);
+  if (!entry) return null;
+  
+  const age = Date.now() - entry.timestamp;
+  if (age > CACHE_TTL_MS) {
+    serverCache.delete(key);
+    return null;
+  }
+  
+  return entry.data;
+}
+
+function setCache(key: string, data: any, geohash: string): void {
+  // Evict oldest if at capacity
+  if (serverCache.size >= CACHE_MAX_ENTRIES) {
+    let oldestKey: string | null = null;
+    let oldestTime = Infinity;
+    for (const [k, v] of serverCache) {
+      if (v.timestamp < oldestTime) {
+        oldestTime = v.timestamp;
+        oldestKey = k;
+      }
+    }
+    if (oldestKey) serverCache.delete(oldestKey);
+  }
+  
+  serverCache.set(key, { data, timestamp: Date.now(), geohash });
+}
+
+// Extract user ID from auth header for per-user rate limiting
+function extractUserId(req: Request): string {
+  const authHeader = req.headers.get('authorization') || '';
+  if (authHeader.startsWith('Bearer ')) {
+    // Use hash of token for user ID (privacy-safe)
+    const token = authHeader.substring(7);
+    let hash = 0;
+    for (let i = 0; i < Math.min(token.length, 50); i++) {
+      hash = ((hash << 5) - hash) + token.charCodeAt(i);
+      hash |= 0;
+    }
+    return `user_${Math.abs(hash)}`;
+  }
+  return 'anonymous';
+}
+
+// Check per-user rate limit
+function checkUserRateLimit(userId: string): { allowed: boolean; waitMs: number } {
+  const now = Date.now();
+  let userLimit = userRateLimits.get(userId);
+  
+  if (!userLimit) {
+    userLimit = { requestCount: 0, windowStart: now, isBlocked: false, blockedUntil: 0 };
+    userRateLimits.set(userId, userLimit);
+  }
+  
+  // Check if blocked
+  if (userLimit.isBlocked && now < userLimit.blockedUntil) {
+    return { allowed: false, waitMs: userLimit.blockedUntil - now };
+  } else if (userLimit.isBlocked) {
+    userLimit.isBlocked = false;
+  }
+  
+  // Reset window if expired
+  if (now - userLimit.windowStart > USER_RATE_LIMIT_WINDOW_MS) {
+    userLimit.requestCount = 0;
+    userLimit.windowStart = now;
+  }
+  
+  // Check request count
+  if (userLimit.requestCount >= USER_MAX_REQUESTS_PER_WINDOW) {
+    userLimit.isBlocked = true;
+    userLimit.blockedUntil = now + USER_BLOCK_DURATION_MS;
+    return { allowed: false, waitMs: USER_BLOCK_DURATION_MS };
+  }
+  
+  userLimit.requestCount++;
+  return { allowed: true, waitMs: 0 };
+}
+
+// Check global rate limiting (for external API calls)
 function checkRateLimit(): { allowed: boolean; waitMs: number } {
   const now = Date.now();
   
@@ -135,12 +296,76 @@ serve(async (req) => {
   }
 
   const requestStartTime = Date.now();
+  const userId = extractUserId(req);
 
   try {
-    // Check internal rate limit first
+    // Check per-user rate limit first
+    const userRateCheck = checkUserRateLimit(userId);
+    if (!userRateCheck.allowed) {
+      console.warn(`[browse_pois] User rate limit (${userId}) - wait ${userRateCheck.waitMs}ms`);
+      return new Response(
+        JSON.stringify({ 
+          error: "Rate limited", 
+          retryAfterMs: userRateCheck.waitMs,
+          pois: [], 
+          items: [] 
+        }),
+        { 
+          status: 429, 
+          headers: { 
+            ...corsHeaders, 
+            "Content-Type": "application/json",
+            "Retry-After": String(Math.ceil(userRateCheck.waitMs / 1000)),
+          } 
+        }
+      );
+    }
+
+    const body = await req.json();
+    const { 
+      lat, 
+      lng, 
+      radius = 32000,
+      radiusMeters,
+      filterType = "nearMe",
+      limit = 30,
+      progressiveRadius = true,
+    } = body;
+
+    if (lat === undefined || lng === undefined) {
+      return new Response(
+        JSON.stringify({ error: "lat and lng are required" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const baseRadius = radiusMeters || radius;
+    
+    // Check server-side cache first
+    const cacheKey = getCacheKey(lat, lng, filterType, baseRadius);
+    const cachedData = getFromCache(cacheKey);
+    
+    if (cachedData) {
+      const requestDuration = Date.now() - requestStartTime;
+      console.log(`[browse_pois] CACHE HIT: ${cacheKey} (time: ${requestDuration}ms)`);
+      return new Response(
+        JSON.stringify({
+          ...cachedData,
+          fromCache: true,
+          debug: {
+            ...cachedData.debug,
+            cacheHit: true,
+            requestDurationMs: requestDuration,
+          },
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Check global rate limit before external API calls
     const rateLimitCheck = checkRateLimit();
     if (!rateLimitCheck.allowed) {
-      console.warn(`[browse_pois] Internal rate limit - wait ${rateLimitCheck.waitMs}ms`);
+      console.warn(`[browse_pois] Global rate limit - wait ${rateLimitCheck.waitMs}ms`);
       return new Response(
         JSON.stringify({ 
           error: "Rate limited", 
@@ -162,24 +387,6 @@ serve(async (req) => {
     rateLimitState.requestCount++;
     rateLimitState.lastRequest = Date.now();
 
-    const body = await req.json();
-    const { 
-      lat, 
-      lng, 
-      radius = 32000,
-      radiusMeters,
-      filterType = "nearMe",
-      limit = 30,
-      progressiveRadius = true,
-    } = body;
-
-    if (lat === undefined || lng === undefined) {
-      return new Response(
-        JSON.stringify({ error: "lat and lng are required" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
     const nbApiKey = Deno.env.get("NEXTBILLION_API_KEY");
     const hereApiKey = Deno.env.get("HERE_API_KEY");
     
@@ -191,9 +398,8 @@ serve(async (req) => {
       );
     }
 
-    console.log(`[browse_pois] TRUCK-ONLY search | Filter: ${filterType}, Location: ${lat.toFixed(4)},${lng.toFixed(4)}`);
+    console.log(`[browse_pois] CACHE MISS: ${cacheKey} | Filter: ${filterType}, Location: ${lat.toFixed(4)},${lng.toFixed(4)}`);
 
-    const baseRadius = radiusMeters || radius;
     const radiiToTry = progressiveRadius ? PROGRESSIVE_RADII.filter(r => r >= baseRadius / 2) : [baseRadius];
     if (radiiToTry.length === 0) radiiToTry.push(baseRadius);
 
@@ -203,14 +409,13 @@ serve(async (req) => {
     let nbRateLimited = false;
 
     // Try NextBillion first
-    if (nbApiKey && !nbRateLimited) {
+    if (nbApiKey) {
       const nbResult = await tryNextBillion(lat, lng, filterType, radiiToTry, limit, nbApiKey);
       if (nbResult.rateLimited) {
         console.log(`[browse_pois] NextBillion rate limited, falling back to HERE`);
         nbRateLimited = true;
-        // Update internal rate limit state
         rateLimitState.isRateLimited = true;
-        rateLimitState.retryAfterMs = 30000; // Default 30s cooldown
+        rateLimitState.retryAfterMs = 30000;
       } else if (nbResult.pois.length > 0) {
         allPois = nbResult.pois;
         usedRadius = nbResult.usedRadius;
@@ -227,56 +432,43 @@ serve(async (req) => {
       usedProvider = 'here';
     }
 
-    // Transform and apply STRICT truck-only filtering
+    // Transform and apply truck-only filtering
     const pois = transformAndFilterTruckOnly(allPois, lat, lng, filterType, usedRadius, limit);
 
     const requestDuration = Date.now() - requestStartTime;
+    
+    const responseData = { 
+      pois, 
+      items: pois,
+      count: pois.length,
+      searchRadius: usedRadius,
+      filterType,
+      center: { lat, lng },
+      provider: usedProvider,
+      truckOnlyFilter: true,
+      fromCache: false,
+      debug: {
+        triedRadii: radiiToTry,
+        usedRadius,
+        provider: usedProvider,
+        nbRateLimited,
+        rawCount: allPois.length,
+        filteredCount: pois.length,
+        requestDurationMs: requestDuration,
+        cacheHit: false,
+        cacheSize: serverCache.size,
+      },
+    };
+
+    // Cache the result
+    if (pois.length > 0) {
+      setCache(cacheKey, responseData, encodeGeohash(lat, lng));
+    }
+
     console.log(`[browse_pois] Final: ${pois.length} TRUCK-ONLY POIs via ${usedProvider} (radius: ${usedRadius}m, time: ${requestDuration}ms)`);
 
     return new Response(
-      JSON.stringify({ 
-        pois, 
-        items: pois,
-        count: pois.length,
-        searchRadius: usedRadius,
-        filterType,
-        center: { lat, lng },
-        provider: usedProvider,
-        truckOnlyFilter: true,
-        debug: {
-          triedRadii: radiiToTry,
-          usedRadius,
-          provider: usedProvider,
-          nbRateLimited,
-          rawCount: allPois.length,
-          filteredCount: pois.length,
-          requestDurationMs: requestDuration,
-        },
-      }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
-
-    console.log(`[browse_pois] Final: ${pois.length} TRUCK-ONLY POIs via ${usedProvider} (radius: ${usedRadius}m)`);
-
-    return new Response(
-      JSON.stringify({ 
-        pois, 
-        items: pois,
-        count: pois.length,
-        searchRadius: usedRadius,
-        filterType,
-        center: { lat, lng },
-        provider: usedProvider,
-        truckOnlyFilter: true,
-        debug: {
-          triedRadii: radiiToTry,
-          usedRadius,
-          provider: usedProvider,
-          nbRateLimited,
-          rawCount: allPois.length,
-          filteredCount: pois.length,
-        },
-      }),
+      JSON.stringify(responseData),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (error: unknown) {
@@ -288,7 +480,6 @@ serve(async (req) => {
     );
   }
 });
-
 // NextBillion API implementation
 async function tryNextBillion(
   lat: number, lng: number, filterType: string, radii: number[], limit: number, apiKey: string
@@ -562,36 +753,41 @@ function checkTruckAllowed(
     return { allowed: true, reason: 'Truck wash', confidence: 'confirmed' };
   }
 
-  // Check for fuel station with diesel - MORE PERMISSIVE for truck stops
-  if ((fullText.includes('fuel') || fullText.includes('diesel') || category.includes('fuel') ||
-       fullText.includes('gas station') || fullText.includes('truck') || fullText.includes('travel')) && 
-      !fullText.includes('restaurant') && !fullText.includes('cafe') && !fullText.includes('diner')) {
-    // Allow truck-related fuel stations
-    if (fullText.includes('truck') || fullText.includes('travel center') || 
-        fullText.includes('diesel') || fullText.includes('fuel stop')) {
-      return { allowed: true, reason: 'Truck fuel stop', confidence: 'likely' };
+  // Check for major fuel brands (truck-friendly)
+  for (const brand of TRUCK_FRIENDLY_FUEL_BRANDS) {
+    if (title.includes(brand) || fullText.includes(brand)) {
+      return { allowed: true, reason: `Fuel station: ${brand}`, confidence: 'likely' };
     }
-    // Check for generic gas stations - still allow them with unknown confidence
-    const knownGasStations = ['shell', 'chevron', 'exxon', 'mobil', 'bp ', 'citgo', 'marathon', 'phillips 66', 'conoco', 'sinclair', 'murphy usa', 'mapco'];
-    for (const gas of knownGasStations) {
-      if (title.includes(gas)) {
-        // These are generic gas stations - allow with unknown confidence for route display
-        return { allowed: true, reason: `Fuel station: ${gas}`, confidence: 'unknown' };
-      }
-    }
-    // Unknown fuel station - allow with unknown confidence
+  }
+
+  // Check for fuel station with diesel - allow generic fuel stations
+  if (fullText.includes('fuel') || fullText.includes('diesel') || 
+      category.includes('fuel') || fullText.includes('gas station') ||
+      category.includes('700-7600')) {
     return { allowed: true, reason: 'Fuel station', confidence: 'unknown' };
   }
 
   // Block restaurants, cafes, retail, etc.
-  const blockedCategories = ['restaurant', 'cafe', 'coffee', 'retail', 'store', 'shop', 'mall', 'bar', 'pub', 'hotel', 'motel'];
+  const blockedCategories = ['restaurant', 'cafe', 'coffee', 'retail', 'store', 'shop', 'mall', 'bar', 'pub', 'hotel', 'motel', 'supermarket', 'grocery'];
   for (const blocked of blockedCategories) {
-    if (category.includes(blocked) || title.includes(blocked)) {
+    if (category.includes(blocked) || (title.includes(blocked) && !fullText.includes('truck'))) {
       return { allowed: false, reason: `Blocked category: ${blocked}`, confidence: 'confirmed' };
     }
   }
 
-  // Default: not allowed (safety first)
+  // Block specific non-truck businesses
+  const blockedBusinesses = ['safeway', 'pro tow', 'les schwab', 'tire center', 'autozone', 'oreilly', 'napa'];
+  for (const blocked of blockedBusinesses) {
+    if (title.includes(blocked)) {
+      return { allowed: false, reason: `Blocked business: ${blocked}`, confidence: 'confirmed' };
+    }
+  }
+
+  // Default: allow fuel-related POIs, block others
+  if (category.includes('gas') || category.includes('fuel') || category.includes('parking')) {
+    return { allowed: true, reason: 'Fuel/parking category', confidence: 'unknown' };
+  }
+
   return { allowed: false, reason: 'Not on truck allowlist', confidence: 'unknown' };
 }
 
