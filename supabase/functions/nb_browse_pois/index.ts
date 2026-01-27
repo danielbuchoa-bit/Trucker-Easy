@@ -224,26 +224,39 @@ async function verifyAuthAndGetUserId(req: Request): Promise<{ userId: string | 
   const authHeader = req.headers.get('Authorization') || req.headers.get('authorization');
   
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    console.warn('[browse_pois] No Authorization header found');
     return { userId: null, error: 'Missing or invalid Authorization header' };
   }
   
-  // Verify token using Supabase client
+  const token = authHeader.replace('Bearer ', '');
+  
+  // Verify token using Supabase client with SERVICE_ROLE_KEY for server-side verification
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     
-    const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-      global: { headers: { Authorization: authHeader } }
-    });
-    
-    // Use getUser to verify the JWT server-side
-    const { data: { user }, error } = await supabase.auth.getUser();
-    
-    if (error || !user) {
-      console.warn('[browse_pois] JWT verification failed:', error?.message);
-      return { userId: null, error: 'Invalid or expired token' };
+    if (!supabaseServiceKey) {
+      console.error('[browse_pois] SUPABASE_SERVICE_ROLE_KEY not configured');
+      return { userId: null, error: 'Server configuration error' };
     }
     
+    // Create admin client with service role for JWT verification
+    const supabase = createClient(supabaseUrl, supabaseServiceKey, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      }
+    });
+    
+    // Use getUser with the token to verify it server-side
+    const { data: { user }, error } = await supabase.auth.getUser(token);
+    
+    if (error || !user) {
+      console.warn('[browse_pois] JWT verification failed:', error?.message || 'No user found');
+      return { userId: null, error: error?.message || 'Invalid or expired token' };
+    }
+    
+    console.log(`[browse_pois] Successfully verified user: ${user.id.substring(0, 8)}...`);
     return { userId: user.id, error: null };
   } catch (err: any) {
     console.error('[browse_pois] Auth verification error:', err.message);
