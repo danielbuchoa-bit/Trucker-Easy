@@ -19,7 +19,7 @@ export default function Subscription() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [loading, setLoading] = useState(false);
-  const { tier, subscriptionEnd, isLoading, isSubscribed, checkSubscription } = useSubscription();
+  const { tier, currentPeriodEnd, isLoading, isSubscribed, checkSubscription } = useSubscription();
   const [user, setUser] = useState<any>(null);
 
   useEffect(() => {
@@ -115,9 +115,9 @@ export default function Subscription() {
 
               <div className="bg-primary/10 p-4 rounded-lg text-center">
                 <p className="font-medium text-primary">✓ Subscription active</p>
-                {subscriptionEnd && (
+                {currentPeriodEnd && (
                   <p className="text-sm mt-1 text-muted-foreground">
-                    Renews: {new Date(subscriptionEnd).toLocaleDateString("en-US", {
+                    Renews: {new Date(currentPeriodEnd).toLocaleDateString("en-US", {
                       year: 'numeric',
                       month: 'long',
                       day: 'numeric'

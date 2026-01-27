@@ -1,10 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Users, FileText, Star, Heart, MessageSquare, TrendingUp, Search, ChevronRight, Shield, Loader2, AlertCircle, RefreshCw } from 'lucide-react';
+import { 
+  ArrowLeft, Users, FileText, Star, Heart, TrendingUp, Search, 
+  ChevronRight, Shield, Loader2, AlertCircle, RefreshCw, 
+  CreditCard, Crown, Gem, Apple, Smartphone, Filter, History
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -15,6 +21,12 @@ interface UserSummary {
   email: string | null;
   full_name: string | null;
   created_at: string;
+  subscription: {
+    status: string;
+    plan_tier: string;
+    provider: string;
+    current_period_end: string | null;
+  } | null;
   total_reports: number;
   total_facility_ratings: number;
   total_stop_ratings: number;
@@ -29,16 +41,54 @@ interface PlatformStats {
   total_reports: number;
   total_ratings: number;
   total_checkins: number;
+  subscriptions: {
+    total_active: number;
+    by_tier: { silver: number; gold: number; diamond: number };
+    by_provider: { stripe: number; apple: number; google: number };
+  };
 }
 
-interface UserDetails {
-  profile: any;
-  reports: any[];
-  facility_ratings: any[];
-  stop_ratings: any[];
-  poi_feedback: any[];
-  checkins: any[];
+interface Subscription {
+  id: string;
+  user_id: string;
+  provider: string;
+  status: string;
+  plan_tier: string;
+  current_period_end: string | null;
+  cancel_at_period_end: boolean;
+  updated_at: string;
+  profiles: { email: string; full_name: string | null };
 }
+
+interface AuditLog {
+  id: string;
+  action: string;
+  target_type: string;
+  target_id: string | null;
+  details: Record<string, unknown> | null;
+  created_at: string;
+  admin: { email: string; full_name: string | null };
+}
+
+const TIER_COLORS: Record<string, string> = {
+  silver: 'bg-slate-400',
+  gold: 'bg-yellow-500',
+  diamond: 'bg-cyan-500',
+};
+
+const PROVIDER_ICONS: Record<string, React.ReactNode> = {
+  stripe: <CreditCard className="w-4 h-4" />,
+  apple: <Apple className="w-4 h-4" />,
+  google: <Smartphone className="w-4 h-4" />,
+};
+
+const STATUS_VARIANTS: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
+  active: 'default',
+  trialing: 'secondary',
+  past_due: 'destructive',
+  canceled: 'outline',
+  expired: 'outline',
+};
 
 const AdminDashboard: React.FC = () => {
   const navigate = useNavigate();
@@ -46,14 +96,33 @@ const AdminDashboard: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [users, setUsers] = useState<UserSummary[]>([]);
   const [stats, setStats] = useState<PlatformStats | null>(null);
+  const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedUser, setSelectedUser] = useState<string | null>(null);
-  const [userDetails, setUserDetails] = useState<UserDetails | null>(null);
-  const [loadingDetails, setLoadingDetails] = useState(false);
+  const [selectedTab, setSelectedTab] = useState('users');
+  
+  // Subscription filters
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [providerFilter, setProviderFilter] = useState<string>('all');
+  const [tierFilter, setTierFilter] = useState<string>('all');
 
   useEffect(() => {
     checkAdminAndLoadData();
   }, []);
+
+  const fetchAdminData = async (action: string, params?: Record<string, string>) => {
+    const session = await supabase.auth.getSession();
+    const token = session.data.session?.access_token;
+    const baseUrl = import.meta.env.VITE_SUPABASE_URL;
+    
+    const queryParams = new URLSearchParams({ action, ...params });
+    const response = await fetch(`${baseUrl}/functions/v1/admin_data?${queryParams}`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    
+    if (!response.ok) throw new Error('Failed to fetch data');
+    return response.json();
+  };
 
   const checkAdminAndLoadData = async () => {
     try {
@@ -64,7 +133,6 @@ const AdminDashboard: React.FC = () => {
         return;
       }
 
-      // Check if user is admin
       const { data: roleData } = await supabase
         .from('user_roles')
         .select('role')
@@ -90,69 +158,59 @@ const AdminDashboard: React.FC = () => {
 
   const loadData = async () => {
     try {
-      // Load stats and users via edge function
-      const [statsRes, usersRes] = await Promise.all([
-        supabase.functions.invoke('admin_data', { body: {}, method: 'GET' }),
-        supabase.functions.invoke('admin_data', { body: {}, method: 'GET' }),
+      const [statsData, usersData] = await Promise.all([
+        fetchAdminData('stats'),
+        fetchAdminData('summary'),
       ]);
 
-      // Use fetch directly for query params
-      const session = await supabase.auth.getSession();
-      const token = session.data.session?.access_token;
-
-      const baseUrl = import.meta.env.VITE_SUPABASE_URL;
-      
-      const [statsResponse, usersResponse] = await Promise.all([
-        fetch(`${baseUrl}/functions/v1/admin_data?action=stats`, {
-          headers: { Authorization: `Bearer ${token}` }
-        }),
-        fetch(`${baseUrl}/functions/v1/admin_data?action=summary`, {
-          headers: { Authorization: `Bearer ${token}` }
-        }),
-      ]);
-
-      if (statsResponse.ok) {
-        const statsData = await statsResponse.json();
-        setStats(statsData);
-      }
-
-      if (usersResponse.ok) {
-        const usersData = await usersResponse.json();
-        setUsers(usersData.users || []);
-      }
+      setStats(statsData);
+      setUsers(usersData.users || []);
     } catch (error) {
       console.error('Load data error:', error);
-      toast.error('Erro ao carregar dados');
+      toast.error('Error loading data');
     }
   };
 
-  const loadUserDetails = async (userId: string) => {
-    setLoadingDetails(true);
-    setSelectedUser(userId);
+  const loadSubscriptions = async () => {
     try {
-      const session = await supabase.auth.getSession();
-      const token = session.data.session?.access_token;
-      const baseUrl = import.meta.env.VITE_SUPABASE_URL;
-
-      const response = await fetch(`${baseUrl}/functions/v1/admin_data?action=user_details&userId=${userId}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setUserDetails(data);
-      }
+      const params: Record<string, string> = {};
+      if (statusFilter !== 'all') params.status = statusFilter;
+      if (providerFilter !== 'all') params.provider = providerFilter;
+      if (tierFilter !== 'all') params.tier = tierFilter;
+      
+      const data = await fetchAdminData('subscriptions', params);
+      setSubscriptions(data.subscriptions || []);
     } catch (error) {
-      console.error('Load user details error:', error);
-      toast.error('Erro ao carregar detalhes');
-    } finally {
-      setLoadingDetails(false);
+      console.error('Load subscriptions error:', error);
+      toast.error('Error loading subscriptions');
     }
   };
+
+  const loadAuditLogs = async () => {
+    try {
+      const data = await fetchAdminData('audit_log');
+      setAuditLogs(data.logs || []);
+    } catch (error) {
+      console.error('Load audit logs error:', error);
+      toast.error('Error loading audit logs');
+    }
+  };
+
+  useEffect(() => {
+    if (isAdmin && selectedTab === 'subscriptions') {
+      loadSubscriptions();
+    }
+  }, [isAdmin, selectedTab, statusFilter, providerFilter, tierFilter]);
+
+  useEffect(() => {
+    if (isAdmin && selectedTab === 'audit') {
+      loadAuditLogs();
+    }
+  }, [isAdmin, selectedTab]);
 
   const filteredUsers = users.filter(user => 
-    (user.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    user.full_name?.toLowerCase().includes(searchTerm.toLowerCase()))
+    user.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    user.full_name?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   if (loading) {
@@ -167,11 +225,11 @@ const AdminDashboard: React.FC = () => {
     return (
       <div className="min-h-screen bg-background flex flex-col items-center justify-center p-6">
         <Shield className="w-16 h-16 text-destructive mb-4" />
-        <h1 className="text-xl font-bold text-foreground mb-2">Acesso Negado</h1>
+        <h1 className="text-xl font-bold text-foreground mb-2">Access Denied</h1>
         <p className="text-muted-foreground text-center mb-6">
-          Você não tem permissão para acessar esta área.
+          You don't have permission to access this area.
         </p>
-        <Button onClick={() => navigate('/home')}>Voltar ao Início</Button>
+        <Button onClick={() => navigate('/home')}>Back to Home</Button>
       </div>
     );
   }
@@ -186,7 +244,7 @@ const AdminDashboard: React.FC = () => {
           </Button>
           <div className="flex items-center gap-2">
             <Shield className="w-5 h-5 text-primary" />
-            <h1 className="text-lg font-semibold">Dashboard Admin</h1>
+            <h1 className="text-lg font-semibold">Admin Dashboard</h1>
           </div>
           <Button variant="ghost" size="icon" className="ml-auto" onClick={loadData}>
             <RefreshCw className="w-5 h-5" />
@@ -198,45 +256,45 @@ const AdminDashboard: React.FC = () => {
         {/* Stats Cards */}
         {stats && (
           <div className="grid grid-cols-2 gap-3">
-            <Card className="border-border">
+            <Card>
               <CardContent className="p-4">
                 <div className="flex items-center gap-3">
                   <Users className="w-8 h-8 text-primary" />
                   <div>
-                    <p className="text-2xl font-bold text-foreground">{stats.total_users}</p>
-                    <p className="text-xs text-muted-foreground">Usuários</p>
+                    <p className="text-2xl font-bold">{stats.total_users}</p>
+                    <p className="text-xs text-muted-foreground">Users</p>
                   </div>
                 </div>
               </CardContent>
             </Card>
-            <Card className="border-border">
+            <Card>
               <CardContent className="p-4">
                 <div className="flex items-center gap-3">
-                  <FileText className="w-8 h-8 text-info" />
+                  <Crown className="w-8 h-8 text-yellow-500" />
                   <div>
-                    <p className="text-2xl font-bold text-foreground">{stats.total_reports}</p>
+                    <p className="text-2xl font-bold">{stats.subscriptions?.total_active || 0}</p>
+                    <p className="text-xs text-muted-foreground">Active Subs</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3">
+                  <FileText className="w-8 h-8 text-blue-500" />
+                  <div>
+                    <p className="text-2xl font-bold">{stats.total_reports}</p>
                     <p className="text-xs text-muted-foreground">Reports</p>
                   </div>
                 </div>
               </CardContent>
             </Card>
-            <Card className="border-border">
-              <CardContent className="p-4">
-                <div className="flex items-center gap-3">
-                  <Star className="w-8 h-8 text-warning" />
-                  <div>
-                    <p className="text-2xl font-bold text-foreground">{stats.total_ratings}</p>
-                    <p className="text-xs text-muted-foreground">Avaliações</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="border-border">
+            <Card>
               <CardContent className="p-4">
                 <div className="flex items-center gap-3">
                   <Heart className="w-8 h-8 text-destructive" />
                   <div>
-                    <p className="text-2xl font-bold text-foreground">{stats.total_checkins}</p>
+                    <p className="text-2xl font-bold">{stats.total_checkins}</p>
                     <p className="text-xs text-muted-foreground">Check-ins</p>
                   </div>
                 </div>
@@ -245,157 +303,249 @@ const AdminDashboard: React.FC = () => {
           </div>
         )}
 
-        {/* Search */}
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input
-            placeholder="Buscar por nome ou email..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-10"
-          />
-        </div>
+        {/* Subscription Breakdown */}
+        {stats?.subscriptions && (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">Subscription Breakdown</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex gap-4 justify-around">
+                <div className="text-center">
+                  <div className="flex items-center justify-center gap-1 mb-1">
+                    <Shield className="w-4 h-4 text-slate-400" />
+                    <span className="font-semibold">{stats.subscriptions.by_tier.silver}</span>
+                  </div>
+                  <span className="text-xs text-muted-foreground">Silver</span>
+                </div>
+                <div className="text-center">
+                  <div className="flex items-center justify-center gap-1 mb-1">
+                    <Crown className="w-4 h-4 text-yellow-500" />
+                    <span className="font-semibold">{stats.subscriptions.by_tier.gold}</span>
+                  </div>
+                  <span className="text-xs text-muted-foreground">Gold</span>
+                </div>
+                <div className="text-center">
+                  <div className="flex items-center justify-center gap-1 mb-1">
+                    <Gem className="w-4 h-4 text-cyan-500" />
+                    <span className="font-semibold">{stats.subscriptions.by_tier.diamond}</span>
+                  </div>
+                  <span className="text-xs text-muted-foreground">Diamond</span>
+                </div>
+              </div>
+              <div className="flex gap-4 justify-around mt-4 pt-4 border-t">
+                <div className="text-center">
+                  <div className="flex items-center justify-center gap-1 mb-1">
+                    <CreditCard className="w-4 h-4" />
+                    <span className="font-semibold">{stats.subscriptions.by_provider.stripe}</span>
+                  </div>
+                  <span className="text-xs text-muted-foreground">Stripe</span>
+                </div>
+                <div className="text-center">
+                  <div className="flex items-center justify-center gap-1 mb-1">
+                    <Apple className="w-4 h-4" />
+                    <span className="font-semibold">{stats.subscriptions.by_provider.apple}</span>
+                  </div>
+                  <span className="text-xs text-muted-foreground">Apple</span>
+                </div>
+                <div className="text-center">
+                  <div className="flex items-center justify-center gap-1 mb-1">
+                    <Smartphone className="w-4 h-4" />
+                    <span className="font-semibold">{stats.subscriptions.by_provider.google}</span>
+                  </div>
+                  <span className="text-xs text-muted-foreground">Google</span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
-        {/* Users List */}
-        <div className="space-y-3">
-          <h2 className="text-lg font-semibold flex items-center gap-2">
-            <TrendingUp className="w-5 h-5 text-primary" />
-            Usuários ({filteredUsers.length})
-          </h2>
-          
-          {filteredUsers.length === 0 ? (
-            <Card className="border-border">
-              <CardContent className="p-6 text-center">
-                <AlertCircle className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
-                <p className="text-muted-foreground">Nenhum usuário encontrado</p>
-              </CardContent>
-            </Card>
-          ) : (
-            filteredUsers.map((user) => (
-              <Card 
-                key={user.id} 
-                className={`border-border cursor-pointer transition-colors hover:border-primary/50 ${
-                  selectedUser === user.id ? 'border-primary bg-primary/5' : ''
-                }`}
-                onClick={() => loadUserDetails(user.id)}
-              >
-                <CardContent className="p-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium text-foreground truncate">
-                        {user.full_name || 'Sem nome'}
-                      </p>
-                      <p className="text-sm text-muted-foreground truncate">
-                        {user.email || 'Sem email'}
-                      </p>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Desde {format(new Date(user.created_at), "dd/MM/yyyy", { locale: ptBR })}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="text-right">
-                        <Badge variant="secondary" className="mb-1">
-                          {user.total_activity} atividades
-                        </Badge>
-                        <div className="flex gap-1 text-xs text-muted-foreground">
-                          <span title="Reports">📋{user.total_reports}</span>
-                          <span title="Avaliações">⭐{user.total_facility_ratings + user.total_stop_ratings}</span>
-                          <span title="Check-ins">💚{user.total_checkins}</span>
+        {/* Tabs */}
+        <Tabs value={selectedTab} onValueChange={setSelectedTab}>
+          <TabsList className="grid w-full grid-cols-3">
+            <TabsTrigger value="users">Users</TabsTrigger>
+            <TabsTrigger value="subscriptions">Subs</TabsTrigger>
+            <TabsTrigger value="audit">Audit</TabsTrigger>
+          </TabsList>
+
+          {/* Users Tab */}
+          <TabsContent value="users" className="space-y-4">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input
+                placeholder="Search by name or email..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-10"
+              />
+            </div>
+
+            <div className="space-y-3">
+              {filteredUsers.length === 0 ? (
+                <Card>
+                  <CardContent className="p-6 text-center">
+                    <AlertCircle className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
+                    <p className="text-muted-foreground">No users found</p>
+                  </CardContent>
+                </Card>
+              ) : (
+                filteredUsers.slice(0, 50).map((user) => (
+                  <Card key={user.id} className="cursor-pointer hover:border-primary/50">
+                    <CardContent className="p-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium truncate">{user.full_name || 'No name'}</p>
+                          <p className="text-sm text-muted-foreground truncate">{user.email}</p>
+                          {user.subscription && (
+                            <div className="flex items-center gap-2 mt-1">
+                              <Badge className={`${TIER_COLORS[user.subscription.plan_tier]} text-white text-xs`}>
+                                {user.subscription.plan_tier}
+                              </Badge>
+                              {PROVIDER_ICONS[user.subscription.provider]}
+                            </div>
+                          )}
+                        </div>
+                        <div className="text-right">
+                          <Badge variant="secondary" className="mb-1">
+                            {user.total_activity} activity
+                          </Badge>
+                          <div className="flex gap-1 text-xs text-muted-foreground">
+                            <span>📋{user.total_reports}</span>
+                            <span>⭐{user.total_facility_ratings + user.total_stop_ratings}</span>
+                          </div>
                         </div>
                       </div>
-                      <ChevronRight className="w-5 h-5 text-muted-foreground" />
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))
-          )}
-        </div>
-
-        {/* User Details Panel */}
-        {selectedUser && (
-          <div className="space-y-4">
-            <h2 className="text-lg font-semibold">Detalhes do Usuário</h2>
-            
-            {loadingDetails ? (
-              <div className="flex justify-center py-8">
-                <Loader2 className="w-6 h-6 animate-spin text-primary" />
-              </div>
-            ) : userDetails ? (
-              <div className="space-y-4">
-                {/* Reports */}
-                {userDetails.reports.length > 0 && (
-                  <Card className="border-border">
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-sm flex items-center gap-2">
-                        <FileText className="w-4 h-4" />
-                        Reports ({userDetails.reports.length})
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="max-h-48 overflow-y-auto">
-                      {userDetails.reports.slice(0, 10).map((report: any) => (
-                        <div key={report.id} className="py-2 border-b border-border last:border-0 text-sm">
-                          <p className="font-medium">{report.report_type}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {format(new Date(report.created_at), "dd/MM/yyyy HH:mm")}
-                          </p>
-                        </div>
-                      ))}
                     </CardContent>
                   </Card>
-                )}
+                ))
+              )}
+            </div>
+          </TabsContent>
 
-                {/* Facility Ratings */}
-                {userDetails.facility_ratings.length > 0 && (
-                  <Card className="border-border">
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-sm flex items-center gap-2">
-                        <Star className="w-4 h-4" />
-                        Avaliações de Facilities ({userDetails.facility_ratings.length})
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="max-h-48 overflow-y-auto">
-                      {userDetails.facility_ratings.slice(0, 10).map((rating: any) => (
-                        <div key={rating.id} className="py-2 border-b border-border last:border-0 text-sm">
-                          <p className="font-medium">{rating.facility_name}</p>
-                          <p className="text-xs">⭐ {rating.overall_rating}/5</p>
-                          {rating.comment && <p className="text-xs text-muted-foreground mt-1">"{rating.comment}"</p>}
-                        </div>
-                      ))}
-                    </CardContent>
-                  </Card>
-                )}
+          {/* Subscriptions Tab */}
+          <TabsContent value="subscriptions" className="space-y-4">
+            <div className="flex gap-2 flex-wrap">
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger className="w-[130px]">
+                  <SelectValue placeholder="Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Status</SelectItem>
+                  <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="trialing">Trialing</SelectItem>
+                  <SelectItem value="past_due">Past Due</SelectItem>
+                  <SelectItem value="canceled">Canceled</SelectItem>
+                  <SelectItem value="expired">Expired</SelectItem>
+                </SelectContent>
+              </Select>
 
-                {/* Emotional Check-ins */}
-                {userDetails.checkins.length > 0 && (
-                  <Card className="border-border">
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-sm flex items-center gap-2">
-                        <Heart className="w-4 h-4" />
-                        Check-ins Emocionais ({userDetails.checkins.length})
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="max-h-48 overflow-y-auto">
-                      {userDetails.checkins.slice(0, 10).map((checkin: any) => (
-                        <div key={checkin.id} className="py-2 border-b border-border last:border-0 text-sm">
-                          <div className="flex items-center gap-2">
-                            <span>{checkin.checkin_type === 'morning' ? '☀️' : '🌙'}</span>
-                            <span>Energia: {checkin.energy_level}/5</span>
-                            <span>Estresse: {checkin.stress_level}/5</span>
+              <Select value={providerFilter} onValueChange={setProviderFilter}>
+                <SelectTrigger className="w-[130px]">
+                  <SelectValue placeholder="Provider" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Providers</SelectItem>
+                  <SelectItem value="stripe">Stripe</SelectItem>
+                  <SelectItem value="apple">Apple</SelectItem>
+                  <SelectItem value="google">Google</SelectItem>
+                </SelectContent>
+              </Select>
+
+              <Select value={tierFilter} onValueChange={setTierFilter}>
+                <SelectTrigger className="w-[130px]">
+                  <SelectValue placeholder="Tier" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Tiers</SelectItem>
+                  <SelectItem value="silver">Silver</SelectItem>
+                  <SelectItem value="gold">Gold</SelectItem>
+                  <SelectItem value="diamond">Diamond</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-3">
+              {subscriptions.length === 0 ? (
+                <Card>
+                  <CardContent className="p-6 text-center">
+                    <CreditCard className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
+                    <p className="text-muted-foreground">No subscriptions found</p>
+                  </CardContent>
+                </Card>
+              ) : (
+                subscriptions.map((sub) => (
+                  <Card key={sub.id}>
+                    <CardContent className="p-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1">
+                          <p className="font-medium">{sub.profiles?.full_name || 'No name'}</p>
+                          <p className="text-sm text-muted-foreground">{sub.profiles?.email}</p>
+                          <div className="flex items-center gap-2 mt-2">
+                            <Badge className={`${TIER_COLORS[sub.plan_tier]} text-white`}>
+                              {sub.plan_tier}
+                            </Badge>
+                            <Badge variant={STATUS_VARIANTS[sub.status]}>
+                              {sub.status}
+                            </Badge>
+                            {PROVIDER_ICONS[sub.provider]}
                           </div>
-                          <p className="text-xs text-muted-foreground">
-                            {format(new Date(checkin.created_at), "dd/MM/yyyy HH:mm")}
-                          </p>
-                          {checkin.notes && <p className="text-xs text-muted-foreground mt-1">"{checkin.notes}"</p>}
                         </div>
-                      ))}
+                        <div className="text-right text-sm text-muted-foreground">
+                          {sub.current_period_end && (
+                            <p>Ends: {format(new Date(sub.current_period_end), 'MMM d, yyyy')}</p>
+                          )}
+                          {sub.cancel_at_period_end && (
+                            <Badge variant="destructive" className="mt-1">Canceling</Badge>
+                          )}
+                        </div>
+                      </div>
                     </CardContent>
                   </Card>
-                )}
-              </div>
-            ) : null}
-          </div>
-        )}
+                ))
+              )}
+            </div>
+          </TabsContent>
+
+          {/* Audit Log Tab */}
+          <TabsContent value="audit" className="space-y-4">
+            <h2 className="text-lg font-semibold flex items-center gap-2">
+              <History className="w-5 h-5" />
+              Audit Log
+            </h2>
+            
+            <div className="space-y-3">
+              {auditLogs.length === 0 ? (
+                <Card>
+                  <CardContent className="p-6 text-center">
+                    <History className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
+                    <p className="text-muted-foreground">No audit logs found</p>
+                  </CardContent>
+                </Card>
+              ) : (
+                auditLogs.map((log) => (
+                  <Card key={log.id}>
+                    <CardContent className="p-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="font-medium">{log.action}</p>
+                          <p className="text-sm text-muted-foreground">
+                            {log.target_type}{log.target_id ? ` • ${log.target_id.slice(0, 8)}...` : ''}
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            by {log.admin?.email || 'Unknown'}
+                          </p>
+                        </div>
+                        <div className="text-right text-sm text-muted-foreground">
+                          {format(new Date(log.created_at), 'MMM d, HH:mm')}
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))
+              )}
+            </div>
+          </TabsContent>
+        </Tabs>
       </div>
     </div>
   );
