@@ -212,6 +212,16 @@ const HomeScreen = () => {
     console.log(`[POI_SEARCH] Timestamp: ${new Date().toISOString()}`);
 
     try {
+      // Check authentication before making the request
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        console.log('[POI_SEARCH] No active session - user needs to log in');
+        setAuthError(true);
+        setError('Please log in to view nearby places.');
+        setLoading(false);
+        return;
+      }
+
       // Fetch POIs using NextBillion with filter-specific parameters
       const { data: poisData, error: poisError } = await supabase.functions.invoke(
         'nb_browse_pois',
@@ -232,11 +242,19 @@ const HomeScreen = () => {
       if (poisError) {
         console.error(`[POI_SEARCH] API Error after ${elapsed}ms:`, poisError);
         
+        // Try to get error details from response context
+        const errorContext = poisError?.context;
+        const isAuthError = poisError.message?.includes('401') || 
+                           poisError.message?.includes('Unauthorized') ||
+                           poisError.message?.includes('non-2xx') ||
+                           errorContext?.status === 401;
+        
         // Show specific error messages
         if (poisError.message?.includes('429')) {
           setError('Rate limit exceeded. Please wait a moment and try again.');
-        } else if (poisError.message?.includes('401') || poisError.message?.includes('Unauthorized')) {
+        } else if (isAuthError) {
           // Auth error - user needs to log in
+          console.log('[POI_SEARCH] Auth error detected, triggering login prompt');
           setAuthError(true);
           setError('Please log in to view nearby places.');
         } else if (poisError.message?.includes('403')) {
