@@ -54,12 +54,31 @@ serve(async (req) => {
       });
     }
 
+    // Log admin action for audit trail
+    const adminUserId = user.id;
+    async function logAdminAction(action: string, targetType: string, targetId?: string, details?: Record<string, unknown>) {
+      try {
+        await adminClient.from("admin_audit_log").insert({
+          admin_user_id: adminUserId,
+          action,
+          target_type: targetType,
+          target_id: targetId,
+          details,
+          ip_address: req.headers.get("x-forwarded-for") || req.headers.get("cf-connecting-ip"),
+        });
+      } catch (e) {
+        console.error("Failed to log admin action:", e);
+      }
+    }
+
     const url = new URL(req.url);
     const action = url.searchParams.get("action") || "summary";
     const userId = url.searchParams.get("userId");
 
     // Get admin data based on action
     if (action === "summary") {
+      await logAdminAction("view_users", "users");
+      
       // Get all users with activity counts
       const { data: profiles } = await adminClient
         .from("profiles")
@@ -71,6 +90,15 @@ serve(async (req) => {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
+
+      // Get subscriptions for all users
+      const { data: subscriptions } = await adminClient
+        .from("subscriptions")
+        .select("user_id, provider, status, plan_tier, current_period_end");
+
+      const subscriptionMap = new Map(
+        subscriptions?.map(s => [s.user_id, s]) || []
+      );
 
       // Get activity counts for each user
       const usersWithActivity = await Promise.all(
@@ -84,8 +112,11 @@ serve(async (req) => {
             adminClient.from("chat_messages").select("id", { count: "exact", head: true }).eq("user_id", profile.id),
           ]);
 
+          const sub = subscriptionMap.get(profile.id);
+
           return {
             ...profile,
+            subscription: sub || null,
             total_reports: reports.count || 0,
             total_facility_ratings: facilityRatings.count || 0,
             total_stop_ratings: stopRatings.count || 0,
@@ -103,9 +134,12 @@ serve(async (req) => {
     }
 
     if (action === "user_details" && userId) {
+      await logAdminAction("view_user_details", "user", userId);
+      
       // Get detailed activity for specific user
-      const [profile, reports, facilityRatings, stopRatings, poiFeedback, checkins] = await Promise.all([
+      const [profile, subscription, reports, facilityRatings, stopRatings, poiFeedback, checkins] = await Promise.all([
         adminClient.from("profiles").select("*").eq("id", userId).single(),
+        adminClient.from("subscriptions").select("*").eq("user_id", userId).maybeSingle(),
         adminClient.from("road_reports").select("*").eq("user_id", userId).order("created_at", { ascending: false }).limit(50),
         adminClient.from("facility_ratings").select("*").eq("user_id", userId).order("created_at", { ascending: false }).limit(50),
         adminClient.from("stop_ratings").select("*").eq("user_id", userId).order("created_at", { ascending: false }).limit(50),
@@ -115,6 +149,7 @@ serve(async (req) => {
 
       return new Response(JSON.stringify({
         profile: profile.data,
+        subscription: subscription.data,
         reports: reports.data || [],
         facility_ratings: facilityRatings.data || [],
         stop_ratings: stopRatings.data || [],
@@ -127,19 +162,97 @@ serve(async (req) => {
 
     if (action === "stats") {
       // Get overall platform stats
-      const [totalUsers, totalReports, totalRatings, totalCheckins] = await Promise.all([
+      const [totalUsers, totalReports, totalRatings, totalCheckins, subscriptionStats] = await Promise.all([
         adminClient.from("profiles").select("id", { count: "exact", head: true }),
         adminClient.from("road_reports").select("id", { count: "exact", head: true }),
         adminClient.from("facility_ratings").select("id", { count: "exact", head: true }),
         adminClient.from("emotional_checkins").select("id", { count: "exact", head: true }),
+        adminClient.from("subscriptions").select("status, plan_tier, provider"),
       ]);
+
+      // Calculate subscription metrics
+      const subs = subscriptionStats.data || [];
+      const activeSubs = subs.filter(s => s.status === 'active' || s.status === 'trialing');
+      
+      const byTier = {
+        silver: activeSubs.filter(s => s.plan_tier === 'silver').length,
+        gold: activeSubs.filter(s => s.plan_tier === 'gold').length,
+        diamond: activeSubs.filter(s => s.plan_tier === 'diamond').length,
+      };
+      
+      const byProvider = {
+        stripe: activeSubs.filter(s => s.provider === 'stripe').length,
+        apple: activeSubs.filter(s => s.provider === 'apple').length,
+        google: activeSubs.filter(s => s.provider === 'google').length,
+      };
 
       return new Response(JSON.stringify({
         total_users: totalUsers.count || 0,
         total_reports: totalReports.count || 0,
         total_ratings: totalRatings.count || 0,
         total_checkins: totalCheckins.count || 0,
+        subscriptions: {
+          total_active: activeSubs.length,
+          by_tier: byTier,
+          by_provider: byProvider,
+        },
       }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (action === "subscriptions") {
+      const status = url.searchParams.get("status");
+      const provider = url.searchParams.get("provider");
+      const tier = url.searchParams.get("tier");
+      
+      await logAdminAction("view_subscriptions", "subscriptions", undefined, { status, provider, tier });
+      
+      let query = adminClient.from("subscriptions").select(`
+        *,
+        profiles!inner(email, full_name)
+      `);
+      
+      if (status) query = query.eq("status", status);
+      if (provider) query = query.eq("provider", provider);
+      if (tier) query = query.eq("plan_tier", tier);
+      
+      const { data, error } = await query.order("updated_at", { ascending: false });
+      
+      if (error) throw error;
+
+      return new Response(JSON.stringify({ subscriptions: data || [] }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (action === "audit_log") {
+      const { data } = await adminClient
+        .from("admin_audit_log")
+        .select(`
+          *,
+          admin:profiles!admin_user_id(email, full_name)
+        `)
+        .order("created_at", { ascending: false })
+        .limit(100);
+
+      return new Response(JSON.stringify({ logs: data || [] }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (action === "documents") {
+      await logAdminAction("view_documents", "documents");
+      
+      const { data } = await adminClient
+        .from("driver_documents")
+        .select(`
+          *,
+          profiles!user_id(email, full_name)
+        `)
+        .order("created_at", { ascending: false });
+
+      return new Response(JSON.stringify({ documents: data || [] }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }

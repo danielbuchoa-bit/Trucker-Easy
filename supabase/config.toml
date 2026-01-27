@@ -71,3 +71,9 @@ verify_jwt = false
 
 [functions.nb_reverse_geocode]
 verify_jwt = false
+
+[functions.stripe_webhook]
+verify_jwt = false
+
+[functions.revenuecat_webhook]
+verify_jwt = false
