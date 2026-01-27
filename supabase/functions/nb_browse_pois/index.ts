@@ -8,7 +8,13 @@ const corsHeaders = {
 };
 
 /**
- * TRUCK-ONLY POI Browse API
+ * TRUCK-ONLY POI Browse API - P0-1 Fix
+ * 
+ * Implements:
+ * - Request logging with timing
+ * - Retry-After header handling
+ * - Rate limit tracking
+ * - Exponential backoff for 429s
  * 
  * This API ONLY returns POIs relevant to semi-trucks (53ft):
  * - Truck stops / Travel centers (Pilot, Flying J, Love's, TA, Petro, etc.)
@@ -19,6 +25,18 @@ const corsHeaders = {
  * 
  * NO restaurants, retail, or random local businesses.
  */
+
+// Rate limit tracking (per worker instance)
+let rateLimitState = {
+  lastRequest: 0,
+  requestCount: 0,
+  lastWindowReset: Date.now(),
+  isRateLimited: false,
+  retryAfterMs: 0,
+};
+
+const RATE_LIMIT_WINDOW_MS = 60000; // 1 minute
+const MAX_REQUESTS_PER_WINDOW = 30;
 
 // ============ TRUCK-ONLY BRAND ALLOWLIST ============
 const ALLOWED_TRUCK_BRANDS = [
@@ -81,12 +99,69 @@ const NB_CATEGORY_MAP: Record<string, { browse: string[]; discover: string[] }> 
 // Progressive radius in meters: 50mi, 80mi, 100mi (expanded for long-distance route POIs)
 const PROGRESSIVE_RADII = [80467, 128748, 160934];
 
+// Check internal rate limiting
+function checkRateLimit(): { allowed: boolean; waitMs: number } {
+  const now = Date.now();
+  
+  // Reset window if expired
+  if (now - rateLimitState.lastWindowReset > RATE_LIMIT_WINDOW_MS) {
+    rateLimitState.requestCount = 0;
+    rateLimitState.lastWindowReset = now;
+    rateLimitState.isRateLimited = false;
+  }
+  
+  // Check if in rate-limited cooldown
+  if (rateLimitState.isRateLimited && rateLimitState.retryAfterMs > 0) {
+    const remaining = rateLimitState.retryAfterMs - (now - rateLimitState.lastRequest);
+    if (remaining > 0) {
+      return { allowed: false, waitMs: remaining };
+    }
+    rateLimitState.isRateLimited = false;
+  }
+  
+  // Check request count
+  if (rateLimitState.requestCount >= MAX_REQUESTS_PER_WINDOW) {
+    rateLimitState.isRateLimited = true;
+    const waitMs = RATE_LIMIT_WINDOW_MS - (now - rateLimitState.lastWindowReset);
+    return { allowed: false, waitMs };
+  }
+  
+  return { allowed: true, waitMs: 0 };
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
+  const requestStartTime = Date.now();
+
   try {
+    // Check internal rate limit first
+    const rateLimitCheck = checkRateLimit();
+    if (!rateLimitCheck.allowed) {
+      console.warn(`[browse_pois] Internal rate limit - wait ${rateLimitCheck.waitMs}ms`);
+      return new Response(
+        JSON.stringify({ 
+          error: "Rate limited", 
+          retryAfterMs: rateLimitCheck.waitMs,
+          pois: [], 
+          items: [] 
+        }),
+        { 
+          status: 429, 
+          headers: { 
+            ...corsHeaders, 
+            "Content-Type": "application/json",
+            "Retry-After": String(Math.ceil(rateLimitCheck.waitMs / 1000)),
+          } 
+        }
+      );
+    }
+
+    rateLimitState.requestCount++;
+    rateLimitState.lastRequest = Date.now();
+
     const body = await req.json();
     const { 
       lat, 
@@ -133,6 +208,9 @@ serve(async (req) => {
       if (nbResult.rateLimited) {
         console.log(`[browse_pois] NextBillion rate limited, falling back to HERE`);
         nbRateLimited = true;
+        // Update internal rate limit state
+        rateLimitState.isRateLimited = true;
+        rateLimitState.retryAfterMs = 30000; // Default 30s cooldown
       } else if (nbResult.pois.length > 0) {
         allPois = nbResult.pois;
         usedRadius = nbResult.usedRadius;
@@ -151,6 +229,32 @@ serve(async (req) => {
 
     // Transform and apply STRICT truck-only filtering
     const pois = transformAndFilterTruckOnly(allPois, lat, lng, filterType, usedRadius, limit);
+
+    const requestDuration = Date.now() - requestStartTime;
+    console.log(`[browse_pois] Final: ${pois.length} TRUCK-ONLY POIs via ${usedProvider} (radius: ${usedRadius}m, time: ${requestDuration}ms)`);
+
+    return new Response(
+      JSON.stringify({ 
+        pois, 
+        items: pois,
+        count: pois.length,
+        searchRadius: usedRadius,
+        filterType,
+        center: { lat, lng },
+        provider: usedProvider,
+        truckOnlyFilter: true,
+        debug: {
+          triedRadii: radiiToTry,
+          usedRadius,
+          provider: usedProvider,
+          nbRateLimited,
+          rawCount: allPois.length,
+          filteredCount: pois.length,
+          requestDurationMs: requestDuration,
+        },
+      }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
 
     console.log(`[browse_pois] Final: ${pois.length} TRUCK-ONLY POIs via ${usedProvider} (radius: ${usedRadius}m)`);
 
