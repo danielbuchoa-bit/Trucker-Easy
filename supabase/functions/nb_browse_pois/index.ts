@@ -1,5 +1,6 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -8,11 +9,15 @@ const corsHeaders = {
 };
 
 /**
- * TRUCK-ONLY POI Browse API - P0-1 Fix v2
+ * TRUCK-ONLY POI Browse API - P0-1 Fix v3 (AUTH HARDENED)
+ * 
+ * SECURITY: This endpoint REQUIRES authenticated user session.
+ * Anonymous/anon-key access is BLOCKED.
  * 
  * Implements:
+ * - JWT authentication via supabase.auth.getClaims()
  * - Server-side caching (45 min TTL)
- * - Per-user rate limiting (extracted from auth header)
+ * - Per-user rate limiting (via verified user ID from JWT)
  * - Request logging with timing
  * - Retry-After header handling
  * - Proper 429 detection and backoff
@@ -211,19 +216,39 @@ function setCache(key: string, data: any, geohash: string): void {
 }
 
 // Extract user ID from auth header for per-user rate limiting
-function extractUserId(req: Request): string {
-  const authHeader = req.headers.get('authorization') || '';
-  if (authHeader.startsWith('Bearer ')) {
-    // Use hash of token for user ID (privacy-safe)
-    const token = authHeader.substring(7);
-    let hash = 0;
-    for (let i = 0; i < Math.min(token.length, 50); i++) {
-      hash = ((hash << 5) - hash) + token.charCodeAt(i);
-      hash |= 0;
-    }
-    return `user_${Math.abs(hash)}`;
+/**
+ * Verify JWT and extract user ID - AUTHENTICATION REQUIRED
+ * Returns null if authentication fails
+ */
+async function verifyAuthAndGetUserId(req: Request): Promise<{ userId: string | null; error: string | null }> {
+  const authHeader = req.headers.get('Authorization') || req.headers.get('authorization');
+  
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return { userId: null, error: 'Missing or invalid Authorization header' };
   }
-  return 'anonymous';
+  
+  // Verify token using Supabase client
+  try {
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
+    
+    const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+      global: { headers: { Authorization: authHeader } }
+    });
+    
+    // Use getUser to verify the JWT server-side
+    const { data: { user }, error } = await supabase.auth.getUser();
+    
+    if (error || !user) {
+      console.warn('[browse_pois] JWT verification failed:', error?.message);
+      return { userId: null, error: 'Invalid or expired token' };
+    }
+    
+    return { userId: user.id, error: null };
+  } catch (err: any) {
+    console.error('[browse_pois] Auth verification error:', err.message);
+    return { userId: null, error: 'Authentication verification failed' };
+  }
 }
 
 // Check per-user rate limit
@@ -296,13 +321,38 @@ serve(async (req) => {
   }
 
   const requestStartTime = Date.now();
-  const userId = extractUserId(req);
+
+  // ============ AUTHENTICATION REQUIRED ============
+  // Verify JWT and get user ID - NO ANONYMOUS ACCESS ALLOWED
+  const authResult = await verifyAuthAndGetUserId(req);
+  
+  if (!authResult.userId) {
+    console.warn(`[browse_pois] Unauthorized request: ${authResult.error}`);
+    return new Response(
+      JSON.stringify({ 
+        error: 'Unauthorized', 
+        message: authResult.error || 'Authentication required. Please log in.',
+        pois: [], 
+        items: [] 
+      }),
+      { 
+        status: 401, 
+        headers: { 
+          ...corsHeaders, 
+          "Content-Type": "application/json",
+        } 
+      }
+    );
+  }
+
+  const userId = authResult.userId;
+  console.log(`[browse_pois] Authenticated user: ${userId.substring(0, 8)}...`);
 
   try {
-    // Check per-user rate limit first
+    // Check per-user rate limit (using verified user ID)
     const userRateCheck = checkUserRateLimit(userId);
     if (!userRateCheck.allowed) {
-      console.warn(`[browse_pois] User rate limit (${userId}) - wait ${userRateCheck.waitMs}ms`);
+      console.warn(`[browse_pois] User rate limit (${userId.substring(0, 8)}...) - wait ${userRateCheck.waitMs}ms`);
       return new Response(
         JSON.stringify({ 
           error: "Rate limited", 
@@ -322,7 +372,7 @@ serve(async (req) => {
     }
 
     const body = await req.json();
-    const { 
+    const {
       lat, 
       lng, 
       radius = 32000,
