@@ -30,7 +30,7 @@ export interface UsePoiSearchOptions {
 const DEFAULT_OPTIONS: UsePoiSearchOptions = {
   debounceMs: 1000,
   maxRetries: 3,
-  defaultRadiusM: 48280, // 30 miles
+  defaultRadiusM: 40234, // 25 miles (capped for NearMe)
 };
 
 export function usePoiSearch(options: UsePoiSearchOptions = {}) {
@@ -78,45 +78,72 @@ export function usePoiSearch(options: UsePoiSearchOptions = {}) {
     const startTime = Date.now();
     
     try {
-      const { data, error: apiError } = await supabase.functions.invoke('nb_browse_pois', {
-        body: {
-          lat,
-          lng,
-          radiusMeters: radiusM,
-          filterType,
-          progressiveRadius: true,
-          limit: 30,
-        },
-      });
+      // Call edge function and capture full response for status code
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/nb_browse_pois`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+            'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+          },
+          body: JSON.stringify({
+            lat,
+            lng,
+            radiusMeters: radiusM,
+            filterType,
+            progressiveRadius: true,
+            limit: 30,
+          }),
+        }
+      );
 
       const latencyMs = Date.now() - startTime;
+      const statusCode = response.status;
+      
+      // Capture Retry-After header if present
+      const retryAfterHeader = response.headers.get('Retry-After');
+      const retryAfterSeconds = retryAfterHeader ? parseInt(retryAfterHeader, 10) : undefined;
 
-      // Log the request
+      let data = null;
+      let parseError = null;
+      
+      try {
+        data = await response.json();
+      } catch (e) {
+        parseError = e;
+      }
+
+      // Log the request with actual HTTP status code
       apiDiagnostics.logRequest({
         endpoint: 'nb_browse_pois',
         timestamp: Date.now(),
         latencyMs,
-        statusCode: apiError ? 500 : 200,
+        statusCode,
         payloadSize: JSON.stringify({ lat, lng, radiusMeters: radiusM, filterType }).length,
-        responseSize: JSON.stringify(data || {}).length,
-        success: !apiError,
-        error: apiError?.message,
+        responseSize: data ? JSON.stringify(data).length : 0,
+        success: statusCode >= 200 && statusCode < 300,
+        error: !response.ok ? `HTTP ${statusCode}` : undefined,
         provider: data?.provider || 'unknown',
         cached: false,
+        retryAfter: retryAfterSeconds,
       });
 
-      if (apiError) {
-        // Check if rate limited
-        if (apiError.message?.includes('429')) {
-          // Retry with backoff
-          if (attempt < config.maxRetries!) {
-            const backoffMs = apiDiagnostics.getBackoffDelay(attempt);
-            console.log(`[usePoiSearch] 429 error, retrying in ${backoffMs}ms (attempt ${attempt + 1}/${config.maxRetries})`);
-            await new Promise(resolve => setTimeout(resolve, backoffMs));
-            return executeSearch(lat, lng, filterType, radiusM, attempt + 1);
-          }
+      // Handle rate limiting with proper Retry-After
+      if (statusCode === 429) {
+        const waitMs = retryAfterSeconds ? retryAfterSeconds * 1000 : apiDiagnostics.getBackoffDelay(attempt);
+        console.log(`[usePoiSearch] 429 rate limited, Retry-After: ${retryAfterSeconds}s, waiting ${waitMs}ms (attempt ${attempt + 1}/${config.maxRetries})`);
+        
+        if (attempt < config.maxRetries!) {
+          await new Promise(resolve => setTimeout(resolve, waitMs));
+          return executeSearch(lat, lng, filterType, radiusM, attempt + 1);
         }
-        throw apiError;
+        throw new Error(`Rate limited after ${config.maxRetries} retries`);
+      }
+
+      if (!response.ok || parseError) {
+        throw new Error(data?.error || `HTTP ${statusCode}`);
       }
 
       const searchResult: PoiSearchResult = {

@@ -81,12 +81,34 @@ class PoiCacheService {
 
   /**
    * Generate cache key from location and filter type
+   * Includes: geohash, filterType, radius, limit, onRoute flag, provider
+   */
+  generateCacheKey(
+    lat: number, 
+    lng: number, 
+    filterType: string, 
+    radiusM: number,
+    options: { 
+      onRoute?: boolean;
+      limit?: number;
+      provider?: string;
+    } = {}
+  ): string {
+    const geohash = this.encodeGeohash(lat, lng);
+    // Round radius to nearest 5km for better cache hits
+    const roundedRadius = Math.round(radiusM / 5000) * 5000;
+    const onRouteFlag = options.onRoute ? 'R' : 'N';
+    const limitBucket = Math.min(options.limit || 30, 50);
+    const providerKey = (options.provider || 'any').substring(0, 2);
+    
+    return `poi_${geohash}_${filterType}_${roundedRadius}_${onRouteFlag}_${limitBucket}_${providerKey}`;
+  }
+
+  /**
+   * Legacy cache key method for backwards compatibility
    */
   private getCacheKey(lat: number, lng: number, filterType: string, radiusM: number): string {
-    const geohash = this.encodeGeohash(lat, lng);
-    // Round radius to nearest 10km for better cache hits
-    const roundedRadius = Math.round(radiusM / 10000) * 10000;
-    return `poi_${geohash}_${filterType}_${roundedRadius}`;
+    return this.generateCacheKey(lat, lng, filterType, radiusM);
   }
 
   /**
