@@ -60,12 +60,14 @@ export function usePoiSearch(options: UsePoiSearchOptions = {}) {
 
   /**
    * Get authenticated session token for API calls
+   * Returns null if user is not authenticated - NO ANONYMOUS FALLBACK ALLOWED
    */
-  const getAuthToken = useCallback(async (): Promise<string> => {
+  const getAuthToken = useCallback(async (): Promise<string | null> => {
     try {
       const { data: { session }, error } = await supabase.auth.getSession();
       if (error) {
         console.warn('[usePoiSearch] Failed to get session:', error.message);
+        return null;
       }
       if (session?.access_token) {
         return session.access_token;
@@ -73,12 +75,14 @@ export function usePoiSearch(options: UsePoiSearchOptions = {}) {
     } catch (err) {
       console.warn('[usePoiSearch] Error getting auth session:', err);
     }
-    // Fallback to anon key if no session (unauthenticated user)
-    return import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+    // NO FALLBACK - return null if not authenticated
+    console.warn('[usePoiSearch] No authenticated session - POI search blocked');
+    return null;
   }, []);
 
   /**
    * Execute the actual API call with retries
+   * REQUIRES AUTHENTICATED SESSION - NO ANONYMOUS ACCESS
    */
   const executeSearch = useCallback(async (
     lat: number,
@@ -96,11 +100,17 @@ export function usePoiSearch(options: UsePoiSearchOptions = {}) {
 
     const startTime = Date.now();
     
-    // Get the real session token for authorization
+    // Get the real session token for authorization - NO FALLBACK
     const accessToken = await getAuthToken();
     
+    // BLOCK REQUEST IF NOT AUTHENTICATED
+    if (!accessToken) {
+      console.error('[usePoiSearch] Authentication required - blocking POI request');
+      throw new Error('Authentication required. Please log in to search for POIs.');
+    }
+    
     try {
-      // Call edge function and capture full response for status code
+      // Call edge function with authenticated session token
       const response = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/nb_browse_pois`,
         {
