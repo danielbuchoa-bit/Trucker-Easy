@@ -70,6 +70,35 @@ const MAX_REQUESTS_PER_WINDOW = 30;
 
 // ============ STRICT SEMI-TRUCK FILTERING SYSTEM ============
 // ABSOLUTE RULE: Only display locations compatible with SEMI TRUCKS (53ft)
+// Updated with enhanced "truckiness" scoring system
+
+// HARD EXCLUSION KEYWORDS (instant discard if any match)
+const HARD_EXCLUDE_KEYWORDS = [
+  'ev charging', 'tesla supercharger', 'charging station', 'electric vehicle',
+  'motorcycle', 'bike', 'bicycle', 'scooter',
+  'car wash', 'auto spa', 'express wash',
+  'valet', 'valet parking',
+  'airport parking', 'airport shuttle',
+  'mall', 'shopping center', 'shopping mall', 'outlet',
+  'convenience store', 'c-store', 'mini mart',
+  'atm', 'bank', 'credit union',
+  'pet store', 'pet supplies', 'petco', 'petsmart', 'veterinary', 'animal hospital',
+  'daycare', 'child care', 'preschool', 'elementary school', 'high school',
+  'church', 'temple', 'mosque', 'synagogue',
+  'apartment', 'condo', 'real estate', 'residential',
+  'medical center', 'hospital', 'clinic', 'urgent care', 'dentist',
+  'pharmacy', 'walgreens', 'cvs', 'rite aid',
+  'gym', 'fitness', 'yoga', 'crossfit',
+  'salon', 'spa', 'nail', 'barber',
+];
+
+// TRUCK-SPECIFIC KEYWORDS (boost score significantly)
+const TRUCK_KEYWORDS = [
+  'truck', 'trucker', 'travel center', 'truck stop', 'truck parking',
+  'diesel', 'def', 'showers', 'weigh station', 'cat scale', 'scale',
+  '18 wheeler', 'semi', 'big rig', 'tractor trailer',
+  'commercial vehicle', 'cdl', 'dot inspection',
+];
 
 // WHITELIST OF ALLOWED CATEGORIES (ONLY THESE ARE PERMITTED)
 const ALLOWED_TRUCK_CATEGORIES = new Set([
@@ -89,28 +118,31 @@ const ALLOWED_TRUCK_CATEGORIES = new Set([
 const FORBIDDEN_CATEGORIES = new Set([
   'pet_store', 'pet store', 'petstore', 'petco', 'petsmart', 'pet supplies',
   'animal services', 'animal store', 'animal shop', 'veterinary',
-  'office', 'business office',
-  'retail', 'store', 'shop', 'shopping',
+  'office', 'business office', 'coworking',
+  'retail', 'store', 'shop', 'shopping', 'boutique',
   'car_gas', 'car gas', 'car fuel',
-  'auto_service', 'auto service', 'car service', 'car repair',
-  'restaurant_only', 'restaurant', 'fast food', 'cafe', 'coffee',
+  'auto_service', 'auto service', 'car service', 'car repair', 'tire shop',
+  'restaurant_only', 'restaurant', 'fast food', 'cafe', 'coffee', 'bakery',
   'daycare', 'child care', 'preschool', 'school', 'church', 'welfare',
-  'hotel', 'motel', 'lodging', 'inn',
+  'hotel', 'motel', 'lodging', 'inn', 'airbnb',
   'supermarket', 'grocery', 'bank', 'atm',
-  'hospital', 'medical', 'pharmacy', 'clinic',
-  'apartment', 'residential', 'real estate',
+  'hospital', 'medical', 'pharmacy', 'clinic', 'urgent care',
+  'apartment', 'residential', 'real estate', 'housing',
   'electronics', 'clothing', 'furniture', 'home improvement',
+  'gym', 'fitness', 'spa', 'salon', 'beauty',
 ]);
 
 // EXPLICIT BLOCKLIST BY NAME (checked before any brand matching)
 const BLOCKED_POI_NAMES = [
   'petco', 'petsmart', 'pet supplies plus', 'pet supermarket',
-  'starbucks', 'dunkin', 'mcdonald', 'burger king', 'wendy', 'taco bell',
-  'walmart', 'target', 'costco', 'sam\'s club', 'home depot', 'lowe\'s',
+  'starbucks', 'dunkin', 'mcdonald', 'burger king', 'wendy', 'taco bell', 'subway',
+  'walmart', 'target', 'costco', 'sam\'s club', 'home depot', 'lowe\'s', 'menards',
   'walgreens', 'cvs pharmacy', 'rite aid',
+  'planet fitness', 'la fitness', 'anytime fitness',
+  'great clips', 'supercuts', 'sports clips',
 ];
 
-// TRUCK STOP BRANDS (BRAND FALLBACK - Accept if name matches)
+// TRUCK STOP BRANDS (BRAND FALLBACK - Accept if name matches) with truckiness boost
 const TRUCK_BRANDS = [
   'pilot', 'flying j', 'flyingj', 'pilot flying j',
   "love's", 'loves', "love's travel", 'loves travel',
@@ -146,15 +178,17 @@ const BLOCKED_GAS_STATION_BRANDS = [
   'circle k', '7-eleven', '7 eleven', 'pac pride', 'ampm', 'am pm',
   'wawa', 'sheetz', 'speedway', 'racetrac', 'raceway', 'kwik trip', 'quiktrip', 'qt ',
   'casey', 'kum & go', 'kum and go', 'maverick', 'thorntons', 'mapco', 'stripes',
+  'getgo', 'giant eagle', 'hy-vee', 'meijer', 'kroger', 'publix',
 ];
 
 // Truck service brands (allowed)
 const TRUCK_REPAIR_BRANDS = [
   'speedco', "love's truck care", 'loves truck care', 'ta truck service',
   'freightliner', 'peterbilt', 'kenworth', 'volvo trucks', 'mack trucks',
+  'international trucks', 'navistar', 'cummins', 'detroit diesel',
 ];
 
-const TRUCK_WASH_BRANDS = ['blue beacon', 'bluebeacon', 'transtar'];
+const TRUCK_WASH_BRANDS = ['blue beacon', 'bluebeacon', 'transtar', 'truck wash'];
 
 // HERE category IDs - TRUCK FOCUSED ONLY
 const HERE_CATEGORY_MAP: Record<string, string[]> = {
@@ -849,20 +883,77 @@ function transformAndFilterTruckOnly(
 }
 
 /**
- * STRICT SEMI-TRUCK FILTERING FUNCTION
+ * STRICT SEMI-TRUCK FILTERING FUNCTION WITH TRUCKINESS SCORING
  * 
- * Implements the user's specification:
- * 1. Category must be in WHITELIST (truck_stop, travel_center, etc.)
- * 2. Category must NOT be in BLACKLIST (pet_store, retail, etc.)
- * 3. Must meet at least 2 of: dieselAvailable, truckParkingSpaces > 0, truckAccessible
- * 4. Brand fallback: Accept if name matches known truck stop brands
+ * Implements enhanced scoring system:
+ * 1. HARD EXCLUSION: Instant discard if any hard exclude keyword matches
+ * 2. BLOCKED POI NAMES: Check explicit name blocklist
+ * 3. FORBIDDEN CATEGORIES: Check category blacklist
+ * 4. TRUCKINESS SCORE: Calculate score based on truck keywords and brand matches
+ * 5. CATEGORY + ATTRIBUTES: Combined check for allowed categories and truck attributes
+ * 6. FINAL DECISION: Score >= 6 = allow, Category match + score >= 4 = allow
  */
+
+function normalizeText(s: string): string {
+  return (s || "").toLowerCase().normalize("NFD").replace(/\p{Diacritic}/gu, "");
+}
+
+function containsAnyKeyword(text: string, keywords: string[]): boolean {
+  const normalized = normalizeText(text);
+  return keywords.some(k => normalized.includes(normalizeText(k)));
+}
+
+function scoreTruckiness(title: string, fullText: string, rawItem: any): number {
+  const hay = normalizeText(fullText);
+  let score = 0;
+  
+  // Truck keywords add points
+  for (const k of TRUCK_KEYWORDS) {
+    if (hay.includes(normalizeText(k))) score += 2;
+  }
+  
+  // Major truck stop brands add significant points
+  if (hay.includes("love's") || hay.includes("loves")) score += 3;
+  if (hay.includes("pilot")) score += 3;
+  if (hay.includes("flying j")) score += 3;
+  if (hay.includes("petro") && !hay.includes("petco")) score += 3;
+  if (hay.includes("sapp bros")) score += 3;
+  if (hay.includes("buc-ee") || hay.includes("bucees")) score += 3;
+  if (hay.includes("iowa 80")) score += 3;
+  if (hay.includes("kenly 95")) score += 3;
+  
+  // TA needs truck context
+  if (/\bta\b/i.test(title) && containsAnyKeyword(fullText, ['truck', 'travel', 'center', 'diesel', 'petro'])) {
+    score += 3;
+  }
+  
+  // Strong truck indicators
+  if (hay.includes("diesel")) score += 3;
+  if (hay.includes("def")) score += 3;
+  if (hay.includes("truck parking")) score += 4;
+  if (hay.includes("showers")) score += 2;
+  if (hay.includes("cat scale") || /\bscale\b/.test(hay)) score += 2;
+  if (hay.includes("weigh station")) score += 4;
+  if (hay.includes("trucker")) score += 2;
+  if (hay.includes("big rig")) score += 3;
+  if (hay.includes("18 wheeler")) score += 3;
+  
+  // API-provided attributes
+  if (rawItem.dieselAvailable === true) score += 3;
+  if ((rawItem.truckParkingSpaces ?? 0) > 0) score += 3;
+  if (rawItem.truckAccessible === true) score += 3;
+  if (rawItem.showersAvailable === true) score += 2;
+  if (rawItem.scalesAvailable === true) score += 2;
+  
+  return score;
+}
+
 function checkTruckAllowed(
   title: string, 
   category: string, 
   searchTerm: string, 
   rawItem: any
-): { allowed: boolean; reason: string; confidence: 'verified' | 'unverified' } {
+): { allowed: boolean; reason: string; confidence: 'verified' | 'unverified'; score: number } {
   const fullText = `${title} ${category} ${searchTerm}`.toLowerCase();
   const lowerTitle = title.toLowerCase();
   const lowerCategory = category.toLowerCase();
@@ -873,94 +964,100 @@ function checkTruckAllowed(
     return regex.test(` ${text} `);
   }
 
-  // Helper: Check if POI is a known truck brand (using word boundaries for short brands)
+  // Helper: Check if POI is a known truck brand
   function isTruckBrand(name: string): boolean {
     if (!name) return false;
     const n = name.toLowerCase();
     
-    // Check each brand with appropriate matching
     for (const brand of TRUCK_BRANDS) {
-      // For "petro" - must be standalone or part of "petro stopping", not "petco"
       if (brand === 'petro') {
-        // Match "petro" but NOT if it's actually "petco"
         if (n.includes('petco')) continue;
-        if (hasWordToken(n, 'petro') || n.includes('petro stopping')) {
-          return true;
-        }
+        if (hasWordToken(n, 'petro') || n.includes('petro stopping')) return true;
         continue;
       }
       
-      // For short brands like "ta", use word boundaries
       if (brand === 'ta') {
         if (hasWordToken(n, 'ta') && !n.includes('peta') && !n.includes('beta') && !n.includes('data')) {
-          // Need additional context for TA
           const truckContext = ['truck', 'travel', 'center', 'diesel', 'petro', 'express'];
-          if (truckContext.some(ctx => n.includes(ctx))) {
-            return true;
-          }
+          if (truckContext.some(ctx => n.includes(ctx))) return true;
         }
         continue;
       }
       
-      // For longer brands, simple includes is fine
-      if (n.includes(brand)) {
-        return true;
-      }
+      if (n.includes(brand)) return true;
     }
     return false;
   }
 
-  // ============ STEP 0: EXPLICIT NAME BLOCKLIST (HARD BLOCK FIRST) ============
-  // Check against explicitly blocked POI names BEFORE any other logic
+  // ============ STEP 0: HARD EXCLUSION CHECK (INSTANT DISCARD) ============
+  if (containsAnyKeyword(fullText, HARD_EXCLUDE_KEYWORDS)) {
+    // Exception: Allow if it's clearly a truck stop brand
+    if (!isTruckBrand(lowerTitle)) {
+      const matchedKeyword = HARD_EXCLUDE_KEYWORDS.find(k => 
+        normalizeText(fullText).includes(normalizeText(k))
+      );
+      return { allowed: false, reason: `Hard excluded: ${matchedKeyword}`, confidence: 'verified', score: 0 };
+    }
+  }
+
+  // ============ STEP 1: EXPLICIT NAME BLOCKLIST ============
   for (const blockedName of BLOCKED_POI_NAMES) {
     if (lowerTitle.includes(blockedName)) {
-      return { allowed: false, reason: `Blocked POI name: ${blockedName}`, confidence: 'verified' };
+      return { allowed: false, reason: `Blocked POI name: ${blockedName}`, confidence: 'verified', score: 0 };
     }
   }
 
-  // ============ STEP 1: BLACKLIST CATEGORY CHECK (HARD BLOCK) ============
-  // If ANY forbidden category matches, DISCARD immediately
+  // ============ STEP 2: BLACKLIST CATEGORY CHECK ============
   for (const forbidden of FORBIDDEN_CATEGORIES) {
     if (lowerCategory.includes(forbidden) || fullText.includes(forbidden)) {
-      // Exception: Allow if it's clearly a truck stop brand
-      if (isTruckBrand(lowerTitle)) {
-        continue; // Skip this block, truck brand takes precedence
-      }
-      return { allowed: false, reason: `Blocked category: ${forbidden}`, confidence: 'verified' };
+      if (isTruckBrand(lowerTitle)) continue;
+      return { allowed: false, reason: `Blocked category: ${forbidden}`, confidence: 'verified', score: 0 };
     }
   }
 
-  // ============ STEP 1: BLOCKED GAS STATION BRANDS ============
+  // ============ STEP 3: BLOCKED GAS STATION BRANDS ============
   for (const blocked of BLOCKED_GAS_STATION_BRANDS) {
     if (blocked.length <= 3) {
       if (hasWordToken(lowerTitle, blocked)) {
-        return { allowed: false, reason: `Blocked gas station: ${blocked}`, confidence: 'verified' };
+        return { allowed: false, reason: `Blocked gas station: ${blocked}`, confidence: 'verified', score: 0 };
       }
     } else {
       if (lowerTitle.includes(blocked)) {
-        return { allowed: false, reason: `Blocked gas station: ${blocked}`, confidence: 'verified' };
+        return { allowed: false, reason: `Blocked gas station: ${blocked}`, confidence: 'verified', score: 0 };
       }
     }
   }
 
-  // ============ STEP 2: TRUCK ATTRIBUTES SCORING ============
-  // POI must meet at least 2 of: dieselAvailable, truckParkingSpaces > 0, truckAccessible
-  const dieselAvailable = rawItem.dieselAvailable === true || 
-                          fullText.includes('diesel') || 
-                          fullText.includes('truck fuel');
-  const truckParkingSpaces = (rawItem.truckParkingSpaces ?? 0) > 0 || 
-                              fullText.includes('truck parking') || 
-                              fullText.includes('parking');
-  const truckAccessible = rawItem.truckAccessible === true || 
-                          fullText.includes('truck') || 
-                          fullText.includes('trucker');
-  
-  const truckScore = [dieselAvailable, truckParkingSpaces, truckAccessible].filter(Boolean).length;
+  // ============ STEP 4: CALCULATE TRUCKINESS SCORE ============
+  const truckScore = scoreTruckiness(title, fullText, rawItem);
 
-  // ============ STEP 3: WHITELIST CATEGORY CHECK ============
+  // ============ STEP 5: TRUCK BRAND FAST-PASS ============
+  if (isTruckBrand(lowerTitle)) {
+    return { 
+      allowed: true, 
+      reason: `Matched truck stop brand (score: ${truckScore})`, 
+      confidence: 'verified',
+      score: truckScore
+    };
+  }
+
+  // Special TA handling
+  for (const pattern of TA_TRUCK_PATTERNS) {
+    if (fullText.includes(pattern)) {
+      return { allowed: true, reason: `Matched TA truck stop: ${pattern}`, confidence: 'verified', score: truckScore };
+    }
+  }
+  
+  if (hasWordToken(lowerTitle, 'ta')) {
+    const truckContext = ['truck', 'travel', 'petro', 'diesel', 'center', 'plaza', 'stop', 'express', 'fuel'];
+    if (truckContext.some(ctx => fullText.includes(ctx))) {
+      return { allowed: true, reason: 'TA with truck context', confidence: 'verified', score: truckScore };
+    }
+  }
+
+  // ============ STEP 6: WHITELIST CATEGORY CHECK ============
   let hasAllowedCategory = false;
   
-  // Check direct category match
   for (const allowed of ALLOWED_TRUCK_CATEGORIES) {
     if (lowerCategory.includes(allowed) || fullText.includes(allowed.replace('_', ' '))) {
       hasAllowedCategory = true;
@@ -968,7 +1065,6 @@ function checkTruckAllowed(
     }
   }
 
-  // Check for truck stop keywords in title/search
   for (const keyword of TRUCK_STOP_KEYWORDS) {
     if (fullText.includes(keyword)) {
       hasAllowedCategory = true;
@@ -976,89 +1072,74 @@ function checkTruckAllowed(
     }
   }
 
-  // ============ STEP 4: BRAND FALLBACK ============
-  // Accept if name matches known truck stop brands (even without explicit attributes)
-  if (isTruckBrand(lowerTitle)) {
+  // ============ STEP 7: SCORE-BASED DECISIONS ============
+  // High truckiness score = allow (even without category match)
+  if (truckScore >= 6) {
     return { 
       allowed: true, 
-      reason: `Matched truck stop brand`, 
-      confidence: 'verified' 
+      reason: `High truckiness score (${truckScore})`, 
+      confidence: 'verified',
+      score: truckScore
     };
   }
 
-  // Special TA handling - must have truck context
-  for (const pattern of TA_TRUCK_PATTERNS) {
-    if (fullText.includes(pattern)) {
-      return { allowed: true, reason: `Matched TA truck stop: ${pattern}`, confidence: 'verified' };
-    }
-  }
-  
-  // Check for standalone "TA" as a word token with truck context
-  if (hasWordToken(lowerTitle, 'ta')) {
-    const truckContext = ['truck', 'travel', 'petro', 'diesel', 'center', 'plaza', 'stop', 'express', 'fuel'];
-    if (truckContext.some(ctx => fullText.includes(ctx))) {
-      return { allowed: true, reason: 'TA with truck context', confidence: 'verified' };
-    }
+  // Category match + moderate score = allow
+  if (hasAllowedCategory && truckScore >= 4) {
+    return { 
+      allowed: true, 
+      reason: `Category + truck score (${truckScore})`, 
+      confidence: 'verified',
+      score: truckScore
+    };
   }
 
-  // ============ STEP 5: COMBINED CHECK ============
-  // If has allowed category AND meets minimum truck criteria (2 of 3) → ALLOW
+  // Category match with lower score = unverified
   if (hasAllowedCategory && truckScore >= 2) {
     return { 
       allowed: true, 
-      reason: `Category + truck attributes (score: ${truckScore}/3)`, 
-      confidence: 'verified' 
+      reason: `Category match with partial truck score (${truckScore})`, 
+      confidence: 'unverified',
+      score: truckScore
     };
   }
 
-  // If has allowed category but only 1 truck attribute → unverified
-  if (hasAllowedCategory && truckScore >= 1) {
-    return { 
-      allowed: true, 
-      reason: `Category match with partial truck attributes (score: ${truckScore}/3)`, 
-      confidence: 'unverified' 
-    };
-  }
-
-  // ============ STEP 6: WEIGH STATION / DOT FACILITIES ============
+  // ============ STEP 8: SPECIAL FACILITIES ============
   if (fullText.includes('weigh station') || fullText.includes('scale house') || 
       fullText.includes('dot inspection') || fullText.includes('port of entry')) {
-    return { allowed: true, reason: 'DOT facility', confidence: 'verified' };
+    return { allowed: true, reason: 'DOT facility', confidence: 'verified', score: truckScore };
   }
 
-  // ============ STEP 7: TRUCK REPAIR BRANDS ============
   for (const brand of TRUCK_REPAIR_BRANDS) {
     if (fullText.includes(brand)) {
-      return { allowed: true, reason: `Truck repair: ${brand}`, confidence: 'verified' };
+      return { allowed: true, reason: `Truck repair: ${brand}`, confidence: 'verified', score: truckScore };
     }
   }
 
-  // ============ STEP 8: TRUCK WASH BRANDS ============
   for (const brand of TRUCK_WASH_BRANDS) {
     if (fullText.includes(brand)) {
-      return { allowed: true, reason: `Truck wash: ${brand}`, confidence: 'verified' };
+      return { allowed: true, reason: `Truck wash: ${brand}`, confidence: 'verified', score: truckScore };
     }
   }
 
-  // ============ STEP 9: REST AREAS WITH TRUCK PARKING ============
+  // Rest areas with truck context
   if ((fullText.includes('rest area') || fullText.includes('service plaza')) &&
       (fullText.includes('truck') || searchTerm.includes('truck'))) {
-    return { allowed: true, reason: 'Rest area with truck parking', confidence: 'unverified' };
+    return { allowed: true, reason: 'Rest area with truck parking', confidence: 'unverified', score: truckScore };
   }
 
-  // ============ STEP 10: GENERIC GAS STATION BLOCK ============
+  // ============ STEP 9: GENERIC GAS STATION BLOCK ============
   if (lowerCategory.includes('petrol') || lowerCategory.includes('gas station') || 
       lowerCategory.includes('fuel station') || fullText.includes('gas station') ||
       lowerCategory.includes('gas') || lowerCategory.includes('fuel')) {
-    // Last chance: if it has high truck score AND truck parking keywords
-    if (truckScore >= 2 && (fullText.includes('truck parking') || fullText.includes('diesel lane'))) {
-      return { allowed: true, reason: 'Gas station with strong truck indicators', confidence: 'unverified' };
+    // Last chance: high truck score with truck parking
+    if (truckScore >= 5 && (fullText.includes('truck parking') || fullText.includes('diesel lane'))) {
+      return { allowed: true, reason: 'Gas station with strong truck indicators', confidence: 'unverified', score: truckScore };
     }
-    return { allowed: false, reason: 'Generic gas station without truck compatibility', confidence: 'verified' };
+    return { allowed: false, reason: 'Generic gas station without truck compatibility', confidence: 'verified', score: truckScore };
   }
 
   // ============ DEFAULT: BLOCK ============
-  return { allowed: false, reason: 'Not on truck allowlist', confidence: 'verified' };
+  return { allowed: false, reason: `Low truckiness score (${truckScore})`, confidence: 'verified', score: truckScore };
 }
 
 function formatAddress(address: any): string {
