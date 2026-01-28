@@ -230,29 +230,36 @@ const NearbyPoisOverlay: React.FC<NearbyPoisOverlayProps> = ({
           lastFetchRef.current = { lat, lng, time: now };
           
           // Filter to only show major truck stop brands (Love's, Pilot, TA, Petro, Flying J, etc.)
-          const majorBrandPois = data.pois.filter((poi: Poi) => {
-            const brand = detectBrand(poi.name, poi.chainName);
+          const majorBrandPois = data.pois.filter((poi: any) => {
+            const brand = detectBrand(poi.name || poi.title, poi.chainName);
             return brand && MAJOR_TRUCK_STOP_BRANDS.includes(brand.key);
           });
           
-          const allPois = majorBrandPois.slice(0, 10);
-          setPois(allPois.slice(0, 5));
+          // Transform POIs to ensure distanceMiles is calculated
+          const transformedPois: Poi[] = majorBrandPois.slice(0, 10).map((poi: any) => ({
+            id: poi.id,
+            name: poi.name || poi.title || 'Unknown',
+            lat: poi.lat || poi.position?.lat,
+            lng: poi.lng || poi.position?.lng,
+            distance: poi.distance || 0,
+            // Calculate distanceMiles from distance (meters) - handle undefined/NaN
+            distanceMiles: Number.isFinite(poi.distance) ? poi.distance / 1609.34 : 0,
+            category: poi.category || poi.poiType || 'truck_stop',
+            address: typeof poi.address === 'string' ? poi.address : poi.address?.label || '',
+            chainName: poi.chainName || null,
+            openingHours: poi.openingHours || null,
+            contacts: poi.contacts || null,
+          }));
+          
+          setPois(transformedPois.slice(0, 5));
           
           // Fetch ratings for these POIs
-          const poiIds = allPois.map((p: Poi) => p.id);
+          const poiIds = transformedPois.map((p: Poi) => p.id);
           fetchRatingsForPois(poiIds);
           
           // Notify parent for arrival detection
           if (onPoisUpdate) {
-            onPoisUpdate(allPois.map((p: Poi) => ({
-              id: p.id,
-              name: p.chainName || p.name,
-              category: p.category,
-              lat: p.lat,
-              lng: p.lng,
-              distance: p.distance,
-              address: p.address,
-            })));
+            onPoisUpdate(transformedPois);
           }
         }
       } catch (err) {
