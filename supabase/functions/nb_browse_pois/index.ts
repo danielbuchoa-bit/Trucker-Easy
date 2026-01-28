@@ -70,10 +70,11 @@ const MAX_REQUESTS_PER_WINDOW = 30;
 
 // ============ STRICT TRUCK-ONLY BRAND ALLOWLIST ============
 // ONLY these brands are automatically allowed - NO regular gas stations
+// NOTE: "TA" removed from main list - handled separately with context checking
 const TRUCK_STOP_BRANDS = [
   'pilot', 'flying j', 'flyingj', 'pilot flying j',
   "love's", 'loves', "love's travel", 'loves travel',
-  'ta ', 'ta-', 'travelcenters of america', 'travelamerica',
+  'travelcenters of america', 'travelamerica',
   'petro', 'petro stopping', 'petro stopping centers',
   'one9', 'one 9',
   'sapp bros', 'sappbros', 'sapp brothers',
@@ -81,6 +82,11 @@ const TRUCK_STOP_BRANDS = [
   "buc-ee's", 'bucees', 'buc-ees',
   'kenly 95', 'iowa 80', 'road ranger truck', 'town pump truck', 'little america travel',
   'boss truck', "roady's truck", 'big rig travel',
+];
+
+// TA-specific patterns that require special handling to avoid false positives
+const TA_TRUCK_PATTERNS = [
+  'ta travel center', 'ta truck stop', 'ta petro', 'ta express', 'ta truck',
 ];
 
 const TRUCK_STOP_KEYWORDS = [
@@ -826,24 +832,53 @@ function checkTruckAllowed(
   const fullText = `${title} ${category} ${searchTerm}`;
   const lowerTitle = title.toLowerCase();
 
-  // STEP 1: Check against BLOCKED gas station brands FIRST
-  for (const blocked of BLOCKED_GAS_STATION_BRANDS) {
-    if (lowerTitle.includes(blocked)) {
-      return { allowed: false, reason: `Blocked gas station: ${blocked}`, confidence: 'verified' };
-    }
+  // Helper: Check word boundary for short patterns (like "TA", "76", "BP")
+  function hasWordToken(text: string, token: string): boolean {
+    const regex = new RegExp(`(^|\\s|\\W)${token}($|\\s|\\W)`, 'i');
+    return regex.test(` ${text} `);
   }
 
-  // STEP 2: Check blocked categories (daycare, restaurant, etc.)
+  // STEP 0: Check blocked categories FIRST (before any allowlist)
+  // This prevents "TA Electronics" (electronics store) from matching TA truck stop
   for (const blocked of BLOCKED_CATEGORIES) {
     if (category.includes(blocked) || lowerTitle.includes(blocked)) {
       return { allowed: false, reason: `Blocked category: ${blocked}`, confidence: 'verified' };
     }
   }
 
-  // STEP 3: Check against ALLOWED truck stop brands
+  // STEP 1: Check against BLOCKED gas station brands
+  for (const blocked of BLOCKED_GAS_STATION_BRANDS) {
+    // Use word boundary for short patterns
+    if (blocked.length <= 3) {
+      if (hasWordToken(lowerTitle, blocked)) {
+        return { allowed: false, reason: `Blocked gas station: ${blocked}`, confidence: 'verified' };
+      }
+    } else {
+      if (lowerTitle.includes(blocked)) {
+        return { allowed: false, reason: `Blocked gas station: ${blocked}`, confidence: 'verified' };
+      }
+    }
+  }
+
+  // STEP 2: Check against ALLOWED truck stop brands (long patterns first)
   for (const brand of TRUCK_STOP_BRANDS) {
     if (fullText.includes(brand)) {
       return { allowed: true, reason: `Matched truck stop brand: ${brand}`, confidence: 'verified' };
+    }
+  }
+
+  // STEP 3: Special TA handling - must have truck context
+  for (const pattern of TA_TRUCK_PATTERNS) {
+    if (fullText.includes(pattern)) {
+      return { allowed: true, reason: `Matched TA truck stop: ${pattern}`, confidence: 'verified' };
+    }
+  }
+  
+  // Check for standalone "TA" as a word token with truck context
+  if (hasWordToken(title, 'ta')) {
+    const truckContext = ['truck', 'travel', 'petro', 'diesel', 'center', 'plaza', 'stop', 'express', 'fuel'];
+    if (truckContext.some(ctx => fullText.includes(ctx))) {
+      return { allowed: true, reason: 'TA with truck context', confidence: 'verified' };
     }
   }
 

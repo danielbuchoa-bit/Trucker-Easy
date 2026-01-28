@@ -1,8 +1,11 @@
 /**
- * STRICT TRUCK-ONLY POI ALLOWLIST v2
+ * STRICT TRUCK-ONLY POI ALLOWLIST v3
  * 
  * Ensures ONLY POIs relevant for 53-foot semi-trucks are displayed.
  * Regular gas stations like Shell, Arco, 76, Safeway Fuel are BLOCKED.
+ * 
+ * BUGFIX v3: Proper word-boundary matching for "TA" to prevent false positives
+ * like "Petco", "Santa Fe", "Utah", etc.
  */
 
 // ============ GROUP 1: TRUCK STOPS / TRAVEL CENTERS (Priority MAX) ============
@@ -11,7 +14,7 @@ export const TRUCK_STOP_BRANDS = [
   // Major national truck stop chains
   'pilot', 'flying j', 'flyingj', 'pilot flying j',
   "love's", 'loves', "love's travel", 'loves travel',
-  'ta ', 'ta-', 'travelcenters of america', 'travelamerica',
+  'travelcenters of america', 'travelamerica',
   'petro', 'petro stopping', 'petro stopping centers',
   'one9', 'one 9',
   'sapp bros', 'sappbros', 'sapp brothers',
@@ -30,6 +33,16 @@ export const TRUCK_STOP_BRANDS = [
   'roady\'s truck',
   'catlins truck',
   'big rig travel',
+];
+
+// TA-specific patterns that require special handling
+// Note: "ta" alone is NOT in TRUCK_STOP_BRANDS to prevent false positives
+const TA_TRUCK_PATTERNS = [
+  'ta travel center',
+  'ta truck stop',
+  'ta petro',
+  'ta express',
+  'ta truck',
 ];
 
 // Keywords that indicate a true truck stop
@@ -164,7 +177,6 @@ export const BLOCKED_GAS_STATION_BRANDS = [
   'ralph\'s fuel',
   'exxon',
   'mobil',
-  'bp ',
   'citgo',
   'sunoco',
   'marathon',
@@ -181,18 +193,17 @@ export const BLOCKED_GAS_STATION_BRANDS = [
   'pac pride',
   'ampm',
   'am pm',
-  'wawa', // Regular locations are NOT truck friendly
-  'sheetz', // Regular locations are NOT truck friendly
-  'speedway', // Regular locations are NOT truck friendly
+  'wawa',
+  'sheetz',
+  'speedway',
   'racetrac',
   'raceway',
-  'kwik trip', // Regular locations may not be truck friendly
+  'kwik trip',
   'quiktrip',
-  'qt ',
   'casey',
   'kum & go',
   'kum and go',
-  'maverick', // Regular Maverik is NOT truck friendly
+  'maverick',
   'thorntons',
   'wesco',
   'kangaroo',
@@ -204,8 +215,8 @@ export const BLOCKED_GAS_STATION_BRANDS = [
 
 export const BLOCKED_CATEGORIES = [
   'car wash',
-  'gas station', // Block generic gas stations
-  'fuel station', // Block generic fuel stations  
+  'gas station',
+  'fuel station',
   'convenience store',
   'grocery fuel',
   'auto service',
@@ -214,7 +225,7 @@ export const BLOCKED_CATEGORIES = [
   'restaurant',
   'coffee',
   'fast food',
-  'daycare', // Block "Love" daycares that false-match
+  'daycare',
   'child care',
   'preschool',
   'school',
@@ -236,6 +247,8 @@ export const BLOCKED_CATEGORIES = [
   'mall',
   'supermarket',
   'grocery',
+  'pet store',
+  'veterinary',
 ];
 
 // ============ INTERFACES ============
@@ -254,7 +267,7 @@ export interface TruckPoiCandidate {
   name: string;
   title?: string;
   category?: string;
-  categories?: Array<{ name: string; id?: string }>;
+  categories?: Array<{ name?: string; id?: string }>;
   lat: number;
   lng: number;
   address?: string | { label?: string; street?: string; city?: string };
@@ -267,6 +280,7 @@ export interface TruckPoiCandidate {
   commercialVehicle?: boolean;
   searchTerm?: string;
   poiType?: string;
+  chainName?: string;
   _truckReason?: string;
   _source?: string;
 }
@@ -279,6 +293,12 @@ export interface TruckPoiResult {
   score: number; // 0-100, higher = more relevant
 }
 
+export interface FilterOptions {
+  onlyVerified?: boolean;
+  includeRestAreas?: boolean;
+  filterGroup?: TruckPoiGroup;
+}
+
 // ============ HELPER FUNCTIONS ============
 
 function normalize(text: string | undefined | null): string {
@@ -286,17 +306,78 @@ function normalize(text: string | undefined | null): string {
   return text.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
+/**
+ * Escape special regex characters
+ */
+function escapeRegex(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Check if text contains a token as a whole word (word boundary)
+ * This prevents "ta" matching in "Petco", "Santa", etc.
+ */
+function hasWordToken(text: string, token: string): boolean {
+  const normalizedText = normalize(text);
+  const normalizedToken = normalize(token);
+  
+  // Use word boundary regex
+  const regex = new RegExp(`(^|\\s)${escapeRegex(normalizedToken)}($|\\s)`, 'i');
+  return regex.test(` ${normalizedText} `); // Add spaces to help with boundaries
+}
+
+/**
+ * Check if text matches any pattern in the list
+ * Uses includes for longer patterns (>=4 chars), word boundary for short ones
+ */
 function matchesAny(text: string, patterns: string[]): boolean {
   const normalized = normalize(text);
-  return patterns.some(pattern => {
+  
+  for (const pattern of patterns) {
     const normalizedPattern = normalize(pattern);
-    // For short patterns, use word boundary matching
-    if (normalizedPattern.length <= 3) {
-      const regex = new RegExp(`\\b${normalizedPattern.trim()}\\b`, 'i');
-      return regex.test(normalized);
+    
+    // For patterns >= 4 chars, simple includes is fine
+    if (normalizedPattern.length >= 4) {
+      if (normalized.includes(normalizedPattern)) {
+        return true;
+      }
+    } else {
+      // For short patterns (like "76", "bp"), use word boundary
+      if (hasWordToken(text, pattern)) {
+        return true;
+      }
     }
-    return normalized.includes(normalizedPattern);
-  });
+  }
+  
+  return false;
+}
+
+/**
+ * Special check for "TA" brand - must have truck context
+ * Prevents false positives like "Petco", "Santa Fe", "Utah", etc.
+ */
+function isTATruckStop(poi: TruckPoiCandidate): boolean {
+  const fullText = getFullText(poi);
+  const normalized = normalize(fullText);
+  
+  // Check for explicit TA patterns first
+  for (const pattern of TA_TRUCK_PATTERNS) {
+    if (normalized.includes(normalize(pattern))) {
+      return true;
+    }
+  }
+  
+  // Check for standalone "TA" as a word token
+  const hasTAToken = hasWordToken(poi.name, 'ta') || hasWordToken(poi.chainName || '', 'ta');
+  if (!hasTAToken) return false;
+  
+  // Must also have truck-related context nearby
+  const truckContext = [
+    'truck', 'travel', 'petro', 'diesel', 'trucker', 
+    'center', 'plaza', 'stop', 'express', 'fuel'
+  ];
+  
+  return truckContext.some(ctx => normalized.includes(ctx));
 }
 
 function getCategoryString(poi: TruckPoiCandidate): string {
@@ -315,9 +396,10 @@ function getCategoryString(poi: TruckPoiCandidate): string {
 
 function getFullText(poi: TruckPoiCandidate): string {
   const name = poi.name || poi.title || '';
+  const chain = poi.chainName || '';
   const category = getCategoryString(poi);
   const searchTerm = poi.searchTerm || '';
-  return normalize(`${name} ${category} ${searchTerm}`);
+  return normalize(`${name} ${chain} ${category} ${searchTerm}`);
 }
 
 // ============ MAIN FILTER FUNCTION ============
@@ -327,11 +409,36 @@ export function checkTruckPoi(poi: TruckPoiCandidate): TruckPoiResult {
   const fullText = getFullText(poi);
   const categoryText = getCategoryString(poi);
 
+  // ============ STEP 0: Early block for blocked categories (before TA check) ============
+  // This prevents "TA Electronics" (electronics store) from matching TA truck stop
+  for (const blocked of BLOCKED_CATEGORIES) {
+    if (categoryText.includes(normalize(blocked))) {
+      return {
+        allowed: false,
+        reason: `Blocked category: ${blocked}`,
+        group: 'blocked',
+        confidence: 'verified',
+        score: 0,
+      };
+    }
+  }
+
   // ============ STEP 1: Check GROUP 1 - Truck Stop Brands (HIGHEST PRIORITY) ============
-  if (matchesAny(name, TRUCK_STOP_BRANDS)) {
+  if (matchesAny(poi.name, TRUCK_STOP_BRANDS) || matchesAny(poi.chainName || '', TRUCK_STOP_BRANDS)) {
     return {
       allowed: true,
       reason: `Matched truck stop brand: ${poi.name}`,
+      group: 'truck_stop',
+      confidence: 'verified',
+      score: 100,
+    };
+  }
+
+  // Special TA handling - check with context to avoid false positives
+  if (isTATruckStop(poi)) {
+    return {
+      allowed: true,
+      reason: `Matched TA truck stop with context`,
       group: 'truck_stop',
       confidence: 'verified',
       score: 100,
@@ -352,7 +459,7 @@ export function checkTruckPoi(poi: TruckPoiCandidate): TruckPoiResult {
   // ============ STEP 2: Check BLOCKLIST (before other checks) ============
   
   // Block known gas station brands
-  if (matchesAny(name, BLOCKED_GAS_STATION_BRANDS)) {
+  if (matchesAny(poi.name, BLOCKED_GAS_STATION_BRANDS) || matchesAny(poi.chainName || '', BLOCKED_GAS_STATION_BRANDS)) {
     return {
       allowed: false,
       reason: `Blocked gas station brand: ${poi.name}`,
@@ -362,18 +469,7 @@ export function checkTruckPoi(poi: TruckPoiCandidate): TruckPoiResult {
     };
   }
 
-  // Block by category
-  for (const blocked of BLOCKED_CATEGORIES) {
-    if (categoryText.includes(normalize(blocked))) {
-      return {
-        allowed: false,
-        reason: `Blocked category: ${blocked}`,
-        group: 'blocked',
-        confidence: 'verified',
-        score: 0,
-      };
-    }
-  }
+  // Note: Category blocking is now done in STEP 0 (before truck stop checks)
 
   // Block generic "petrol station" unless it matched truck brands above
   if (categoryText.includes('petrol station') || categoryText.includes('gas station')) {
@@ -401,7 +497,7 @@ export function checkTruckPoi(poi: TruckPoiCandidate): TruckPoiResult {
   }
 
   // ============ STEP 4: Check GROUP 4 - Truck Repair ============
-  if (matchesAny(name, TRUCK_REPAIR_BRANDS)) {
+  if (matchesAny(poi.name, TRUCK_REPAIR_BRANDS) || matchesAny(poi.chainName || '', TRUCK_REPAIR_BRANDS)) {
     return {
       allowed: true,
       reason: `Matched truck repair brand: ${poi.name}`,
@@ -422,7 +518,7 @@ export function checkTruckPoi(poi: TruckPoiCandidate): TruckPoiResult {
   }
 
   // ============ STEP 5: Check GROUP 5 - Truck Wash ============
-  if (matchesAny(name, TRUCK_WASH_BRANDS)) {
+  if (matchesAny(poi.name, TRUCK_WASH_BRANDS) || matchesAny(poi.chainName || '', TRUCK_WASH_BRANDS)) {
     return {
       allowed: true,
       reason: `Matched truck wash brand: ${poi.name}`,
@@ -499,144 +595,74 @@ export function checkTruckPoi(poi: TruckPoiCandidate): TruckPoiResult {
   };
 }
 
+// ============ FILTER FUNCTION ============
+
 /**
- * Filters POIs to only include 53-foot truck friendly locations.
- * Sorts by relevance score (highest first).
+ * Filter an array of POIs to only truck-friendly ones
+ * Returns enriched POIs with truck result attached
  */
 export function filterTruckPois<T extends TruckPoiCandidate>(
   pois: T[],
-  options?: {
-    only53Friendly?: boolean;
-    onlyVerified?: boolean;
-    includeRestAreas?: boolean;
-    filterGroup?: TruckPoiGroup;
-  }
+  options: FilterOptions = {}
 ): Array<T & { _truckResult: TruckPoiResult }> {
+  const { onlyVerified = false, includeRestAreas = false, filterGroup } = options;
+  
   const results: Array<T & { _truckResult: TruckPoiResult }> = [];
-  const blocked: { name: string; reason: string }[] = [];
-  const { only53Friendly = true, onlyVerified = false, includeRestAreas = true, filterGroup } = options || {};
-
+  
   for (const poi of pois) {
     const result = checkTruckPoi(poi);
-
-    // Apply filters
-    if (!result.allowed) {
-      blocked.push({ name: poi.name || poi.title || 'Unknown', reason: result.reason });
-      continue;
-    }
-
-    // Filter by group if specified
-    if (filterGroup && result.group !== filterGroup) {
-      continue;
-    }
-
-    // Skip rest areas if not included
-    if (!includeRestAreas && result.group === 'rest_area') {
-      continue;
-    }
-
-    // Skip unverified if only verified requested
-    if (onlyVerified && result.confidence === 'unverified') {
-      continue;
-    }
-
-    results.push({ ...poi, _truckResult: result });
+    
+    // Skip blocked POIs
+    if (!result.allowed) continue;
+    
+    // Apply verified filter
+    if (onlyVerified && result.confidence !== 'verified') continue;
+    
+    // Apply group filter
+    if (filterGroup && result.group !== filterGroup) continue;
+    
+    // Skip rest areas unless explicitly included
+    if (result.group === 'rest_area' && !includeRestAreas) continue;
+    
+    results.push({
+      ...poi,
+      _truckResult: result,
+    });
   }
-
-  // Log filtering summary
-  if (blocked.length > 0) {
-    console.log(`[TruckFilter] BLOCKED ${blocked.length} non-truck POIs:`,
-      blocked.slice(0, 5).map(b => `${b.name} (${b.reason})`).join(', '),
-      blocked.length > 5 ? `... and ${blocked.length - 5} more` : ''
-    );
-  }
-  console.log(`[TruckFilter] ALLOWED ${results.length} truck-friendly POIs`);
-
-  // Sort by score (highest first), then by distance
+  
+  // Sort by score (desc) then by distance (asc)
   return results.sort((a, b) => {
-    const scoreDiff = b._truckResult.score - a._truckResult.score;
-    if (scoreDiff !== 0) return scoreDiff;
-    return (a.distance || 0) - (b.distance || 0);
+    // First by score (higher is better)
+    if (b._truckResult.score !== a._truckResult.score) {
+      return b._truckResult.score - a._truckResult.score;
+    }
+    // Then by distance (lower is better)
+    const distA = a.distance ?? Infinity;
+    const distB = b.distance ?? Infinity;
+    return distA - distB;
   });
 }
 
 /**
- * Filter POIs by specific group
+ * Get allowed groups for a tab filter
  */
-export function filterByGroup<T extends TruckPoiCandidate>(
-  pois: T[],
-  group: TruckPoiGroup
-): Array<T & { _truckResult: TruckPoiResult }> {
-  return filterTruckPois(pois, { filterGroup: group });
-}
-
-/**
- * Get optimized search terms for truck-only POI queries
- */
-export function getTruckSearchTerms(filterType: string): string[] {
-  switch (filterType) {
-    case 'truckStops':
-      return [
-        'pilot flying j',
-        "love's travel stop",
-        'ta petro',
-        'truck stop',
-        'travel center',
-        'diesel truck',
-      ];
-    case 'truckParking':
-      return [
-        'truck parking',
-        'semi truck parking',
-        'tractor trailer parking',
-        'commercial parking',
-      ];
-    case 'weighStations':
-      return [
-        'weigh station',
-        'scale house',
-        'dot inspection',
-        'port of entry',
-      ];
-    case 'truckRepair':
-      return [
-        'truck repair',
-        'diesel repair',
-        'heavy duty repair',
-        'truck service',
-        'speedco',
-      ];
-    case 'truckWash':
-      return [
-        'blue beacon',
-        'truck wash',
-      ];
-    case 'restAreas':
-      return [
-        'rest area',
-        'service plaza',
-        'truck rest',
-      ];
-    case 'nearMe':
+export function getGroupsForTab(tab: string): TruckPoiGroup[] {
+  switch (tab) {
+    case 'truck_stops':
+      return ['truck_stop'];
+    case 'truck_parking':
+      return ['truck_parking'];
+    case 'weigh_stations':
+      return ['weigh_station'];
+    case 'truck_repairs':
+      return ['truck_repair'];
+    case 'truck_wash':
+      return ['truck_wash'];
+    case 'rest_areas':
+      return ['rest_area'];
+    case 'near_me':
     default:
-      return [
-        'pilot',
-        "love's",
-        'ta ',
-        'petro',
-        'truck stop',
-        'weigh station',
-        'truck parking',
-      ];
+      // Near Me shows all truck-friendly POIs
+      return ['truck_stop', 'truck_parking', 'weigh_station', 'truck_repair', 'truck_wash'];
   }
-}
-
-/**
- * Get API categories for truck-only searches
- */
-export function getTruckCategories(): { nextbillion: string[]; here: string[] } {
-  return {
-    nextbillion: ['fuel-station', 'parking'],
-    here: ['700-7600-0116', '700-7600-0000'], // Truck-specific categories
-  };
 }
