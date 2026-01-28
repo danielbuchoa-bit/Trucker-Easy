@@ -170,32 +170,37 @@ const FoodSuggestionPrompt: React.FC<FoodSuggestionPromptProps> = ({ stop, onDis
       // Determine if fallback is needed
       const needsFallback = restaurants.length === 0;
       
-      console.log('[FoodSuggestion] Calling recommendation API', {
-        stationDetected: true,
-        stationName: station.name,
-        restaurantSearchAttempted: true,
-        restaurantsFound: restaurants.length,
-        fallbackTriggered: needsFallback,
-        fallbackReason: needsFallback ? 'no_restaurants_found' : null,
-      });
+      // CRITICAL PAYLOAD LOGGING - Required for debugging
+      const requestPayload = {
+        profile: profile ? {
+          diet_type: profile.diet_type,
+          allergies: profile.allergies,
+          restrictions: profile.restrictions,
+          health_goals: profile.health_goals,
+          budget_preference: profile.budget_preference,
+        } : null,
+        menuItems: [],
+        placeType: stop.type,
+        stopName: stop.name,
+        restaurantNames: restaurants,
+        station: station,
+        useFallback: needsFallback,
+        language: language,
+      };
+
+      console.log('[FoodSuggestion] === PAYLOAD SENT TO EDGE FUNCTION ===');
+      console.log('[FoodSuggestion] Station Name:', station.name);
+      console.log('[FoodSuggestion] Station Brand:', station.brand || 'NOT SET');
+      console.log('[FoodSuggestion] Station Address:', station.address || 'NOT SET');
+      console.log('[FoodSuggestion] Station PlaceID:', station.placeId || 'NOT SET');
+      console.log('[FoodSuggestion] Station Lat/Lng:', station.lat, station.lng);
+      console.log('[FoodSuggestion] Restaurants Found:', restaurants.length);
+      console.log('[FoodSuggestion] Restaurant Names:', restaurants);
+      console.log('[FoodSuggestion] Fallback Mode:', needsFallback);
+      console.log('[FoodSuggestion] Full Payload:', JSON.stringify(requestPayload, null, 2));
 
       const { data, error: fnError } = await supabase.functions.invoke('food_recommendation', {
-        body: {
-          profile: profile ? {
-            diet_type: profile.diet_type,
-            allergies: profile.allergies,
-            restrictions: profile.restrictions,
-            health_goals: profile.health_goals,
-            budget_preference: profile.budget_preference,
-          } : null,
-          menuItems: [],
-          placeType: stop.type,
-          stopName: stop.name,
-          restaurantNames: restaurants,
-          station: station,
-          useFallback: needsFallback,
-          language: language, // Pass current app language
-        },
+        body: requestPayload,
       });
 
       if (fnError) {
