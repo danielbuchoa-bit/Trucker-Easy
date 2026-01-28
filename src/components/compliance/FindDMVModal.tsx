@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { MapPin, Phone, Clock, ExternalLink, Navigation, Loader2, ChevronDown } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -68,6 +69,7 @@ const getMockDMVLocations = (state: string): DMVLocation[] => [
 ];
 
 const FindDMVModal: React.FC<FindDMVModalProps> = ({ isOpen, onClose }) => {
+  const navigate = useNavigate();
   const [selectedState, setSelectedState] = useState<string>('');
   const [locations, setLocations] = useState<DMVLocation[]>([]);
   const [loading, setLoading] = useState(false);
@@ -94,10 +96,15 @@ const FindDMVModal: React.FC<FindDMVModalProps> = ({ isOpen, onClose }) => {
   };
 
   const openDirections = (location: DMVLocation) => {
-    const url = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(
-      `${location.address}, ${location.city}, ${location.state}`
-    )}`;
-    window.open(url, '_blank');
+    // Navigate to in-app GPS navigation instead of Google Maps
+    const destination = `${location.address}, ${location.city}, ${location.state}`;
+    onClose();
+    navigate('/navigation', { 
+      state: { 
+        destination,
+        destinationName: location.name
+      } 
+    });
   };
 
   return (

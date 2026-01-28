@@ -53,6 +53,9 @@ interface NavigationLocationState {
     address?: string;
     type?: string;
   };
+  // For address-based navigation (from DMV, Medical Card modals)
+  destinationAddress?: string;
+  destinationName?: string;
   autoStart?: boolean;
 }
 
@@ -100,7 +103,7 @@ const NavigationScreen = () => {
     }
   };
 
-  // Handle destination passed via router state
+  // Handle destination passed via router state (coordinates)
   useEffect(() => {
     if (locationState?.destination && !hasAutoStartedRef.current) {
       const passedDest = locationState.destination;
@@ -151,9 +154,80 @@ const NavigationScreen = () => {
     }
   }, [locationState, t, toast]);
 
-  // Auto-calculate route when origin and destination are set from POI navigation
+  // Handle destination passed as address string (from DMV, Medical Card modals)
   useEffect(() => {
-    if (origin && destination && locationState?.autoStart && !route && !loading) {
+    const geocodeAddress = async () => {
+      if (locationState?.destinationAddress && !hasAutoStartedRef.current) {
+        hasAutoStartedRef.current = true;
+        
+        try {
+          // Geocode the address to get coordinates
+          const { data, error } = await supabase.functions.invoke('nb_geocode', {
+            body: { query: locationState.destinationAddress }
+          });
+          
+          if (error || !data?.results?.[0]) {
+            toast({
+              title: t.navigation?.error || 'Error',
+              description: 'Could not find address location',
+              variant: 'destructive',
+            });
+            return;
+          }
+          
+          const result = data.results[0];
+          const destResult: GeocodeResult = {
+            id: `address-${result.lat}-${result.lng}`,
+            title: locationState.destinationName || result.label || locationState.destinationAddress,
+            address: result.label || locationState.destinationAddress,
+            lat: result.lat,
+            lng: result.lng,
+          };
+          setDestination(destResult);
+
+          // Auto-get current location as origin
+          if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(
+              async (position) => {
+                const { latitude, longitude } = position.coords;
+                const address = await reverseGeocode(latitude, longitude);
+                const currentLocation: GeocodeResult = {
+                  id: 'current-location',
+                  title: t.navigation?.useMyLocation || 'Use my location',
+                  address,
+                  lat: latitude,
+                  lng: longitude,
+                };
+                setOrigin(currentLocation);
+              },
+              () => {
+                toast({
+                  title: t.navigation?.error || 'Error',
+                  description: t.navigation?.locationError || 'Could not get current location',
+                  variant: 'destructive',
+                });
+              }
+            );
+          }
+        } catch (err) {
+          console.error('Geocoding error:', err);
+          toast({
+            title: t.navigation?.error || 'Error',
+            description: 'Failed to geocode address',
+            variant: 'destructive',
+          });
+        }
+      }
+    };
+
+    geocodeAddress();
+  }, [locationState, t, toast]);
+
+  // Auto-calculate route when origin and destination are set from POI/address navigation
+  useEffect(() => {
+    const shouldAutoCalc = origin && destination && !route && !loading && 
+      (locationState?.autoStart || locationState?.destinationAddress);
+    if (shouldAutoCalc) {
       handleCalculateRoute();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
