@@ -1,6 +1,6 @@
 import React from 'react';
 
-// === [A][D][E] UPDATED: Enhanced debug info for all fixes ===
+// === ENHANCED: Debug info with snap-to-road distance ===
 interface CursorDebugInfo {
   // Raw GPS
   rawLat: number | null;
@@ -15,7 +15,12 @@ interface CursorDebugInfo {
   matchConfidence: number;
   isOnRoute: boolean;
   
-  // HERE Map Matching (NEW)
+  // === NEW: Snap-to-road distance metrics ===
+  distanceToRouteM: number | null; // Distance from raw GPS to route in meters
+  snapOffsetM: number | null; // Distance from raw GPS to snapped position
+  nearestSegmentIndex: number | null; // Index of nearest route segment
+  
+  // HERE Map Matching (legacy name kept for compatibility)
   hereMatchUsed: boolean;
   hereMatchConfidence: number;
   hereCacheSize?: number;
@@ -29,7 +34,7 @@ interface CursorDebugInfo {
   isDeadReckoning: boolean;
   frameCount: number;
   
-  // [A] FIX: Enhanced spike detection info
+  // Spike detection info
   lastSpikeRejected: { distance: number; speed: string; reason?: string } | null;
   spikeRejectCount: number;
   consecutiveRejects?: number;
@@ -48,21 +53,81 @@ export default function CursorDebugPanel({ debug, visible }: CursorDebugPanelPro
   if (!visible) return null;
 
   const speedMph = debug.rawSpeed !== null ? (debug.rawSpeed * 2.237).toFixed(1) : '—';
-  const speedKmh = debug.rawSpeed !== null ? (debug.rawSpeed * 3.6).toFixed(1) : '—';
   const timeSinceGps = debug.lastGpsUpdate > 0 
     ? ((Date.now() - debug.lastGpsUpdate) / 1000).toFixed(1) + 's ago'
     : '—';
 
-  // Calculate stats
-  const positionDelta = debug.rawLat && debug.snappedLat
-    ? Math.abs(debug.rawLat - debug.snappedLat) * 111000 // rough meters
-    : 0;
+  // Calculate snap offset if we have both raw and snapped positions
+  const snapOffset = debug.rawLat && debug.snappedLat && debug.rawLng && debug.snappedLng
+    ? calculateDistanceM(debug.rawLat, debug.rawLng, debug.snappedLat, debug.snappedLng)
+    : debug.snapOffsetM;
+
+  // Get color based on distance to route
+  const getDistanceColor = (distance: number | null) => {
+    if (distance === null) return 'text-gray-400';
+    if (distance <= 5) return 'text-green-400';
+    if (distance <= 15) return 'text-yellow-400';
+    if (distance <= 30) return 'text-orange-400';
+    return 'text-red-400';
+  };
 
   return (
     <div className="absolute top-36 left-2 right-2 z-30 bg-black/90 text-white text-xs p-3 rounded-lg font-mono space-y-2 max-h-[50vh] overflow-y-auto">
-      <div className="font-bold text-cyan-400 mb-2">🔧 CURSOR & ROUTE DEBUG v2</div>
+      <div className="font-bold text-cyan-400 mb-2">🔧 SNAP-TO-ROAD DEBUG v3</div>
       
-      {/* [A] FIX: Enhanced Spike Rejection Warning */}
+      {/* === NEW: Snap-to-Road Distance Section === */}
+      <div className="bg-blue-900/50 border border-blue-500 rounded p-2 mb-2">
+        <div className="text-blue-400 font-semibold mb-1">📍 SNAP-TO-ROAD DISTANCE</div>
+        <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+          <span className="text-gray-400">Distance to Route:</span>
+          <span className={`font-bold ${getDistanceColor(debug.distanceToRouteM)}`}>
+            {debug.distanceToRouteM !== null ? `${debug.distanceToRouteM.toFixed(1)}m` : '—'}
+          </span>
+          
+          <span className="text-gray-400">Snap Offset:</span>
+          <span className={`${getDistanceColor(snapOffset ?? null)}`}>
+            {snapOffset !== null ? `${snapOffset.toFixed(1)}m` : '—'}
+          </span>
+          
+          <span className="text-gray-400">Nearest Segment:</span>
+          <span className="text-gray-300">
+            {debug.nearestSegmentIndex !== null ? `#${debug.nearestSegmentIndex}` : '—'}
+          </span>
+          
+          <span className="text-gray-400">On Route:</span>
+          <span className={debug.isOnRoute ? 'text-green-400 font-bold' : 'text-red-400'}>
+            {debug.isOnRoute ? '✓ YES' : '✗ NO'}
+          </span>
+        </div>
+        
+        {/* Visual distance bar */}
+        <div className="mt-2">
+          <div className="flex items-center gap-2">
+            <span className="text-gray-500 text-[10px]">0m</span>
+            <div className="flex-1 h-2 bg-gray-700 rounded overflow-hidden">
+              <div 
+                className={`h-full transition-all duration-300 ${
+                  debug.distanceToRouteM !== null && debug.distanceToRouteM <= 5 ? 'bg-green-500' :
+                  debug.distanceToRouteM !== null && debug.distanceToRouteM <= 15 ? 'bg-yellow-500' :
+                  debug.distanceToRouteM !== null && debug.distanceToRouteM <= 30 ? 'bg-orange-500' :
+                  'bg-red-500'
+                }`}
+                style={{ 
+                  width: debug.distanceToRouteM !== null 
+                    ? `${Math.min(100, (debug.distanceToRouteM / 50) * 100)}%` 
+                    : '0%' 
+                }}
+              />
+            </div>
+            <span className="text-gray-500 text-[10px]">50m</span>
+          </div>
+          <div className="text-center text-[10px] text-gray-500 mt-1">
+            🟢 ≤5m | 🟡 ≤15m | 🟠 ≤30m | 🔴 &gt;30m
+          </div>
+        </div>
+      </div>
+      
+      {/* Spike Rejection Warning */}
       {debug.spikeRejectCount > 0 && (
         <div className="bg-red-900/50 border border-red-500 rounded p-2 mb-2">
           <div className="text-red-400 font-bold">
@@ -111,16 +176,11 @@ export default function CursorDebugPanel({ debug, visible }: CursorDebugPanelPro
       
       {/* Matched Position Section */}
       <div className="border-b border-gray-600 pb-2">
-        <div className="text-gray-400 font-semibold mb-1">🎯 MATCHED POSITION</div>
+        <div className="text-gray-400 font-semibold mb-1">🎯 SNAPPED POSITION</div>
         <div className="grid grid-cols-2 gap-x-4 gap-y-0.5">
           <span className="text-gray-500">Snapped:</span>
           <span className="text-blue-400">
             {debug.snappedLat?.toFixed(5) ?? '—'}, {debug.snappedLng?.toFixed(5) ?? '—'}
-          </span>
-          
-          <span className="text-gray-500">On Route:</span>
-          <span className={debug.isOnRoute ? 'text-green-400' : 'text-red-400'}>
-            {debug.isOnRoute ? 'YES' : 'NO'}
           </span>
           
           <span className="text-gray-500">Confidence:</span>
@@ -128,20 +188,10 @@ export default function CursorDebugPanel({ debug, visible }: CursorDebugPanelPro
             {(debug.matchConfidence * 100).toFixed(0)}%
           </span>
           
-          {/* HERE Map Matching Status */}
-          <span className="text-gray-500">HERE Match:</span>
-          <span className={debug.hereMatchUsed ? 'text-cyan-400' : 'text-gray-500'}>
-            {debug.hereMatchUsed ? `✓ ${(debug.hereMatchConfidence * 100).toFixed(0)}%` : 'Local HMM'}
+          <span className="text-gray-500">Match Engine:</span>
+          <span className={debug.hereMatchUsed ? 'text-cyan-400' : 'text-gray-400'}>
+            {debug.hereMatchUsed ? `API ${(debug.hereMatchConfidence * 100).toFixed(0)}%` : 'Local HMM'}
           </span>
-          
-          {debug.hereCacheSize !== undefined && (
-            <>
-              <span className="text-gray-500">HERE Cache:</span>
-              <span className="text-gray-400">
-                {debug.hereCacheSize} pts / buf: {debug.hereBufferSize ?? 0}
-              </span>
-            </>
-          )}
         </div>
       </div>
       
@@ -173,6 +223,18 @@ export default function CursorDebugPanel({ debug, visible }: CursorDebugPanelPro
       </div>
     </div>
   );
+}
+
+// Helper: Calculate distance between two points in meters
+function calculateDistanceM(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371e3; // Earth radius in meters
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dLat/2) ** 2 + 
+            Math.cos(lat1 * Math.PI / 180) * 
+            Math.cos(lat2 * Math.PI / 180) * 
+            Math.sin(dLng/2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 }
 
 // Export the debug info type for use in ActiveNavigationView
