@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { MapPin, Phone, Clock, ExternalLink, Navigation, Loader2, Upload, Calendar, AlertTriangle, CheckCircle2, FileText } from 'lucide-react';
@@ -74,6 +75,7 @@ const getMockLocations = (state: string): TestingLocation[] => [
 ];
 
 const MedicalCardModal: React.FC<MedicalCardModalProps> = ({ isOpen, onClose }) => {
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('find');
   const [selectedState, setSelectedState] = useState<string>('');
   const [locations, setLocations] = useState<TestingLocation[]>([]);
@@ -99,10 +101,15 @@ const MedicalCardModal: React.FC<MedicalCardModalProps> = ({ isOpen, onClose }) 
   };
 
   const openDirections = (location: TestingLocation) => {
-    const url = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(
-      `${location.address}, ${location.city}, ${location.state}`
-    )}`;
-    window.open(url, '_blank');
+    // Navigate to in-app GPS navigation instead of Google Maps
+    const destination = `${location.address}, ${location.city}, ${location.state}`;
+    onClose();
+    navigate('/navigation', { 
+      state: { 
+        destination,
+        destinationName: location.name
+      } 
+    });
   };
 
   const getTypeLabel = (type: string) => {
