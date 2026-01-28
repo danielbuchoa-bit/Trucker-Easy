@@ -376,31 +376,20 @@ serve(async (req) => {
 
   const requestStartTime = Date.now();
 
-  // ============ AUTHENTICATION REQUIRED ============
-  // Verify JWT and get user ID - NO ANONYMOUS ACCESS ALLOWED
+  // ============ AUTHENTICATION (OPTIONAL FOR READ-ONLY) ============
+  // Try to verify JWT - allow anonymous access for basic POI browsing
+  // Rate limiting will be IP-based for anonymous users
   const authResult = await verifyAuthAndGetUserId(req);
   
-  if (!authResult.userId) {
-    console.warn(`[browse_pois] Unauthorized request: ${authResult.error}`);
-    return new Response(
-      JSON.stringify({ 
-        error: 'Unauthorized', 
-        message: authResult.error || 'Authentication required. Please log in.',
-        pois: [], 
-        items: [] 
-      }),
-      { 
-        status: 401, 
-        headers: { 
-          ...corsHeaders, 
-          "Content-Type": "application/json",
-        } 
-      }
-    );
+  // Use authenticated user ID if available, otherwise use IP-based identifier
+  const userId = authResult.userId || `anon_${req.headers.get('x-forwarded-for') || req.headers.get('cf-connecting-ip') || 'unknown'}`;
+  const isAuthenticated = !!authResult.userId;
+  
+  if (isAuthenticated) {
+    console.log(`[browse_pois] Authenticated user: ${userId.substring(0, 8)}...`);
+  } else {
+    console.log(`[browse_pois] Anonymous request: ${userId}`);
   }
-
-  const userId = authResult.userId;
-  console.log(`[browse_pois] Authenticated user: ${userId.substring(0, 8)}...`);
 
   try {
     // Check per-user rate limit (using verified user ID)
