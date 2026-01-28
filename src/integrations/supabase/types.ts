@@ -47,6 +47,30 @@ export type Database = {
         }
         Relationships: []
       }
+      admin_passwords: {
+        Row: {
+          created_at: string
+          id: string
+          password_hash: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          password_hash: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          password_hash?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       bypass_events: {
         Row: {
           confidence_score: number
