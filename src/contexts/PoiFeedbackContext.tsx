@@ -14,6 +14,9 @@ interface VisitedPoi {
   lat: number;
   lng: number;
   enteredAt: number;
+  brand?: string;
+  address?: string;
+  placeId?: string;
 }
 
 interface PoiFeedbackContextType {
@@ -46,18 +49,47 @@ const TRUCK_CATEGORIES = [
   'gas_station',
 ];
 
-// Common truck stop brand names for text-based detection fallback
+// STRICT TRUCK STOP BRANDS ONLY - No regular gas stations
+// Must match TRUCK_STOP_BRANDS from truckPoiAllowlist.ts
 const TRUCK_STOP_BRANDS = [
-  'pilot', 'flying j', 'loves', 'ta', 'petro', 'town pump',
-  'sapp bros', 'kwik trip', 'casey', 'bucees', 'ambest',
-  'speedway', 'shell', 'chevron', 'exxon', 'mobil', 'bp',
-  'marathon', 'citgo', 'sinclair', 'conoco', 'phillips 66'
+  // Major national truck stop chains
+  'pilot', 'flying j', 'flyingj', 'pilot flying j',
+  "love's", 'loves', "love's travel", 'loves travel',
+  'travelcenters of america', 'travelamerica',
+  'petro', 'petro stopping', 'petro stopping centers',
+  'one9', 'one 9',
+  'sapp bros', 'sappbros', 'sapp brothers',
+  'ambest', 'am best',
+  "buc-ee's", 'bucees', "buc-ees",
+  // Regional truck stops
+  'kenly 95', 'iowa 80', 'road ranger truck', 'town pump truck',
+  'little america travel', 'truckstops of america', 'boss truck',
+  "roady's truck", 'catlins truck', 'big rig travel',
 ];
 
 // Distance thresholds - More generous for detection
 const ENTER_RADIUS_M = 150; // Enter when within 150m
 const EXIT_RADIUS_M = 250; // Exit when beyond 250m
 const MIN_STAY_TIME_MS = 30000; // Minimum 30 seconds stay to trigger feedback
+
+// Detect truck stop brand from POI name
+function detectBrandFromName(name: string): string | null {
+  const n = name.toLowerCase();
+  if (n.includes("love's") || n.includes("loves")) return "Love's";
+  if (n.includes("pilot") || n.includes("flying j")) return "Pilot Flying J";
+  if (n.includes("ta ") || n.includes("travelcenter") || n.includes("travel center") || n.includes("travelamerica")) return "TA";
+  if (n.includes("petro")) return "Petro";
+  if (n.includes("sapp bros") || n.includes("sappbros")) return "Sapp Bros";
+  if (n.includes("bucee") || n.includes("buc-ee")) return "Buc-ee's";
+  if (n.includes("ambest") || n.includes("am best")) return "AmBest";
+  if (n.includes("one9") || n.includes("one 9")) return "One9";
+  if (n.includes("kenly 95")) return "Kenly 95";
+  if (n.includes("iowa 80")) return "Iowa 80";
+  if (n.includes("town pump")) return "Town Pump";
+  if (n.includes("boss truck")) return "Boss Truck";
+  if (n.includes("little america")) return "Little America";
+  return null;
+}
 
 export const PoiFeedbackProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { latitude, longitude } = useGeolocation({ enableHighAccuracy: true, watchPosition: true });
@@ -161,10 +193,15 @@ export const PoiFeedbackProvider: React.FC<{ children: React.ReactNode }> = ({ c
           const nameLower = (poi.name || poi.title || '').toLowerCase();
           const isTruckStop = TRUCK_STOP_BRANDS.some(brand => nameLower.includes(brand));
           
+          // Detect brand from name for food suggestions
+          const detectedBrand = detectBrandFromName(nameLower);
+          
           nearbyPoisCache.current.set(poi.id, {
             ...poi,
             position: poi.position || { lat: poi.lat, lng: poi.lng },
             title: poi.title || poi.name,
+            brand: detectedBrand || poi.chainName || poi.brand || null,
+            address: poi.address?.label || poi.address?.street || poi.address || null,
             categories: [{ id: isTruckStop ? 'truck_stop' : 'fuel_station' }],
           });
         });
@@ -261,14 +298,17 @@ export const PoiFeedbackProvider: React.FC<{ children: React.ReactNode }> = ({ c
         lat: closestPoi.position.lat,
         lng: closestPoi.position.lng,
         enteredAt: Date.now(),
+        brand: closestPoi.brand || null,
+        address: closestPoi.address || null,
+        placeId: closestPoi.placeId || closestPoi.id,
       };
       setCurrentVisitedPoi(newPoi);
-      console.log('[PoiFeedback] Entered POI:', closestPoi.title);
+      console.log('[PoiFeedback] Entered POI:', closestPoi.title, '| Brand:', newPoi.brand, '| Address:', newPoi.address);
       
       // Show food suggestion prompt for truck stops (only if not dismissed before)
       if ((poiType === 'truck_stop' || poiType === 'fuel') && !dismissedFoodSuggestions.current.has(closestPoi.id)) {
         setIsShowingFoodSuggestion(true);
-        console.log('[PoiFeedback] Showing food suggestion for:', closestPoi.title);
+        console.log('[PoiFeedback] Showing food suggestion for:', closestPoi.title, 'brand:', newPoi.brand);
       }
     }
 
@@ -411,6 +451,9 @@ export const PoiFeedbackProvider: React.FC<{ children: React.ReactNode }> = ({ c
             type: currentVisitedPoi.type,
             lat: currentVisitedPoi.lat,
             lng: currentVisitedPoi.lng,
+            brand: currentVisitedPoi.brand,
+            address: currentVisitedPoi.address,
+            placeId: currentVisitedPoi.placeId,
           }}
           onDismiss={dismissFoodSuggestion}
         />
