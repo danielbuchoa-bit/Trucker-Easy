@@ -18,6 +18,7 @@ import NavigationHUD from './NavigationHUD';
 import SpeedIndicator from './SpeedIndicator';
 import BottomETABar from './BottomETABar';
 import VoiceControls from './VoiceControls';
+import VoiceSettingsSheet from './VoiceSettingsSheet';
 import SimulationControls from './SimulationControls';
 import LocationContextBar from './LocationContextBar';
 import NearbyPoisOverlay from './NearbyPoisOverlay';
@@ -236,6 +237,9 @@ const ActiveNavigationView = () => {
   // Selected speed alert for details sheet
   const [selectedSpeedAlert, setSelectedSpeedAlert] = useState<typeof speedAlerts.alerts[0] | null>(null);
   const [speedAlertDetailsOpen, setSpeedAlertDetailsOpen] = useState(false);
+  
+  // Voice settings sheet state
+  const [voiceSettingsOpen, setVoiceSettingsOpen] = useState(false);
   
   // Heading interpolation refs
   const currentBearingRef = useRef<number>(0);
@@ -994,8 +998,8 @@ const ActiveNavigationView = () => {
 
       {/* Camera monitoring removed per user request */}
 
-      {/* Speed Indicator + Engine Indicator - Bottom Left */}
-      <div className="absolute bottom-24 left-4 z-30 flex flex-col gap-2">
+      {/* Speed Indicator - Bottom Left (above ETA bar) */}
+      <div className="absolute bottom-24 left-4 z-30">
         <SpeedIndicator 
           speedMph={speedMph} 
           speedLimitMph={
@@ -1005,6 +1009,10 @@ const ActiveNavigationView = () => {
             null
           } 
         />
+      </div>
+      
+      {/* Engine Indicator - Bottom Left (below voice controls) */}
+      <div className="absolute bottom-52 left-4 z-30">
         <EngineIndicator />
       </div>
 
@@ -1145,6 +1153,7 @@ const ActiveNavigationView = () => {
         onFoodClick={() => {
           window.location.href = '/stop-advisor';
         }}
+        onSettingsClick={() => setVoiceSettingsOpen(true)}
       />
 
       {/* Arrival Prompt */}
@@ -1215,6 +1224,16 @@ const ActiveNavigationView = () => {
         settings={voice.settings}
         voiceState={voice.voiceState}
         onToggle={voice.toggleVoice}
+        onUpdateSettings={voice.updateSettings}
+        onUnlockVoice={voice.unlockVoice}
+      />
+      
+      {/* Voice Settings Sheet */}
+      <VoiceSettingsSheet
+        open={voiceSettingsOpen}
+        onOpenChange={setVoiceSettingsOpen}
+        settings={voice.settings}
+        voiceState={voice.voiceState}
         onUpdateSettings={voice.updateSettings}
         onUnlockVoice={voice.unlockVoice}
       />
