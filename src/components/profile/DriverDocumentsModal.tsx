@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Camera, Upload, Calendar, AlertTriangle, CheckCircle2, Loader2, Trash2, Eye } from 'lucide-react';
+import { Camera, Upload, Calendar, AlertTriangle, CheckCircle2, Loader2, Trash2, Eye, Sparkles } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
@@ -17,6 +17,7 @@ interface DriverDocumentsModalProps {
 interface DocumentData {
   id?: string;
   file_url: string | null;
+  file_path?: string | null; // Store the storage path for signed URLs
   expiration_date: string | null;
 }
 
@@ -24,8 +25,11 @@ const DriverDocumentsModal: React.FC<DriverDocumentsModalProps> = ({ isOpen, onC
   const [activeTab, setActiveTab] = useState('cdl');
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [extractingDate, setExtractingDate] = useState(false);
   const [cdlData, setCdlData] = useState<DocumentData>({ file_url: null, expiration_date: null });
   const [medicalData, setMedicalData] = useState<DocumentData>({ file_url: null, expiration_date: null });
+  const [cdlSignedUrl, setCdlSignedUrl] = useState<string | null>(null);
+  const [medicalSignedUrl, setMedicalSignedUrl] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -33,6 +37,29 @@ const DriverDocumentsModal: React.FC<DriverDocumentsModalProps> = ({ isOpen, onC
       fetchDocuments();
     }
   }, [isOpen]);
+
+  // Generate signed URLs when file paths change
+  useEffect(() => {
+    const generateSignedUrls = async () => {
+      if (cdlData.file_path) {
+        const { data } = await supabase.storage
+          .from('driver-documents')
+          .createSignedUrl(cdlData.file_path, 3600); // 1 hour expiry
+        if (data?.signedUrl) {
+          setCdlSignedUrl(data.signedUrl);
+        }
+      }
+      if (medicalData.file_path) {
+        const { data } = await supabase.storage
+          .from('driver-documents')
+          .createSignedUrl(medicalData.file_path, 3600);
+        if (data?.signedUrl) {
+          setMedicalSignedUrl(data.signedUrl);
+        }
+      }
+    };
+    generateSignedUrls();
+  }, [cdlData.file_path, medicalData.file_path]);
 
   const fetchDocuments = async () => {
     try {
@@ -48,16 +75,21 @@ const DriverDocumentsModal: React.FC<DriverDocumentsModalProps> = ({ isOpen, onC
       if (error) throw error;
 
       data?.forEach((doc: any) => {
+        // Extract the file path from the URL or use stored path
+        const filePath = extractFilePath(doc.file_url, user.id);
+        
         if (doc.document_type === 'cdl') {
           setCdlData({
             id: doc.id,
             file_url: doc.file_url,
+            file_path: filePath,
             expiration_date: doc.expiration_date,
           });
         } else if (doc.document_type === 'medical_card') {
           setMedicalData({
             id: doc.id,
             file_url: doc.file_url,
+            file_path: filePath,
             expiration_date: doc.expiration_date,
           });
         }
@@ -66,6 +98,58 @@ const DriverDocumentsModal: React.FC<DriverDocumentsModalProps> = ({ isOpen, onC
       console.error('Error fetching documents:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Extract file path from URL for signed URL generation
+  const extractFilePath = (url: string | null, userId: string): string | null => {
+    if (!url) return null;
+    
+    try {
+      // Look for the pattern after /driver-documents/
+      const match = url.match(/driver-documents\/(.+?)(?:\?|$)/);
+      if (match && match[1]) {
+        return decodeURIComponent(match[1]);
+      }
+      // Fallback: try to find user ID path pattern
+      if (url.includes(userId)) {
+        const pathMatch = url.match(new RegExp(`(${userId}\/[^?]+)`));
+        if (pathMatch) return pathMatch[1];
+      }
+    } catch (e) {
+      console.error('Error extracting file path:', e);
+    }
+    return null;
+  };
+
+  const extractExpirationDate = async (signedUrl: string, documentType: 'cdl' | 'medical_card') => {
+    try {
+      setExtractingDate(true);
+      toast.info('Analyzing document with AI...', { duration: 3000 });
+
+      const { data, error } = await supabase.functions.invoke('extract_document_date', {
+        body: { imageUrl: signedUrl, documentType },
+      });
+
+      if (error) {
+        console.error('AI extraction error:', error);
+        toast.error('Could not analyze document. Please enter the date manually.');
+        return null;
+      }
+
+      if (data?.expiration_date) {
+        toast.success(`Expiration date detected: ${data.expiration_date}`, { duration: 4000 });
+        return data.expiration_date;
+      } else {
+        toast.warning('Could not find expiration date. Please enter it manually.', { duration: 4000 });
+        return null;
+      }
+    } catch (err) {
+      console.error('Error extracting date:', err);
+      toast.error('AI analysis failed. Please enter the date manually.');
+      return null;
+    } finally {
+      setExtractingDate(false);
     }
   };
 
@@ -88,7 +172,14 @@ const DriverDocumentsModal: React.FC<DriverDocumentsModalProps> = ({ isOpen, onC
 
       if (uploadError) throw uploadError;
 
-      // Get public URL
+      // Generate a signed URL for viewing (bucket is private)
+      const { data: signedData } = await supabase.storage
+        .from('driver-documents')
+        .createSignedUrl(fileName, 3600);
+
+      const signedUrl = signedData?.signedUrl;
+
+      // Also store the public URL path for reference (even if not accessible directly)
       const { data: { publicUrl } } = supabase.storage
         .from('driver-documents')
         .getPublicUrl(fileName);
@@ -101,7 +192,7 @@ const DriverDocumentsModal: React.FC<DriverDocumentsModalProps> = ({ isOpen, onC
         .upsert({
           user_id: user.id,
           document_type: documentType,
-          file_url: publicUrl,
+          file_url: publicUrl, // Store path reference
           expiration_date: currentData.expiration_date,
         }, {
           onConflict: 'user_id,document_type'
@@ -111,12 +202,23 @@ const DriverDocumentsModal: React.FC<DriverDocumentsModalProps> = ({ isOpen, onC
 
       // Update local state
       if (documentType === 'cdl') {
-        setCdlData(prev => ({ ...prev, file_url: publicUrl }));
+        setCdlData(prev => ({ ...prev, file_url: publicUrl, file_path: fileName }));
+        setCdlSignedUrl(signedUrl || null);
       } else {
-        setMedicalData(prev => ({ ...prev, file_url: publicUrl }));
+        setMedicalData(prev => ({ ...prev, file_url: publicUrl, file_path: fileName }));
+        setMedicalSignedUrl(signedUrl || null);
       }
 
       toast.success(`${documentType === 'cdl' ? 'CDL' : 'Medical Card'} uploaded successfully`);
+
+      // Automatically try to extract expiration date with AI
+      if (signedUrl) {
+        const extractedDate = await extractExpirationDate(signedUrl, documentType);
+        if (extractedDate) {
+          await handleDateChange(extractedDate, documentType);
+        }
+      }
+
     } catch (error: any) {
       console.error('Error uploading file:', error);
       toast.error('Failed to upload document');
@@ -174,14 +276,29 @@ const DriverDocumentsModal: React.FC<DriverDocumentsModalProps> = ({ isOpen, onC
 
       if (documentType === 'cdl') {
         setCdlData({ file_url: null, expiration_date: null });
+        setCdlSignedUrl(null);
       } else {
         setMedicalData({ file_url: null, expiration_date: null });
+        setMedicalSignedUrl(null);
       }
 
       toast.success('Document deleted');
     } catch (error) {
       console.error('Error deleting document:', error);
       toast.error('Failed to delete document');
+    }
+  };
+
+  const handleRetryExtraction = async (documentType: 'cdl' | 'medical_card') => {
+    const signedUrl = documentType === 'cdl' ? cdlSignedUrl : medicalSignedUrl;
+    if (!signedUrl) {
+      toast.error('No document uploaded');
+      return;
+    }
+
+    const extractedDate = await extractExpirationDate(signedUrl, documentType);
+    if (extractedDate) {
+      await handleDateChange(extractedDate, documentType);
     }
   };
 
@@ -211,6 +328,7 @@ const DriverDocumentsModal: React.FC<DriverDocumentsModalProps> = ({ isOpen, onC
   const renderDocumentSection = (documentType: 'cdl' | 'medical_card', data: DocumentData) => {
     const title = documentType === 'cdl' ? 'CDL (Commercial Driver License)' : 'DOT Medical Card';
     const expirationStatus = getExpirationStatus(data.expiration_date);
+    const signedUrl = documentType === 'cdl' ? cdlSignedUrl : medicalSignedUrl;
 
     return (
       <div className="space-y-4">
@@ -232,20 +350,25 @@ const DriverDocumentsModal: React.FC<DriverDocumentsModalProps> = ({ isOpen, onC
 
         {/* Document Preview */}
         <div className="border-2 border-dashed border-border rounded-xl p-6 text-center">
-          {data.file_url ? (
+          <p className="text-sm font-medium text-muted-foreground mb-3">{title}</p>
+          {signedUrl ? (
             <div className="space-y-3">
               <div className="relative w-full h-40 bg-secondary rounded-lg overflow-hidden">
                 <img 
-                  src={data.file_url} 
+                  src={signedUrl} 
                   alt={title}
                   className="w-full h-full object-contain"
+                  onError={(e) => {
+                    console.error('Image failed to load');
+                    (e.target as HTMLImageElement).style.display = 'none';
+                  }}
                 />
               </div>
               <div className="flex gap-2 justify-center">
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => window.open(data.file_url!, '_blank')}
+                  onClick={() => window.open(signedUrl, '_blank')}
                 >
                   <Eye className="w-4 h-4 mr-1" />
                   View
@@ -301,15 +424,33 @@ const DriverDocumentsModal: React.FC<DriverDocumentsModalProps> = ({ isOpen, onC
             <Calendar className="w-4 h-4" />
             Expiration Date
           </Label>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             <Input
               type="date"
               value={data.expiration_date || ''}
               onChange={(e) => handleDateChange(e.target.value, documentType)}
               className="flex-1"
             />
+            {signedUrl && !data.expiration_date && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleRetryExtraction(documentType)}
+                disabled={extractingDate}
+                className="shrink-0"
+              >
+                {extractingDate ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <>
+                    <Sparkles className="w-4 h-4 mr-1" />
+                    AI Detect
+                  </>
+                )}
+              </Button>
+            )}
             {expirationStatus && expirationStatus.status === 'ok' && (
-              <Badge variant="outline" className="bg-success/20 text-success border-success/30">
+              <Badge variant="outline" className="bg-success/20 text-success border-success/30 shrink-0">
                 <CheckCircle2 className="w-3 h-3 mr-1" />
                 Valid
               </Badge>
@@ -321,7 +462,7 @@ const DriverDocumentsModal: React.FC<DriverDocumentsModalProps> = ({ isOpen, onC
         </div>
 
         {/* Update Photo Button */}
-        {data.file_url && (
+        {signedUrl && (
           <div>
             <input
               type="file"
@@ -334,12 +475,17 @@ const DriverDocumentsModal: React.FC<DriverDocumentsModalProps> = ({ isOpen, onC
               variant="outline"
               className="w-full"
               onClick={() => document.getElementById(`file-input-${documentType}`)?.click()}
-              disabled={uploading}
+              disabled={uploading || extractingDate}
             >
               {uploading ? (
                 <>
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                   Uploading...
+                </>
+              ) : extractingDate ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Analyzing...
                 </>
               ) : (
                 <>
