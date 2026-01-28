@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { useLanguage } from '@/i18n/LanguageContext';
 
 interface VoiceCommandResult {
   action: 'navigate' | 'search' | 'report' | 'info' | 'chat';
@@ -9,7 +10,42 @@ interface VoiceCommandResult {
   confidence: number;
 }
 
+// Map app language to speech recognition locale
+const getSpeechLocale = (appLang: string): string => {
+  switch (appLang) {
+    case 'pt': return 'pt-BR';
+    case 'es': return 'es-MX';
+    case 'en':
+    default: return 'en-US';
+  }
+};
+
+// Localized error messages
+const getErrorMessages = (appLang: string) => {
+  switch (appLang) {
+    case 'pt':
+      return {
+        micDenied: 'Permissão de microfone negada',
+        notSupported: 'Reconhecimento de voz não suportado neste navegador',
+        processError: 'Erro ao processar comando de voz',
+      };
+    case 'es':
+      return {
+        micDenied: 'Permiso de micrófono denegado',
+        notSupported: 'Reconocimiento de voz no soportado en este navegador',
+        processError: 'Error al procesar comando de voz',
+      };
+    default:
+      return {
+        micDenied: 'Microphone permission denied',
+        notSupported: 'Voice recognition not supported in this browser',
+        processError: 'Error processing voice command',
+      };
+  }
+};
+
 export function useVoiceAssistant() {
+  const { language: appLanguage } = useLanguage();
   const [isListening, setIsListening] = useState(false);
   const [transcript, setTranscript] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
@@ -19,6 +55,9 @@ export function useVoiceAssistant() {
   const isSupported = typeof window !== 'undefined' && 
     ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window);
 
+  const speechLocale = getSpeechLocale(appLanguage);
+  const errorMessages = getErrorMessages(appLanguage);
+
   useEffect(() => {
     if (!isSupported) return;
 
@@ -26,7 +65,7 @@ export function useVoiceAssistant() {
     recognitionRef.current = new SpeechRecognition();
     recognitionRef.current.continuous = false;
     recognitionRef.current.interimResults = true;
-    recognitionRef.current.lang = 'pt-BR';
+    recognitionRef.current.lang = speechLocale;
 
     recognitionRef.current.onresult = (event) => {
       const last = event.results[event.results.length - 1];
@@ -42,7 +81,7 @@ export function useVoiceAssistant() {
       console.error('Speech recognition error:', event.error);
       setIsListening(false);
       if (event.error === 'not-allowed') {
-        toast.error('Permissão de microfone negada');
+        toast.error(errorMessages.micDenied);
       }
     };
 
@@ -53,7 +92,7 @@ export function useVoiceAssistant() {
     return () => {
       recognitionRef.current?.abort();
     };
-  }, [isSupported]);
+  }, [isSupported, speechLocale, errorMessages.micDenied]);
 
   const processCommand = async (text: string) => {
     setIsProcessing(true);
@@ -61,6 +100,7 @@ export function useVoiceAssistant() {
       const { data, error } = await supabase.functions.invoke('voice_command', {
         body: { 
           transcript: text,
+          language: appLanguage, // Send the app language to the edge function
           context: {
             current_route: window.location.pathname.includes('navigation')
           }
@@ -71,10 +111,10 @@ export function useVoiceAssistant() {
 
       setLastCommand(data);
       
-      // Speak confirmation
+      // Speak confirmation in the user's language
       if ('speechSynthesis' in window && data.confirmation) {
         const utterance = new SpeechSynthesisUtterance(data.confirmation);
-        utterance.lang = 'pt-BR';
+        utterance.lang = speechLocale;
         utterance.rate = 1.1;
         window.speechSynthesis.speak(utterance);
       }
@@ -82,7 +122,7 @@ export function useVoiceAssistant() {
       return data as VoiceCommandResult;
     } catch (err) {
       console.error('Voice command processing error:', err);
-      toast.error('Erro ao processar comando de voz');
+      toast.error(errorMessages.processError);
       return null;
     } finally {
       setIsProcessing(false);
@@ -91,10 +131,13 @@ export function useVoiceAssistant() {
 
   const startListening = useCallback(() => {
     if (!isSupported || !recognitionRef.current) {
-      toast.error('Reconhecimento de voz não suportado neste navegador');
+      toast.error(errorMessages.notSupported);
       return;
     }
 
+    // Update language before starting
+    recognitionRef.current.lang = speechLocale;
+    
     setTranscript('');
     setIsListening(true);
     try {
@@ -103,7 +146,7 @@ export function useVoiceAssistant() {
       console.error('Failed to start recognition:', err);
       setIsListening(false);
     }
-  }, [isSupported]);
+  }, [isSupported, speechLocale, errorMessages.notSupported]);
 
   const stopListening = useCallback(() => {
     recognitionRef.current?.stop();
@@ -114,11 +157,11 @@ export function useVoiceAssistant() {
     if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = 'pt-BR';
+      utterance.lang = speechLocale;
       utterance.rate = 1.0;
       window.speechSynthesis.speak(utterance);
     }
-  }, []);
+  }, [speechLocale]);
 
   return {
     isSupported,

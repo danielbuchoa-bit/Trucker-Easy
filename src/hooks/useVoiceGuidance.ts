@@ -4,7 +4,7 @@ import { useLanguage } from '@/i18n/LanguageContext';
 
 export interface VoiceSettings {
   enabled: boolean;
-  language: 'en-US' | 'pt-BR' | 'pt-PT';
+  language: 'en-US' | 'pt-BR' | 'pt-PT' | 'es-ES' | 'es-MX';
   rate: number;
   pitch: number;
 }
@@ -18,9 +18,19 @@ export interface VoiceState {
   debugLog: string[];
 }
 
+// Map app language to voice language
+const getVoiceLanguage = (appLang: string): VoiceSettings['language'] => {
+  switch (appLang) {
+    case 'pt': return 'pt-BR';
+    case 'es': return 'es-MX';
+    case 'en':
+    default: return 'en-US';
+  }
+};
+
 const DEFAULT_VOICE_SETTINGS: VoiceSettings = {
   enabled: true,
-  language: 'pt-BR',
+  language: 'en-US', // Will be synced with app language
   rate: 0.9,
   pitch: 1,
 };
@@ -43,14 +53,10 @@ export function useVoiceGuidance() {
       const saved = localStorage.getItem(VOICE_STORAGE_KEY);
       const parsed = saved ? { ...DEFAULT_VOICE_SETTINGS, ...JSON.parse(saved) } : DEFAULT_VOICE_SETTINGS;
       // Sync language with app language
-      if (appLanguage === 'pt') {
-        parsed.language = 'pt-BR';
-      } else if (appLanguage === 'en') {
-        parsed.language = 'en-US';
-      }
+      parsed.language = getVoiceLanguage(appLanguage);
       return parsed;
     } catch {
-      return DEFAULT_VOICE_SETTINGS;
+      return { ...DEFAULT_VOICE_SETTINGS, language: getVoiceLanguage(appLanguage) };
     }
   });
 
@@ -109,12 +115,12 @@ export function useVoiceGuidance() {
 
   // Sync language with app language
   useEffect(() => {
-    if (appLanguage === 'pt' && settings.language !== 'pt-BR' && settings.language !== 'pt-PT') {
-      setSettings(prev => ({ ...prev, language: 'pt-BR' }));
-    } else if (appLanguage === 'en' && settings.language !== 'en-US') {
-      setSettings(prev => ({ ...prev, language: 'en-US' }));
+    const expectedLang = getVoiceLanguage(appLanguage);
+    if (settings.language !== expectedLang) {
+      setSettings(prev => ({ ...prev, language: expectedLang }));
+      addDebugLog(`Voice language synced to: ${expectedLang} (app: ${appLanguage})`);
     }
-  }, [appLanguage, settings.language]);
+  }, [appLanguage, settings.language, addDebugLog]);
 
   // Unlock voice - MUST be called from user gesture (click/tap)
   const unlockVoice = useCallback(() => {
@@ -129,9 +135,14 @@ export function useVoiceGuidance() {
     window.speechSynthesis.cancel();
     
     // Create a test utterance with the user gesture
-    const testText = settings.language.startsWith('pt') 
-      ? 'Voz ativada' 
-      : 'Voice activated';
+    let testText: string;
+    if (settings.language.startsWith('pt')) {
+      testText = 'Voz ativada';
+    } else if (settings.language.startsWith('es')) {
+      testText = 'Voz activada';
+    } else {
+      testText = 'Voice activated';
+    }
     
     const utterance = new SpeechSynthesisUtterance(testText);
     utterance.lang = settings.language;
@@ -305,9 +316,14 @@ export function useVoiceGuidance() {
 
   // Speak arrival
   const speakArrival = useCallback(() => {
-    const text = settings.language.startsWith('pt')
-      ? 'Você chegou ao seu destino.'
-      : 'You have arrived at your destination.';
+    let text: string;
+    if (settings.language.startsWith('pt')) {
+      text = 'Você chegou ao seu destino.';
+    } else if (settings.language.startsWith('es')) {
+      text = 'Has llegado a tu destino.';
+    } else {
+      text = 'You have arrived at your destination.';
+    }
     speak(text, true);
   }, [settings.language, speak]);
 
@@ -331,9 +347,14 @@ export function useVoiceGuidance() {
     isReroutingStateRef.current = true;
     lastRerouteSpokenRef.current = now;
     
-    const text = settings.language.startsWith('pt')
-      ? 'Recalculando rota.'
-      : 'Rerouting.';
+    let text: string;
+    if (settings.language.startsWith('pt')) {
+      text = 'Recalculando rota.';
+    } else if (settings.language.startsWith('es')) {
+      text = 'Recalculando ruta.';
+    } else {
+      text = 'Rerouting.';
+    }
     
     speak(text, true);
     

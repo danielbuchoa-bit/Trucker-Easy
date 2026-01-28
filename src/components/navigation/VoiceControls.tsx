@@ -168,10 +168,10 @@ const VoiceControls = ({
 
             {/* Language */}
             <div className="space-y-2">
-              <Label>{isPt ? 'Idioma' : 'Language'}</Label>
+              <Label>{isPt ? 'Idioma' : language === 'es' ? 'Idioma' : 'Language'}</Label>
               <Select
                 value={settings.language}
-                onValueChange={(lang: 'en-US' | 'pt-BR' | 'pt-PT') => 
+                onValueChange={(lang: 'en-US' | 'pt-BR' | 'pt-PT' | 'es-ES' | 'es-MX') => 
                   onUpdateSettings({ language: lang })
                 }
               >
@@ -182,8 +182,15 @@ const VoiceControls = ({
                   <SelectItem value="pt-BR">Português (Brasil)</SelectItem>
                   <SelectItem value="pt-PT">Português (Portugal)</SelectItem>
                   <SelectItem value="en-US">English (US)</SelectItem>
+                  <SelectItem value="es-MX">Español (México)</SelectItem>
+                  <SelectItem value="es-ES">Español (España)</SelectItem>
                 </SelectContent>
               </Select>
+              <p className="text-xs text-muted-foreground">
+                {isPt ? 'Sincroniza automaticamente com o idioma do app' : 
+                 language === 'es' ? 'Se sincroniza automáticamente con el idioma de la app' :
+                 'Automatically syncs with app language'}
+              </p>
             </div>
 
             {/* Speech Rate */}
@@ -232,6 +239,8 @@ const VoiceControls = ({
                 
                 const testText = settings.language.startsWith('pt')
                   ? 'Em 500 metros, vire à direita na Avenida Principal.'
+                  : settings.language.startsWith('es')
+                  ? 'En 500 metros, gire a la derecha en la Avenida Principal.'
                   : 'In 500 feet, turn right onto Main Street.';
                   
                 window.speechSynthesis.cancel();
