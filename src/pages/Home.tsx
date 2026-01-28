@@ -19,7 +19,7 @@ import PoiReviewsModal from '@/components/poi/PoiReviewsModal';
 interface NearbyPlace {
   id: string;
   name: string;
-  type: 'truckStop' | 'weighStation' | 'restArea' | 'truckWash';  // TRUCK-ONLY types (no restaurant)
+  type: 'truckStop' | 'weighStation' | 'restArea' | 'truckWash' | 'truckRepair' | 'truckParking';
   distance: string;
   distanceMeters: number;
   parking?: 'available' | 'limited' | 'full';
@@ -28,16 +28,20 @@ interface NearbyPlace {
   lat: number;
   lng: number;
   address?: string;
-  truckFriendlyConfidence?: 'confirmed' | 'likely' | 'unknown';
+  truckFriendlyConfidence?: 'verified' | 'unverified';
+  truckGroup?: string;
+  truckScore?: number;
 }
 
-// Map filter IDs to API filter types - TRUCK ONLY
+// Map filter IDs to API filter types - STRICT TRUCK ONLY
 const FILTER_TYPE_MAP: Record<string, string> = {
   nearMe: 'nearMe',
   truckStops: 'truckStops',
   weighStations: 'weighStations',
-  restAreas: 'restAreas',
+  truckRepair: 'truckRepair',
+  truckParking: 'truckParking',
   truckWash: 'truckWash',
+  restAreas: 'restAreas',
 };
 
 const HomeScreen = () => {
@@ -84,12 +88,13 @@ const HomeScreen = () => {
   // Diagnostics panel (5 taps on logo to open)
   const diagnostics = useNextBillionDiagnostics();
   
-  // TRUCK-ONLY filter tabs (no restaurants)
+  // STRICT TRUCK-ONLY filter tabs
   const filters = [
     { id: 'nearMe', label: t.map.nearMe, icon: Navigation },
     { id: 'truckStops', label: t.map.truckStops, icon: Fuel },
     { id: 'weighStations', label: t.map.weighStations, icon: Scale },
-    { id: 'restAreas', label: t.map.restAreas, icon: TreePine },
+    { id: 'truckRepair', label: 'Truck Repair', icon: Truck },
+    { id: 'truckParking', label: 'Truck Parking', icon: MapPin },
     { id: 'truckWash', label: 'Truck Wash', icon: Droplets },
   ];
 
@@ -321,11 +326,11 @@ const HomeScreen = () => {
                 lat: ws.lat,
                 lng: ws.lng,
                 status: 'open' as const,
-                truckFriendlyConfidence: 'confirmed' as const,
+                truckFriendlyConfidence: 'verified' as const,
               };
             })
-            .filter((ws: NearbyPlace) => ws.distanceMeters <= 80000)
-            .sort((a: NearbyPlace, b: NearbyPlace) => a.distanceMeters - b.distanceMeters)
+            .filter((ws) => ws.distanceMeters <= 80000)
+            .sort((a, b) => a.distanceMeters - b.distanceMeters)
             .slice(0, 5);
 
           console.log(`[POI_SEARCH] Added ${weighStationPlaces.length} weigh stations from DB`);
@@ -741,7 +746,7 @@ const HomeScreen = () => {
                       <h3 className="font-semibold text-foreground truncate">{place.name}</h3>
                       <div className="flex items-center gap-2 mt-1 flex-wrap">
                         <span className="text-sm text-muted-foreground">{place.distance}</span>
-                        {place.truckFriendlyConfidence === 'unknown' && (
+                        {place.truckFriendlyConfidence === 'unverified' && (
                           <Badge variant="outline" className="text-xs py-0 px-1.5 gap-0.5">
                             <Info className="w-3 h-3" />
                             Unverified

@@ -1,16 +1,17 @@
 /**
- * Unit Tests for Truck POI Allowlist - P0-1 Verification
+ * Unit Tests for Truck POI Allowlist v2 - Strict 53ft Filtering
  * 
- * Tests the filter rules to ensure:
- * - Truck stops and fuel stations are ALLOWED
- * - Irrelevant retail/restaurants are BLOCKED
+ * Tests ensure:
+ * - Truck stops (Pilot, Love's, TA, Petro) are ALLOWED
+ * - Regular gas stations (Shell, Arco, Chevron, 76) are BLOCKED
+ * - Truck services and weigh stations are ALLOWED
  */
 
 import { describe, it, expect } from 'vitest';
-import { checkTruckPoiAllowlist, filterTruckOnlyPois, type TruckPoiCandidate } from './truckPoiAllowlist';
+import { checkTruckPoi, filterTruckPois, type TruckPoiCandidate } from './truckPoiAllowlist';
 
-describe('Truck POI Allowlist', () => {
-  describe('checkTruckPoiAllowlist', () => {
+describe('Truck POI Allowlist v2', () => {
+  describe('checkTruckPoi', () => {
     
     // ============ ALLOWED: TRUCK STOPS ============
     
@@ -21,10 +22,10 @@ describe('Truck POI Allowlist', () => {
         lat: 47.6,
         lng: -122.3,
       };
-      const result = checkTruckPoiAllowlist(poi);
+      const result = checkTruckPoi(poi);
       expect(result.allowed).toBe(true);
-      expect(result.category).toBe('truck_stop');
-      expect(result.confidence).toBe('confirmed');
+      expect(result.group).toBe('truck_stop');
+      expect(result.confidence).toBe('verified');
     });
 
     it('should ALLOW Love\'s Travel Stop', () => {
@@ -34,9 +35,9 @@ describe('Truck POI Allowlist', () => {
         lat: 47.6,
         lng: -122.3,
       };
-      const result = checkTruckPoiAllowlist(poi);
+      const result = checkTruckPoi(poi);
       expect(result.allowed).toBe(true);
-      expect(result.category).toBe('truck_stop');
+      expect(result.group).toBe('truck_stop');
     });
 
     it('should ALLOW TA Petro', () => {
@@ -46,9 +47,9 @@ describe('Truck POI Allowlist', () => {
         lat: 47.6,
         lng: -122.3,
       };
-      const result = checkTruckPoiAllowlist(poi);
+      const result = checkTruckPoi(poi);
       expect(result.allowed).toBe(true);
-      expect(result.category).toBe('truck_stop');
+      expect(result.group).toBe('truck_stop');
     });
 
     it('should ALLOW Sapp Bros', () => {
@@ -58,60 +59,83 @@ describe('Truck POI Allowlist', () => {
         lat: 47.6,
         lng: -122.3,
       };
-      const result = checkTruckPoiAllowlist(poi);
+      const result = checkTruckPoi(poi);
       expect(result.allowed).toBe(true);
-      expect(result.category).toBe('truck_stop');
+      expect(result.group).toBe('truck_stop');
     });
 
-    // ============ ALLOWED: TRUCK-FRIENDLY FUEL STATIONS ============
+    // ============ BLOCKED: REGULAR GAS STATIONS ============
     
-    it('should ALLOW Shell (major fuel station)', () => {
+    it('should BLOCK Shell (regular gas station)', () => {
       const poi: TruckPoiCandidate = {
         id: '10',
         name: 'Shell Gas Station',
         lat: 47.6,
         lng: -122.3,
-        category: 'fuel_station',
-        categories: [{ name: 'Fuel Station', id: '700-7600-0000' }],
+        category: 'petrol station',
+        categories: [{ name: 'petrol station', id: '7311' }],
       };
-      const result = checkTruckPoiAllowlist(poi);
-      // Shell is allowed because category includes 'fuel station'
-      expect(result.allowed).toBe(true);
+      const result = checkTruckPoi(poi);
+      expect(result.allowed).toBe(false);
+      expect(result.group).toBe('blocked');
     });
 
-    it('should ALLOW Chevron with diesel category', () => {
+    it('should BLOCK Chevron', () => {
       const poi: TruckPoiCandidate = {
         id: '11',
         name: 'Chevron',
         lat: 47.6,
         lng: -122.3,
-        category: 'diesel fuel station',
+        category: 'petrol station',
       };
-      const result = checkTruckPoiAllowlist(poi);
-      expect(result.allowed).toBe(true);
+      const result = checkTruckPoi(poi);
+      expect(result.allowed).toBe(false);
     });
 
-    it('should ALLOW QuikTrip (QT)', () => {
+    it('should BLOCK Arco', () => {
       const poi: TruckPoiCandidate = {
         id: '12',
-        name: 'QuikTrip',
+        name: 'Arco Gas Station',
         lat: 47.6,
         lng: -122.3,
       };
-      const result = checkTruckPoiAllowlist(poi);
-      expect(result.allowed).toBe(true);
-      expect(result.category).toBe('truck_stop');
+      const result = checkTruckPoi(poi);
+      expect(result.allowed).toBe(false);
     });
 
-    it('should ALLOW Speedway', () => {
+    it('should BLOCK 76', () => {
       const poi: TruckPoiCandidate = {
         id: '13',
-        name: 'Speedway Gas Station',
+        name: '76',
+        lat: 47.6,
+        lng: -122.3,
+        categories: [{ name: 'petrol station', id: '7311' }],
+      };
+      const result = checkTruckPoi(poi);
+      expect(result.allowed).toBe(false);
+    });
+
+    it('should BLOCK Safeway Fuel Station', () => {
+      const poi: TruckPoiCandidate = {
+        id: '14',
+        name: 'Safeway Fuel Station',
         lat: 47.6,
         lng: -122.3,
       };
-      const result = checkTruckPoiAllowlist(poi);
-      expect(result.allowed).toBe(true);
+      const result = checkTruckPoi(poi);
+      expect(result.allowed).toBe(false);
+    });
+
+    it('should BLOCK 7-Eleven', () => {
+      const poi: TruckPoiCandidate = {
+        id: '15',
+        name: '7-Eleven',
+        lat: 47.6,
+        lng: -122.3,
+        categories: [{ name: 'petrol station', id: '7311' }],
+      };
+      const result = checkTruckPoi(poi);
+      expect(result.allowed).toBe(false);
     });
 
     // ============ ALLOWED: TRUCK SERVICES ============
@@ -123,14 +147,26 @@ describe('Truck POI Allowlist', () => {
         lat: 47.6,
         lng: -122.3,
       };
-      const result = checkTruckPoiAllowlist(poi);
+      const result = checkTruckPoi(poi);
       expect(result.allowed).toBe(true);
-      expect(result.category).toBe('truck_service');
+      expect(result.group).toBe('truck_wash');
+    });
+
+    it('should ALLOW Speedco truck service', () => {
+      const poi: TruckPoiCandidate = {
+        id: '21',
+        name: 'Speedco Truck Lube',
+        lat: 47.6,
+        lng: -122.3,
+      };
+      const result = checkTruckPoi(poi);
+      expect(result.allowed).toBe(true);
+      expect(result.group).toBe('truck_repair');
     });
 
     // ============ ALLOWED: WEIGH STATIONS ============
     
-    it('should ALLOW DOT Weigh Station', () => {
+    it('should ALLOW Weigh Station', () => {
       const poi: TruckPoiCandidate = {
         id: '30',
         name: 'State Weigh Station',
@@ -138,9 +174,9 @@ describe('Truck POI Allowlist', () => {
         lng: -122.3,
         category: 'weigh station',
       };
-      const result = checkTruckPoiAllowlist(poi);
+      const result = checkTruckPoi(poi);
       expect(result.allowed).toBe(true);
-      expect(result.category).toBe('weigh_station');
+      expect(result.group).toBe('weigh_station');
     });
 
     it('should ALLOW Port of Entry', () => {
@@ -150,35 +186,9 @@ describe('Truck POI Allowlist', () => {
         lat: 47.6,
         lng: -122.3,
       };
-      const result = checkTruckPoiAllowlist(poi);
+      const result = checkTruckPoi(poi);
       expect(result.allowed).toBe(true);
-      expect(result.category).toBe('weigh_station');
-    });
-
-    // ============ ALLOWED: REST AREAS ============
-    
-    it('should ALLOW Rest Area', () => {
-      const poi: TruckPoiCandidate = {
-        id: '40',
-        name: 'I-90 Rest Area',
-        lat: 47.6,
-        lng: -122.3,
-      };
-      const result = checkTruckPoiAllowlist(poi);
-      expect(result.allowed).toBe(true);
-      expect(result.category).toBe('rest_area');
-    });
-
-    it('should ALLOW Service Plaza', () => {
-      const poi: TruckPoiCandidate = {
-        id: '41',
-        name: 'Highway Service Plaza',
-        lat: 47.6,
-        lng: -122.3,
-      };
-      const result = checkTruckPoiAllowlist(poi);
-      expect(result.allowed).toBe(true);
-      expect(result.category).toBe('rest_area');
+      expect(result.group).toBe('weigh_station');
     });
 
     // ============ BLOCKED: IRRELEVANT POIs ============
@@ -191,9 +201,9 @@ describe('Truck POI Allowlist', () => {
         lng: -122.3,
         category: 'coffee shop',
       };
-      const result = checkTruckPoiAllowlist(poi);
+      const result = checkTruckPoi(poi);
       expect(result.allowed).toBe(false);
-      expect(result.category).toBe('blocked');
+      expect(result.group).toBe('blocked');
     });
 
     it('should BLOCK McDonald\'s (restaurant)', () => {
@@ -204,115 +214,79 @@ describe('Truck POI Allowlist', () => {
         lng: -122.3,
         category: 'restaurant',
       };
-      const result = checkTruckPoiAllowlist(poi);
+      const result = checkTruckPoi(poi);
       expect(result.allowed).toBe(false);
     });
 
-    it('should BLOCK Safeway (grocery)', () => {
+    it('should BLOCK "Love" daycare (false positive)', () => {
       const poi: TruckPoiCandidate = {
         id: '102',
-        name: 'Safeway',
+        name: 'Imprint of Love Daycare',
         lat: 47.6,
         lng: -122.3,
-        category: 'grocery supermarket',
+        category: 'child care facility',
       };
-      const result = checkTruckPoiAllowlist(poi);
+      const result = checkTruckPoi(poi);
       expect(result.allowed).toBe(false);
     });
 
-    it('should BLOCK random auto repair shop', () => {
-      const poi: TruckPoiCandidate = {
-        id: '103',
-        name: 'Joe\'s Auto Repair',
-        lat: 47.6,
-        lng: -122.3,
-        category: 'business',
-      };
-      const result = checkTruckPoiAllowlist(poi);
-      expect(result.allowed).toBe(false);
-    });
-
-    it('should BLOCK downtown plaza locations', () => {
-      const poi: TruckPoiCandidate = {
-        id: '104',
-        name: 'City Center Gas',
-        lat: 47.6,
-        lng: -122.3,
-        address: 'Downtown City Center Plaza',
-      };
-      const result = checkTruckPoiAllowlist(poi);
-      expect(result.allowed).toBe(false);
-    });
-
-    // ============ CONDITIONAL: WALMART ============
+    // ============ TRUCK PARKING ============
     
-    it('should BLOCK Walmart without verified truck parking', () => {
+    it('should ALLOW POI with truckParking attribute', () => {
       const poi: TruckPoiCandidate = {
         id: '110',
         name: 'Walmart Supercenter',
         lat: 47.6,
         lng: -122.3,
+        truckParking: true,
       };
-      const result = checkTruckPoiAllowlist(poi);
-      expect(result.allowed).toBe(false);
+      const result = checkTruckPoi(poi);
+      expect(result.allowed).toBe(true);
+      expect(result.group).toBe('truck_parking');
     });
 
-    it('should ALLOW Walmart WITH verified truck parking', () => {
+    it('should BLOCK Walmart without truck parking', () => {
       const poi: TruckPoiCandidate = {
         id: '111',
         name: 'Walmart Supercenter',
         lat: 47.6,
         lng: -122.3,
-        truckParking: true,
       };
-      const result = checkTruckPoiAllowlist(poi);
-      expect(result.allowed).toBe(true);
-      expect(result.category).toBe('walmart');
+      const result = checkTruckPoi(poi);
+      expect(result.allowed).toBe(false);
     });
   });
 
-  describe('filterTruckOnlyPois', () => {
+  describe('filterTruckPois', () => {
     it('should filter out non-truck POIs from mixed array', () => {
       const pois: TruckPoiCandidate[] = [
         { id: '1', name: 'Pilot Flying J', lat: 47.6, lng: -122.3 },
-        { id: '2', name: 'Starbucks', lat: 47.6, lng: -122.3, category: 'coffee shop' },
+        { id: '2', name: 'Shell', lat: 47.6, lng: -122.3, categories: [{ name: 'petrol station' }] },
         { id: '3', name: "Love's Travel Stop", lat: 47.6, lng: -122.3 },
-        { id: '4', name: "McDonald's", lat: 47.6, lng: -122.3, category: 'restaurant' },
+        { id: '4', name: "Arco", lat: 47.6, lng: -122.3 },
         { id: '5', name: 'Blue Beacon Truck Wash', lat: 47.6, lng: -122.3 },
-        { id: '6', name: 'Target Store', lat: 47.6, lng: -122.3, category: 'retail' },
+        { id: '6', name: 'Chevron', lat: 47.6, lng: -122.3 },
       ];
 
-      const filtered = filterTruckOnlyPois(pois);
+      const filtered = filterTruckPois(pois);
       
       expect(filtered.length).toBe(3);
-      expect(filtered.map(p => p.name)).toEqual([
-        'Pilot Flying J',
-        "Love's Travel Stop",
-        'Blue Beacon Truck Wash',
-      ]);
+      expect(filtered.map(p => p.name)).toContain('Pilot Flying J');
+      expect(filtered.map(p => p.name)).toContain("Love's Travel Stop");
+      expect(filtered.map(p => p.name)).toContain('Blue Beacon Truck Wash');
     });
 
-    it('should keep fuel stations with truck-related categories', () => {
+    it('should block all regular gas stations', () => {
       const pois: TruckPoiCandidate[] = [
-        { 
-          id: '1', 
-          name: 'Shell', 
-          lat: 47.6, 
-          lng: -122.3,
-          category: 'fuel_station',
-          categories: [{ name: 'Fuel Station', id: '700-7600-0000' }],
-        },
-        { 
-          id: '2', 
-          name: 'Exxon', 
-          lat: 47.6, 
-          lng: -122.3,
-          category: 'diesel fuel station',
-        },
+        { id: '1', name: 'Shell', lat: 47.6, lng: -122.3, categories: [{ name: 'petrol station' }] },
+        { id: '2', name: 'Arco', lat: 47.6, lng: -122.3 },
+        { id: '3', name: 'Chevron', lat: 47.6, lng: -122.3 },
+        { id: '4', name: '76', lat: 47.6, lng: -122.3, categories: [{ name: 'petrol station' }] },
+        { id: '5', name: 'Safeway Fuel Station', lat: 47.6, lng: -122.3 },
       ];
 
-      const filtered = filterTruckOnlyPois(pois);
-      expect(filtered.length).toBe(2);
+      const filtered = filterTruckPois(pois);
+      expect(filtered.length).toBe(0);
     });
 
     it('should return empty array when no truck POIs exist', () => {
@@ -321,7 +295,7 @@ describe('Truck POI Allowlist', () => {
         { id: '2', name: 'Target', lat: 47.6, lng: -122.3, category: 'retail store' },
       ];
 
-      const filtered = filterTruckOnlyPois(pois);
+      const filtered = filterTruckPois(pois);
       expect(filtered.length).toBe(0);
     });
   });
