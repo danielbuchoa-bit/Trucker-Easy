@@ -32,7 +32,8 @@ import ReportAlertButton from './ReportAlertButton';
 import TrafficLightOverlay from './TrafficLightOverlay';
 import { createTruckCursorElement } from './TruckCursor';
 import EngineIndicator from './EngineIndicator';
-import { MapPin, Navigation as NavIcon, RotateCcw, Layers, Bug, Plus, Route, Utensils } from 'lucide-react';
+import { MapPin, Navigation as NavIcon, RotateCcw } from 'lucide-react';
+import MapControlsMenu from './MapControlsMenu';
 import WeighStationOverlay from '@/components/weighstation/WeighStationOverlay';
 import WeighStationAlert from '@/components/weighstation/WeighStationAlert';
 import WeighStationBottomSheet from '@/components/weighstation/WeighStationBottomSheet';
@@ -43,7 +44,6 @@ import { useRoadTestSafe } from '@/contexts/RoadTestContext';
 import { Button } from '@/components/ui/button';
 import { useLanguage } from '@/i18n/LanguageContext';
 import { useRouteStyle, ROUTE_STYLES } from '@/hooks/useRouteStyle';
-import RouteStyleSelector from './RouteStyleSelector';
 
 // === SPEED ALERT ICON HELPER ===
 function getSpeedAlertIconSvg(type: SpeedAlertType): string {
@@ -1019,171 +1019,133 @@ const ActiveNavigationView = () => {
         />
       )}
 
-      {/* Right side buttons */}
-      <div className="absolute top-4 right-4 z-30 flex flex-col gap-2 safe-top">
-        {/* Weigh Station Overlay - shows next station on route */}
+      {/* Weigh Station Overlay - shows next station on route (top-right fixed position) */}
+      <div className="absolute top-4 right-4 z-30 safe-top">
         <WeighStationOverlay
           nextStation={weighStationAlerts.nextStation}
           onPress={() => weighStationAlerts.openStationDetails(weighStationAlerts.nextStation)}
         />
-        
-        {/* Map style toggle */}
-        <Button
-          variant="secondary"
-          size="icon"
-          className="rounded-full shadow-lg w-12 h-12"
-          onClick={() => {
-            const styles = {
-              satellite: 'mapbox://styles/mapbox/satellite-streets-v12',
-              streets: 'mapbox://styles/mapbox/streets-v12',
-              navigation: 'mapbox://styles/mapbox/navigation-night-v1',
-            };
-            const order: Array<'satellite' | 'streets' | 'navigation'> = ['satellite', 'streets', 'navigation'];
-            const nextIndex = (order.indexOf(mapStyle) + 1) % order.length;
-            const nextStyle = order[nextIndex];
-            setMapStyle(nextStyle);
-            if (map.current) {
-              map.current.setStyle(styles[nextStyle]);
-              map.current.once('style.load', () => {
-                if (!map.current) return;
-                
-                // Recreate the arrow icon since style change removes all images
-                const arrowSvg = `
-                  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
-                    <path d="M12 4 L20 12 L16 12 L16 20 L8 20 L8 12 L4 12 Z" 
-                          fill="white" 
-                          stroke="rgba(0,0,0,0.3)" 
-                          stroke-width="1"
-                          transform="rotate(180 12 12)"/>
-                  </svg>
-                `;
-                const img = new Image(24, 24);
-                img.onload = () => {
-                  if (!map.current) return;
-                  if (!map.current.hasImage('route-arrow')) {
-                    map.current.addImage('route-arrow', img, { sdf: false });
-                  }
-                  
-                  // Now add route layers if we have coordinates
-                  if (routeCoords.length > 0 && !map.current.getSource('nav-route')) {
-                    const config = routeStyleConfig;
-                    const geojson: GeoJSON.Feature = {
-                      type: 'Feature',
-                      properties: {},
-                      geometry: { type: 'LineString', coordinates: routeCoords },
-                    };
-                    
-                    map.current.addSource('nav-route', { type: 'geojson', data: geojson });
-                    
-                    // Outline layer
-                    map.current.addLayer({
-                      id: 'nav-route-outline',
-                      type: 'line',
-                      source: 'nav-route',
-                      layout: { 'line-join': 'round', 'line-cap': 'round' },
-                      paint: { 
-                        'line-color': config.outline, 
-                        'line-width': ['interpolate', ['linear'], ['zoom'], 10, 12, 14, 16, 18, 20],
-                        'line-opacity': 1,
-                      },
-                    });
-                    
-                    // Main route layer
-                    map.current.addLayer({
-                      id: 'nav-route',
-                      type: 'line',
-                      source: 'nav-route',
-                      layout: { 'line-join': 'round', 'line-cap': 'round' },
-                      paint: { 
-                        'line-color': config.main, 
-                        'line-width': ['interpolate', ['linear'], ['zoom'], 10, 8, 14, 12, 18, 16],
-                        'line-opacity': 1,
-                      },
-                    });
-                    
-                    // Highlight layer
-                    map.current.addLayer({
-                      id: 'nav-route-highlight',
-                      type: 'line',
-                      source: 'nav-route',
-                      layout: { 'line-join': 'round', 'line-cap': 'round' },
-                      paint: { 
-                        'line-color': config.highlight, 
-                        'line-width': ['interpolate', ['linear'], ['zoom'], 10, 2, 14, 3, 18, 4],
-                        'line-opacity': config.highlightOpacity,
-                      },
-                    });
-                    
-                    // Direction arrows layer
-                    map.current.addLayer({
-                      id: 'nav-route-arrows',
-                      type: 'symbol',
-                      source: 'nav-route',
-                      layout: {
-                        'symbol-placement': 'line',
-                        'symbol-spacing': ['interpolate', ['linear'], ['zoom'], 10, 120, 14, 80, 18, 50],
-                        'icon-image': 'route-arrow',
-                        'icon-size': ['interpolate', ['linear'], ['zoom'], 10, 0.5, 14, 0.7, 18, 0.9],
-                        'icon-allow-overlap': true,
-                        'icon-ignore-placement': true,
-                        'icon-rotation-alignment': 'map',
-                        'icon-pitch-alignment': 'map',
-                      },
-                      paint: {
-                        'icon-opacity': 0.85,
-                      },
-                    });
-                  }
-                };
-                img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(arrowSvg);
-              });
-            }
-          }}
-        >
-          <Layers className="w-5 h-5" />
-        </Button>
-        
-        {/* Route style selector */}
-        <RouteStyleSelector
-          currentStyle={routeStyle}
-          onStyleChange={setRouteStyle}
-          className="rounded-full w-12 h-12"
-        />
-        
-        {/* Add report button */}
-        <Button
-          variant="secondary"
-          size="icon"
-          className="rounded-full shadow-lg w-12 h-12"
-        >
-          <Plus className="w-5 h-5" />
-        </Button>
-        
-        {/* Food suggestions indicator - shows when at a POI */}
-        {currentVisitedPoi && !isShowingFoodSuggestion && (
-          <Button
-            variant="default"
-            size="icon"
-            className="rounded-full shadow-lg w-12 h-12 bg-green-600 hover:bg-green-700"
-            onClick={() => {
-              // Force show food suggestions by navigating to stop advisor
-              window.location.href = '/stop-advisor';
-            }}
-          >
-            <Utensils className="w-5 h-5" />
-          </Button>
-        )}
-        
-        {/* Debug toggle button */}
-        <Button
-          variant={showDebug ? "default" : "secondary"}
-          size="icon"
-          className="rounded-full shadow-lg w-12 h-12"
-          onClick={() => setShowDebug(!showDebug)}
-        >
-          <Bug className="w-5 h-5" />
-        </Button>
       </div>
+      
+      {/* Collapsible Map Controls Menu */}
+      <MapControlsMenu
+        currentMapStyle={mapStyle}
+        onCycleMapStyle={() => {
+          const styles = {
+            satellite: 'mapbox://styles/mapbox/satellite-streets-v12',
+            streets: 'mapbox://styles/mapbox/streets-v12',
+            navigation: 'mapbox://styles/mapbox/navigation-night-v1',
+          };
+          const order: Array<'satellite' | 'streets' | 'navigation'> = ['satellite', 'streets', 'navigation'];
+          const nextIndex = (order.indexOf(mapStyle) + 1) % order.length;
+          const nextStyle = order[nextIndex];
+          setMapStyle(nextStyle);
+          if (map.current) {
+            map.current.setStyle(styles[nextStyle]);
+            map.current.once('style.load', () => {
+              if (!map.current) return;
+              
+              // Recreate the arrow icon since style change removes all images
+              const arrowSvg = `
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+                  <path d="M12 4 L20 12 L16 12 L16 20 L8 20 L8 12 L4 12 Z" 
+                        fill="white" 
+                        stroke="rgba(0,0,0,0.3)" 
+                        stroke-width="1"
+                        transform="rotate(180 12 12)"/>
+                </svg>
+              `;
+              const img = new Image(24, 24);
+              img.onload = () => {
+                if (!map.current) return;
+                if (!map.current.hasImage('route-arrow')) {
+                  map.current.addImage('route-arrow', img, { sdf: false });
+                }
+                
+                // Now add route layers if we have coordinates
+                if (routeCoords.length > 0 && !map.current.getSource('nav-route')) {
+                  const config = routeStyleConfig;
+                  const geojson: GeoJSON.Feature = {
+                    type: 'Feature',
+                    properties: {},
+                    geometry: { type: 'LineString', coordinates: routeCoords },
+                  };
+                  
+                  map.current.addSource('nav-route', { type: 'geojson', data: geojson });
+                  
+                  // Outline layer
+                  map.current.addLayer({
+                    id: 'nav-route-outline',
+                    type: 'line',
+                    source: 'nav-route',
+                    layout: { 'line-join': 'round', 'line-cap': 'round' },
+                    paint: { 
+                      'line-color': config.outline, 
+                      'line-width': ['interpolate', ['linear'], ['zoom'], 10, 12, 14, 16, 18, 20],
+                      'line-opacity': 1,
+                    },
+                  });
+                  
+                  // Main route layer
+                  map.current.addLayer({
+                    id: 'nav-route',
+                    type: 'line',
+                    source: 'nav-route',
+                    layout: { 'line-join': 'round', 'line-cap': 'round' },
+                    paint: { 
+                      'line-color': config.main, 
+                      'line-width': ['interpolate', ['linear'], ['zoom'], 10, 8, 14, 12, 18, 16],
+                      'line-opacity': 1,
+                    },
+                  });
+                  
+                  // Highlight layer
+                  map.current.addLayer({
+                    id: 'nav-route-highlight',
+                    type: 'line',
+                    source: 'nav-route',
+                    layout: { 'line-join': 'round', 'line-cap': 'round' },
+                    paint: { 
+                      'line-color': config.highlight, 
+                      'line-width': ['interpolate', ['linear'], ['zoom'], 10, 2, 14, 3, 18, 4],
+                      'line-opacity': config.highlightOpacity,
+                    },
+                  });
+                  
+                  // Direction arrows layer
+                  map.current.addLayer({
+                    id: 'nav-route-arrows',
+                    type: 'symbol',
+                    source: 'nav-route',
+                    layout: {
+                      'symbol-placement': 'line',
+                      'symbol-spacing': ['interpolate', ['linear'], ['zoom'], 10, 120, 14, 80, 18, 50],
+                      'icon-image': 'route-arrow',
+                      'icon-size': ['interpolate', ['linear'], ['zoom'], 10, 0.5, 14, 0.7, 18, 0.9],
+                      'icon-allow-overlap': true,
+                      'icon-ignore-placement': true,
+                      'icon-rotation-alignment': 'map',
+                      'icon-pitch-alignment': 'map',
+                    },
+                    paint: {
+                      'icon-opacity': 0.85,
+                    },
+                  });
+                }
+              };
+              img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(arrowSvg);
+            });
+          }
+        }}
+        currentRouteStyle={routeStyle}
+        onRouteStyleChange={setRouteStyle}
+        showDebug={showDebug}
+        onToggleDebug={() => setShowDebug(!showDebug)}
+        showFoodButton={!!(currentVisitedPoi && !isShowingFoodSuggestion)}
+        onFoodClick={() => {
+          window.location.href = '/stop-advisor';
+        }}
+      />
 
       {/* Arrival Prompt */}
       {arrival.arrivalState.isArrived && arrival.arrivalState.poi && (
