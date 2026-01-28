@@ -73,6 +73,14 @@ serve(async (req) => {
       allow_promotion_codes: true,
       subscription_data: {
         trial_period_days: 3,
+        metadata: {
+          user_id: user.id,
+          user_email: user.email,
+        },
+      },
+      metadata: {
+        user_id: user.id,
+        requested_price_id: priceId,
       },
     });
 
