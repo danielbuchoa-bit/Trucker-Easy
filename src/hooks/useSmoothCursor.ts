@@ -37,6 +37,9 @@ export interface CursorPosition {
   snappedLng?: number;
   isOnRoute?: boolean;
   matchConfidence?: number;
+  // === NEW: Snap-to-road distance metrics ===
+  distanceToRouteM?: number;
+  nearestSegmentIndex?: number;
 }
 
 export interface RenderCursor {
@@ -49,6 +52,10 @@ export interface RenderCursor {
   // Enhanced rendering data
   isOnRoute: boolean;
   matchConfidence: number;
+  // === NEW: Snap-to-road distance metrics ===
+  distanceToRouteM: number | null;
+  snapOffsetM: number | null;
+  nearestSegmentIndex: number | null;
   // Debug info
   spikeRejectCount: number;
   lastSpikeRejected: { distance: number; speed: string; reason: string } | null;
@@ -107,6 +114,9 @@ export function useSmoothCursor(
     frameCount: 0,
     isOnRoute: false,
     matchConfidence: 0,
+    distanceToRouteM: null,
+    snapOffsetM: null,
+    nearestSegmentIndex: null,
     spikeRejectCount: 0,
     lastSpikeRejected: null,
     consecutiveRejects: 0,
@@ -203,6 +213,22 @@ export function useSmoothCursor(
     state.frameCount = frameCountRef.current;
     state.isOnRoute = curr.isOnRoute ?? false;
     state.matchConfidence = curr.matchConfidence ?? 0;
+    // === NEW: Snap-to-road distance metrics ===
+    state.distanceToRouteM = curr.distanceToRouteM ?? null;
+    state.nearestSegmentIndex = curr.nearestSegmentIndex ?? null;
+    // Calculate snap offset (distance from raw GPS to snapped position)
+    if (curr.snappedLat !== undefined && curr.snappedLng !== undefined) {
+      const R = 6371e3;
+      const dLat = (curr.snappedLat - curr.lat) * Math.PI / 180;
+      const dLng = (curr.snappedLng - curr.lng) * Math.PI / 180;
+      const a = Math.sin(dLat/2) ** 2 + 
+                Math.cos(curr.lat * Math.PI / 180) * 
+                Math.cos(curr.snappedLat * Math.PI / 180) * 
+                Math.sin(dLng/2) ** 2;
+      state.snapOffsetM = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    } else {
+      state.snapOffsetM = null;
+    }
     state.spikeRejectCount = spikeRejectCountRef.current;
     state.lastSpikeRejected = lastSpikeRejectedRef.current;
 

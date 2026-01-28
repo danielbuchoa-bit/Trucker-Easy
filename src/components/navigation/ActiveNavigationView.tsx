@@ -295,6 +295,13 @@ const ActiveNavigationView = () => {
       heading: matchedPosition.heading,
       speed: matchedPosition.speed,
       timestamp: matchedPosition.timestamp,
+      // Pass through for debug panel
+      snappedLat: matchedPosition.snappedLat,
+      snappedLng: matchedPosition.snappedLng,
+      isOnRoute: matchedPosition.isOnRoute,
+      matchConfidence: matchedPosition.snapStrength,
+      distanceToRouteM: matchedPosition.distanceToRoute,
+      nearestSegmentIndex: matchedPosition.segmentIndex,
     };
   }, [matchedPosition]);
   
@@ -1188,7 +1195,12 @@ const ActiveNavigationView = () => {
           matchConfidence: matchedPosition?.snapStrength ?? 0,
           isOnRoute: matchedPosition?.isOnRoute ?? false,
           
-          // HERE Map Matching
+          // === NEW: Snap-to-road distance metrics ===
+          distanceToRouteM: renderCursor?.distanceToRouteM ?? matchedPosition?.distanceToRoute ?? null,
+          snapOffsetM: renderCursor?.snapOffsetM ?? null,
+          nearestSegmentIndex: renderCursor?.nearestSegmentIndex ?? matchedPosition?.segmentIndex ?? null,
+          
+          // Map Matching Engine
           hereMatchUsed: (matchedPosition as any)?.hereMatchUsed ?? false,
           hereMatchConfidence: (matchedPosition as any)?.hereMatchConfidence ?? 0,
           
@@ -1203,6 +1215,7 @@ const ActiveNavigationView = () => {
           // Spike detection
           lastSpikeRejected: renderCursor?.lastSpikeRejected ?? null,
           spikeRejectCount: renderCursor?.spikeRejectCount ?? 0,
+          consecutiveRejects: renderCursor?.consecutiveRejects ?? 0,
           
           // Timestamps
           lastGpsUpdate: matchedPosition?.timestamp ?? 0,
