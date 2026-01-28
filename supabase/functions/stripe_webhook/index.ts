@@ -78,6 +78,8 @@ async function upsertSubscription(
     ? new Date(subscription.current_period_end * 1000).toISOString()
     : null;
 
+  console.log(`[stripe_webhook] Upserting subscription: user=${userId}, tier=${planTier}, status=${status}, period_end=${currentPeriodEnd}`);
+
   const { error } = await supabase
     .from('subscriptions')
     .upsert({
@@ -98,20 +100,58 @@ async function upsertSubscription(
     throw error;
   }
 
-  console.log(`[stripe_webhook] Subscription updated: user=${userId}, tier=${planTier}, status=${status}`);
+  console.log(`[stripe_webhook] Subscription updated successfully: user=${userId}, tier=${planTier}, status=${status}`);
+}
+
+async function deleteSubscription(userId: string) {
+  console.log(`[stripe_webhook] Deleting subscription for user: ${userId}`);
+  
+  const { error } = await supabase
+    .from('subscriptions')
+    .delete()
+    .eq('user_id', userId);
+
+  if (error) {
+    console.error('[stripe_webhook] Delete error:', error);
+    throw error;
+  }
+
+  console.log(`[stripe_webhook] Subscription deleted for user: ${userId}`);
+}
+
+async function getUserIdFromSubscription(subscription: Stripe.Subscription): Promise<string | null> {
+  // First try: Get user_id from subscription metadata (most reliable)
+  const metadataUserId = subscription.metadata?.user_id;
+  if (metadataUserId) {
+    console.log(`[stripe_webhook] Found user_id in subscription metadata: ${metadataUserId}`);
+    return metadataUserId;
+  }
+
+  // Second try: Get customer email and lookup user
+  try {
+    const customer = await stripe.customers.retrieve(subscription.customer as string);
+    if (!customer || customer.deleted || !('email' in customer) || !customer.email) {
+      console.error('[stripe_webhook] Customer not found or no email');
+      return null;
+    }
+
+    const userId = await getUserIdByEmail(customer.email);
+    if (userId) {
+      console.log(`[stripe_webhook] Found user by email lookup: ${userId} (${customer.email})`);
+    } else {
+      console.error(`[stripe_webhook] No user found for email: ${customer.email}`);
+    }
+    return userId;
+  } catch (err) {
+    console.error('[stripe_webhook] Error looking up customer:', err);
+    return null;
+  }
 }
 
 async function handleSubscriptionEvent(subscription: Stripe.Subscription) {
-  // Get customer email
-  const customer = await stripe.customers.retrieve(subscription.customer as string);
-  if (!customer || customer.deleted || !('email' in customer) || !customer.email) {
-    console.error('[stripe_webhook] Customer not found or no email');
-    return;
-  }
-
-  const userId = await getUserIdByEmail(customer.email);
+  const userId = await getUserIdFromSubscription(subscription);
   if (!userId) {
-    console.error('[stripe_webhook] No user found for email:', customer.email);
+    console.error('[stripe_webhook] Could not determine user_id for subscription:', subscription.id);
     return;
   }
 
@@ -120,6 +160,62 @@ async function handleSubscriptionEvent(subscription: Stripe.Subscription) {
   // Handle referral status update when user subscribes
   if (subscription.status === 'active' || subscription.status === 'trialing') {
     await updateReferralOnSubscribe(userId);
+  }
+}
+
+async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
+  const userId = await getUserIdFromSubscription(subscription);
+  if (!userId) {
+    console.error('[stripe_webhook] Could not determine user_id for deleted subscription:', subscription.id);
+    return;
+  }
+
+  // Delete the subscription record entirely
+  await deleteSubscription(userId);
+}
+
+async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
+  console.log(`[stripe_webhook] Processing checkout.session.completed: ${session.id}`);
+
+  // Get user_id from session metadata
+  const userId = session.metadata?.user_id;
+  if (!userId) {
+    console.error('[stripe_webhook] No user_id in checkout session metadata');
+    return;
+  }
+
+  const subscriptionId = session.subscription as string | null;
+  if (!subscriptionId) {
+    console.log('[stripe_webhook] No subscription in checkout session (might be one-time payment)');
+    return;
+  }
+
+  // Retrieve the subscription and update it with user_id in metadata
+  try {
+    const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+    
+    // Update subscription metadata with user_id if not already set
+    if (!subscription.metadata?.user_id) {
+      console.log(`[stripe_webhook] Adding user_id to subscription metadata: ${userId}`);
+      await stripe.subscriptions.update(subscriptionId, {
+        metadata: {
+          user_id: userId,
+          user_email: session.customer_email || session.metadata?.user_email || '',
+        },
+      });
+    }
+
+    // Immediately upsert the subscription to our database
+    await upsertSubscription(userId, subscription);
+
+    // Handle referral status
+    if (subscription.status === 'active' || subscription.status === 'trialing') {
+      await updateReferralOnSubscribe(userId);
+    }
+
+    console.log(`[stripe_webhook] Checkout completed and subscription activated for user: ${userId}`);
+  } catch (err) {
+    console.error('[stripe_webhook] Error processing checkout completion:', err);
   }
 }
 
@@ -150,10 +246,7 @@ async function handleInvoicePaid(invoice: Stripe.Invoice) {
   await handleSubscriptionEvent(subscription);
 
   // Handle referral cycle counting
-  const customer = await stripe.customers.retrieve(invoice.customer as string);
-  if (!customer || customer.deleted || !('email' in customer) || !customer.email) return;
-
-  const userId = await getUserIdByEmail(customer.email);
+  const userId = await getUserIdFromSubscription(subscription);
   if (!userId) return;
 
   await processReferralCycle(userId);
@@ -279,10 +372,18 @@ serve(async (req) => {
     console.log(`[stripe_webhook] Received event: ${event.type}`);
 
     switch (event.type) {
+      // Handle checkout completion FIRST - this is where we get user_id from metadata
+      case 'checkout.session.completed':
+        await handleCheckoutCompleted(event.data.object as Stripe.Checkout.Session);
+        break;
+
       case 'customer.subscription.created':
       case 'customer.subscription.updated':
-      case 'customer.subscription.deleted':
         await handleSubscriptionEvent(event.data.object as Stripe.Subscription);
+        break;
+      
+      case 'customer.subscription.deleted':
+        await handleSubscriptionDeleted(event.data.object as Stripe.Subscription);
         break;
       
       case 'invoice.paid':
