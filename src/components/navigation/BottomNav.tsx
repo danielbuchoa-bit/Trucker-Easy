@@ -32,29 +32,30 @@ const BottomNav = forwardRef<HTMLElement, BottomNavProps>(({ activeTab, onTabCha
               key={tab.id}
               onClick={() => onTabChange(tab.id)}
               className={cn(
-                'flex flex-col items-center justify-center w-full h-full gap-1 transition-all duration-200',
+                'flex flex-col items-center justify-center w-full h-full gap-1 transition-all duration-300',
                 'active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
-                isActive && !isHighlight && 'text-primary',
-                !isActive && !isHighlight && 'text-muted-foreground hover:text-foreground',
+                isActive && !isHighlight && 'text-primary drop-shadow-[0_0_8px_hsl(var(--primary)/0.6)]',
+                !isActive && !isHighlight && 'text-muted-foreground hover:text-primary/70',
                 isHighlight && 'relative'
               )}
             >
               {isHighlight ? (
                 <div
                   className={cn(
-                    'flex items-center justify-center w-14 h-14 -mt-6 rounded-full transition-all',
+                    'flex items-center justify-center w-14 h-14 -mt-6 rounded-full transition-all duration-300',
                     'bg-primary text-primary-foreground shadow-lg',
-                    isActive && 'animate-pulse-glow'
+                    isActive && 'shadow-[0_0_20px_hsl(var(--primary)/0.6),0_0_40px_hsl(var(--primary)/0.3)] animate-pulse-glow'
                   )}
                 >
                   <Icon className="w-6 h-6" />
                 </div>
               ) : (
-                <Icon className={cn('w-6 h-6', isActive && 'scale-110')} />
+                <Icon className={cn('w-6 h-6 transition-transform duration-300', isActive && 'scale-110')} />
               )}
               <span className={cn(
-                'text-xs font-medium',
-                isHighlight && 'mt-1'
+                'text-xs font-medium transition-all duration-300',
+                isHighlight && 'mt-1',
+                isActive && !isHighlight && 'text-primary'
               )}>
                 {tab.label}
               </span>
