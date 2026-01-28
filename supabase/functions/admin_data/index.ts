@@ -233,7 +233,6 @@ serve(async (req) => {
         profiles: profileMap.get(s.user_id) || { email: null, full_name: null }
       })) || [];
       
-      if (error) throw error;
 
       return new Response(JSON.stringify({ subscriptions: data || [] }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
