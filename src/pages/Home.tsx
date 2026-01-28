@@ -432,7 +432,7 @@ const HomeScreen = () => {
     }
   }, [userLocation, activeFilter, fetchNearbyPlaces]);
 
-  // Search for addresses/POIs using geocoding API
+  // Search for addresses/POIs using geocoding API with location bias
   const handleSearch = useCallback(async (query: string) => {
     if (query.length < 3) {
       setSearchResults([]);
@@ -442,8 +442,14 @@ const HomeScreen = () => {
 
     setIsSearching(true);
     try {
+      // Include user's current location for proximity-based results
       const { data, error } = await supabase.functions.invoke('nb_geocode', {
-        body: { query, limit: 5 },
+        body: { 
+          query, 
+          limit: 5,
+          lat: userLocation?.lat,
+          lng: userLocation?.lng,
+        },
       });
 
       if (error) {
@@ -464,7 +470,7 @@ const HomeScreen = () => {
     } finally {
       setIsSearching(false);
     }
-  }, []);
+  }, [userLocation]);
 
   // Handle search input with debouncing
   const handleSearchInputChange = (value: string) => {
