@@ -7,6 +7,7 @@ const corsHeaders = {
 
 interface VoiceCommand {
   transcript: string;
+  language?: 'en' | 'es' | 'pt';
   context?: {
     current_route?: boolean;
     location?: { lat: number; lng: number };
@@ -19,16 +20,19 @@ serve(async (req) => {
   }
 
   try {
-    const { transcript, context }: VoiceCommand = await req.json();
+    const { transcript, language = 'en', context }: VoiceCommand = await req.json();
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     
     if (!LOVABLE_API_KEY) {
       throw new Error("LOVABLE_API_KEY is not configured");
     }
 
-    console.log("Voice command received:", transcript);
+    console.log("Voice command received:", transcript, "language:", language);
 
-    const systemPrompt = `Você interpreta comandos de voz de motoristas de caminhão e retorna ações estruturadas.
+    // Language-specific prompts
+    const getSystemPrompt = (lang: string) => {
+      if (lang === 'pt') {
+        return `Você interpreta comandos de voz de motoristas de caminhão e retorna ações estruturadas.
 
 COMANDOS SUPORTADOS:
 - Navegação: "ir para", "navegar até", "rota para"
@@ -40,7 +44,6 @@ RESPONDA EM JSON:
 {
   "action": "navigate|search|report|info|chat",
   "parameters": {
-    // Depende da ação:
     // navigate: { destination: "string" }
     // search: { query: "string", type: "fuel|food|rest|weigh_station" }
     // report: { type: "accident|traffic|police|road_condition", details: "string" }
@@ -52,9 +55,71 @@ RESPONDA EM JSON:
 }
 
 Se não entender o comando, use action: "chat" e responda normalmente.`;
+      } else if (lang === 'es') {
+        return `Interpretas comandos de voz de conductores de camiones y devuelves acciones estructuradas.
 
-    const userPrompt = `Comando de voz: "${transcript}"
-${context?.current_route ? 'Contexto: Motorista está em navegação ativa' : ''}`;
+COMANDOS SOPORTADOS:
+- Navegación: "ir a", "navegar a", "ruta hacia"
+- Búsqueda: "encontrar", "buscar", "dónde está"
+- Reporte: "reportar", "avisar", "hay"
+- Información: "cuánto tiempo", "distancia", "próximo"
+
+RESPONDE EN JSON:
+{
+  "action": "navigate|search|report|info|chat",
+  "parameters": {
+    // navigate: { destination: "string" }
+    // search: { query: "string", type: "fuel|food|rest|weigh_station" }
+    // report: { type: "accident|traffic|police|road_condition", details: "string" }
+    // info: { query: "string" }
+    // chat: { message: "string" }
+  },
+  "confirmation": "Frase corta para confirmar el comando al conductor",
+  "confidence": 0.0-1.0
+}
+
+Si no entiendes el comando, usa action: "chat" y responde normalmente.`;
+      } else {
+        return `You interpret voice commands from truck drivers and return structured actions.
+
+SUPPORTED COMMANDS:
+- Navigation: "go to", "navigate to", "route to"
+- Search: "find", "search for", "where is"
+- Report: "report", "alert", "there is"
+- Information: "how long", "distance", "next"
+
+RESPOND IN JSON:
+{
+  "action": "navigate|search|report|info|chat",
+  "parameters": {
+    // navigate: { destination: "string" }
+    // search: { query: "string", type: "fuel|food|rest|weigh_station" }
+    // report: { type: "accident|traffic|police|road_condition", details: "string" }
+    // info: { query: "string" }
+    // chat: { message: "string" }
+  },
+  "confirmation": "Short phrase to confirm the command to the driver",
+  "confidence": 0.0-1.0
+}
+
+If you don't understand the command, use action: "chat" and respond normally.`;
+      }
+    };
+
+    const systemPrompt = getSystemPrompt(language);
+
+    const getContextText = (lang: string, isNavigating: boolean) => {
+      if (lang === 'pt') {
+        return isNavigating ? 'Contexto: Motorista está em navegação ativa' : '';
+      } else if (lang === 'es') {
+        return isNavigating ? 'Contexto: Conductor está en navegación activa' : '';
+      } else {
+        return isNavigating ? 'Context: Driver is in active navigation' : '';
+      }
+    };
+
+    const userPrompt = `${language === 'pt' ? 'Comando de voz' : language === 'es' ? 'Comando de voz' : 'Voice command'}: "${transcript}"
+${getContextText(language, context?.current_route || false)}`;
 
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
@@ -102,10 +167,16 @@ ${context?.current_route ? 'Contexto: Motorista está em navegação ativa' : ''
       command = JSON.parse(cleanContent);
     } catch {
       console.error("Failed to parse AI response:", content);
+      const fallbackMessages = {
+        pt: { message: "Desculpe, não entendi o comando. Pode repetir?", confirmation: "Não entendi. Tente novamente." },
+        es: { message: "Lo siento, no entendí el comando. ¿Puedes repetir?", confirmation: "No entendí. Intenta de nuevo." },
+        en: { message: "Sorry, I didn't understand the command. Can you repeat?", confirmation: "I didn't understand. Try again." }
+      };
+      const fallback = fallbackMessages[language] || fallbackMessages.en;
       command = {
         action: "chat",
-        parameters: { message: "Desculpe, não entendi o comando. Pode repetir?" },
-        confirmation: "Não entendi. Tente novamente.",
+        parameters: { message: fallback.message },
+        confirmation: fallback.confirmation,
         confidence: 0.3
       };
     }
