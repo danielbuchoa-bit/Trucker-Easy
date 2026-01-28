@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
-import { Plus, X, Layers, Bug, Utensils, Route } from 'lucide-react';
+import { Plus, Layers, Bug, Utensils } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import RouteStyleSelector from './RouteStyleSelector';
 import { RouteStyleType } from '@/hooks/useRouteStyle';
@@ -121,17 +121,15 @@ const MapControlsMenu = ({
       <Button
         variant="secondary"
         size="icon"
-        className={cn(
-          "rounded-full shadow-lg w-14 h-14 bg-background/95 backdrop-blur-sm transition-transform duration-300",
-          isOpen && "rotate-45"
-        )}
+        className="rounded-full shadow-lg w-14 h-14 bg-background/95 backdrop-blur-sm"
         onClick={() => setIsOpen(!isOpen)}
       >
-        {isOpen ? (
-          <X className="w-6 h-6" />
-        ) : (
-          <Plus className="w-6 h-6" />
-        )}
+        <Plus 
+          className={cn(
+            "w-6 h-6 transition-transform duration-300 ease-out",
+            isOpen && "rotate-[135deg]"
+          )} 
+        />
       </Button>
     </div>
   );
