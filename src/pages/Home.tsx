@@ -570,7 +570,7 @@ const HomeScreen = () => {
             </Button>
             <Button 
               onClick={() => setIsRateModalOpen(true)}
-              className="flex-1 h-12 bg-facility-action hover:bg-facility-action/90 text-facility-action-foreground"
+              className="flex-1 h-12 bg-success hover:bg-success/90 text-success-foreground shadow-[0_0_15px_hsl(var(--success)/0.4)] hover:shadow-[0_0_25px_hsl(var(--success)/0.6)] border border-success/30"
             >
               <Star className="w-4 h-4 mr-2" />
               Rate Facility
