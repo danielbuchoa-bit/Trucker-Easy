@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
-import { Plus, Layers, Bug, Utensils } from 'lucide-react';
+import { Plus, Layers, Bug, Utensils, Settings } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import RouteStyleSelector from './RouteStyleSelector';
 import { RouteStyleType } from '@/hooks/useRouteStyle';
@@ -21,6 +21,9 @@ interface MapControlsMenuProps {
   // Food suggestion (optional)
   showFoodButton?: boolean;
   onFoodClick?: () => void;
+  
+  // Settings
+  onSettingsClick?: () => void;
 }
 
 const MapControlsMenu = ({
@@ -32,6 +35,7 @@ const MapControlsMenu = ({
   onToggleDebug,
   showFoodButton = false,
   onFoodClick,
+  onSettingsClick,
 }: MapControlsMenuProps) => {
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -100,6 +104,21 @@ const MapControlsMenu = ({
             }}
           >
             <Utensils className="w-5 h-5" />
+          </Button>
+        )}
+        
+        {/* Settings button */}
+        {onSettingsClick && (
+          <Button
+            variant="secondary"
+            size="icon"
+            className="rounded-full shadow-lg w-12 h-12 bg-background/90 backdrop-blur-sm"
+            onClick={() => {
+              handleAction(onSettingsClick);
+              setIsOpen(false);
+            }}
+          >
+            <Settings className="w-5 h-5" />
           </Button>
         )}
         
