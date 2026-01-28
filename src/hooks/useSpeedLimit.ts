@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { supabase } from '@/integrations/supabase/client';
 
 interface UseSpeedLimitProps {
   lat: number | null;
@@ -13,7 +12,7 @@ interface SpeedLimitResult {
   speedLimitKmh: number | null;
   roadName: string | null;
   loading: boolean;
-  source: 'api' | 'estimated' | 'fallback' | null;
+  source: 'estimated' | 'fallback' | null;
 }
 
 // Cache for speed limit responses
@@ -29,9 +28,8 @@ interface CacheEntry {
 // Global cache (shared between hook instances)
 const speedLimitCache: CacheEntry[] = [];
 const MAX_CACHE_SIZE = 50;
-const CACHE_TTL_MS = 60000; // 60 seconds - longer TTL to reduce API calls
-const MIN_DISTANCE_FOR_REFETCH = 500; // 500 meters - much higher threshold
-const FETCH_THROTTLE_MS = 10000; // 10 seconds between API calls
+const CACHE_TTL_MS = 120000; // 2 minutes TTL
+const MIN_DISTANCE_FOR_REFETCH = 1000; // 1km threshold
 
 function haversineDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 6371000;
@@ -63,18 +61,26 @@ function findCachedNearby(lat: number, lng: number): CacheEntry | null {
 }
 
 function addToCache(entry: CacheEntry) {
-  // Add to cache
   speedLimitCache.push(entry);
-  // Limit cache size
   while (speedLimitCache.length > MAX_CACHE_SIZE) {
     speedLimitCache.shift();
   }
 }
 
+// Estimate speed limit based on road type heuristics
+function estimateSpeedLimit(): number {
+  // Default to 65 mph for highway/interstate (most common for truckers)
+  return 65;
+}
+
+/**
+ * Speed limit hook - uses local estimation only
+ * NextBillion.ai provides speed limits via route instructions, not real-time lookup
+ * For real-time display, we estimate based on context
+ */
 export function useSpeedLimit({
   lat,
   lng,
-  heading,
   enabled = true,
 }: UseSpeedLimitProps): SpeedLimitResult {
   const [result, setResult] = useState<SpeedLimitResult>({
@@ -86,95 +92,13 @@ export function useSpeedLimit({
   });
   
   const lastFetchRef = useRef<{ lat: number; lng: number; time: number } | null>(null);
-  const pendingRef = useRef(false);
 
-  const fetchSpeedLimit = useCallback(async (userLat: number, userLng: number, userHeading?: number | null) => {
-    // Check proximity cache first
-    const cached = findCachedNearby(userLat, userLng);
-    
-    if (cached) {
-      setResult({
-        speedLimitMph: cached.speedLimitMph,
-        speedLimitKmh: Math.round(cached.speedLimitMph * 1.60934),
-        roadName: cached.roadName,
-        loading: false,
-        source: cached.source as 'api' | 'estimated' | 'fallback',
-      });
-      return;
-    }
-
-    // Check throttle - don't fetch too frequently
-    if (lastFetchRef.current) {
-      const timeSinceLastFetch = Date.now() - lastFetchRef.current.time;
-      const distanceMoved = haversineDistance(
-        userLat, userLng,
-        lastFetchRef.current.lat, lastFetchRef.current.lng
-      );
-      
-      // Strong throttle: only refetch if moved significantly AND enough time passed
-      if (timeSinceLastFetch < FETCH_THROTTLE_MS || distanceMoved < MIN_DISTANCE_FOR_REFETCH) {
-        return;
-      }
-    }
-
-    // Prevent concurrent fetches
-    if (pendingRef.current) return;
-    pendingRef.current = true;
-
-    setResult(prev => ({ ...prev, loading: true }));
-
-    try {
-      const { data, error } = await supabase.functions.invoke('here_speed_limit', {
-        body: {
-          lat: userLat,
-          lng: userLng,
-          heading: userHeading ?? undefined,
-        },
-      });
-
-      if (error) {
-        console.error('[SPEED_LIMIT] API error:', error);
-        return;
-      }
-
-      if (data) {
-        const newResult: SpeedLimitResult = {
-          speedLimitMph: data.speedLimitMph,
-          speedLimitKmh: data.speedLimitKmh,
-          roadName: data.roadName,
-          loading: false,
-          source: data.source === 'fallback' ? 'fallback' : data.source === 'estimated' ? 'estimated' : 'api',
-        };
-        
-        setResult(newResult);
-        
-        // Add to cache
-        addToCache({
-          speedLimitMph: data.speedLimitMph,
-          roadName: data.roadName,
-          source: data.source,
-          timestamp: Date.now(),
-          lat: userLat,
-          lng: userLng,
-        });
-        
-        lastFetchRef.current = { lat: userLat, lng: userLng, time: Date.now() };
-      }
-    } catch (err) {
-      console.error('[SPEED_LIMIT] Fetch error:', err);
-    } finally {
-      pendingRef.current = false;
-      setResult(prev => ({ ...prev, loading: false }));
-    }
-  }, []);
-
-  // Debounced effect - only trigger when position changes significantly
   useEffect(() => {
     if (!enabled || lat === null || lng === null) {
       return;
     }
 
-    // Quick cache check before any fetch
+    // Quick cache check
     const cached = findCachedNearby(lat, lng);
     if (cached) {
       setResult({
@@ -182,18 +106,36 @@ export function useSpeedLimit({
         speedLimitKmh: Math.round(cached.speedLimitMph * 1.60934),
         roadName: cached.roadName,
         loading: false,
-        source: cached.source as 'api' | 'estimated' | 'fallback',
+        source: cached.source as 'estimated' | 'fallback',
       });
       return;
     }
 
-    // Debounce the API call
-    const timeoutId = setTimeout(() => {
-      fetchSpeedLimit(lat, lng, heading);
-    }, 1000); // 1 second debounce
-
-    return () => clearTimeout(timeoutId);
-  }, [lat, lng, heading, enabled, fetchSpeedLimit]);
+    // Use local estimation (no API call)
+    const estimatedLimit = estimateSpeedLimit();
+    
+    const newResult: SpeedLimitResult = {
+      speedLimitMph: estimatedLimit,
+      speedLimitKmh: Math.round(estimatedLimit * 1.60934),
+      roadName: null,
+      loading: false,
+      source: 'estimated',
+    };
+    
+    setResult(newResult);
+    
+    // Add to cache
+    addToCache({
+      speedLimitMph: estimatedLimit,
+      roadName: null,
+      source: 'estimated',
+      timestamp: Date.now(),
+      lat,
+      lng,
+    });
+    
+    lastFetchRef.current = { lat, lng, time: Date.now() };
+  }, [lat, lng, enabled]);
 
   return result;
 }

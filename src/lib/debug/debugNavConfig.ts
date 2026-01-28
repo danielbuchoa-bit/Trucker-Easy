@@ -1,7 +1,7 @@
 /**
  * DEBUG_NAV Configuration
  * 
- * Comprehensive navigation diagnostics for HERE ↔ Mapbox integration
+ * Comprehensive navigation diagnostics for NextBillion ↔ Mapbox integration
  */
 
 // === DEBUG MODE TOGGLE ===
@@ -12,8 +12,8 @@ export const DEBUG_NAV = {
   
   // Individual feature toggles
   features: {
-    // Log all HERE API requests/responses
-    logHereRequests: true,
+    // Log all NextBillion API requests/responses
+    logApiRequests: true,
     // Log Mapbox source/layer operations
     logMapboxRender: true,
     // Log GPS updates and positioning
@@ -39,13 +39,13 @@ export const DEBUG_NAV = {
 
 // === ERROR CODES ===
 export const DiagnosticErrorCodes = {
-  // HERE API Errors
-  HERE_AUTH_FAIL: 'HERE_AUTH_401_403',
-  HERE_RATE_LIMIT: 'HERE_RATE_LIMIT_429',
-  HERE_SERVER_ERROR: 'HERE_SERVER_5XX',
-  HERE_PARSE_FAIL: 'HERE_PARSE_FAIL',
-  HERE_TIMEOUT: 'HERE_TIMEOUT',
-  HERE_NO_ROUTE: 'HERE_NO_ROUTE',
+  // API Errors
+  API_AUTH_FAIL: 'API_AUTH_401_403',
+  API_RATE_LIMIT: 'API_RATE_LIMIT_429',
+  API_SERVER_ERROR: 'API_SERVER_5XX',
+  API_PARSE_FAIL: 'API_PARSE_FAIL',
+  API_TIMEOUT: 'API_TIMEOUT',
+  API_NO_ROUTE: 'API_NO_ROUTE',
   
   // Polyline Errors
   POLYLINE_DECODE_FAIL: 'POLYLINE_DECODE_FAIL',
@@ -138,7 +138,7 @@ export const DiagnosticThresholds = {
   slowRequestMs: 5000, // Log warning if > 5s
   
   // Rate limits
-  maxHereCallsPerMinute: 30,
+  maxApiCallsPerMinute: 30,
   maxReroutesPerMinute: 10,
   
   // Validation

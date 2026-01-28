@@ -120,7 +120,7 @@ const PlaceDetailScreen = () => {
         // If we have place data, fetch the real address
         if (place.lat && place.lng && !place.address) {
           try {
-            const { data } = await supabase.functions.invoke('here_reverse_geocode', {
+            const { data } = await supabase.functions.invoke('nb_reverse_geocode', {
               body: { lat: place.lat, lng: place.lng }
             });
             if (data?.label) {
@@ -149,7 +149,7 @@ const PlaceDetailScreen = () => {
           
           // Fetch real address if coordinates available
           if (parsedPlace.lat && parsedPlace.lng) {
-            const { data } = await supabase.functions.invoke('here_reverse_geocode', {
+            const { data } = await supabase.functions.invoke('nb_reverse_geocode', {
               body: { lat: parsedPlace.lat, lng: parsedPlace.lng }
             });
             if (data?.label) {

@@ -56,12 +56,7 @@ const KNOWN_FOOD_BRANDS = [
   "cracker barrel", "golden corral", "shoney",
 ];
 
-// HERE category IDs for food places
-const FOOD_CATEGORIES = [
-  '100-1000-0000', // Restaurant
-  '100-1000-0006', // Fast Food - KEY for truck stop restaurants
-  '100-1100-0000', // Coffee/Tea
-];
+// Food categories are now handled by nb_browse_pois filterType: 'food'
 
 // ============ TRUCK STOP OFFERINGS CATALOG ============
 const STOP_OFFERINGS_CATALOG: Record<string, StopOfferings> = {
@@ -239,12 +234,12 @@ export function useNearbyRestaurants() {
       for (const radius of SEARCH_RADII) {
         console.log(`[useNearbyRestaurants] Searching radius ${radius}m for stop: ${stopName}`);
         
-        const { data, error: fnError } = await supabase.functions.invoke('here_browse_pois', {
+        const { data, error: fnError } = await supabase.functions.invoke('nb_browse_pois', {
           body: {
             lat: stopLat,
             lng: stopLng,
             radiusMeters: radius,
-            categories: FOOD_CATEGORIES,
+            filterType: 'food',
             limit: 30, // Fetch more to filter
           },
         });

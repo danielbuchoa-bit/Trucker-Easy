@@ -126,7 +126,7 @@ const FacilitiesList: React.FC = () => {
         setShowGeoResults(false);
       } else {
         // No DB results, try geocoding
-        const { data, error } = await supabase.functions.invoke('here_geocode', {
+        const { data, error } = await supabase.functions.invoke('nb_geocode', {
           body: { query: searchQuery, limit: 5 },
         });
 
