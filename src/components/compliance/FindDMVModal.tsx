@@ -97,11 +97,11 @@ const FindDMVModal: React.FC<FindDMVModalProps> = ({ isOpen, onClose }) => {
 
   const openDirections = (location: DMVLocation) => {
     // Navigate to in-app GPS navigation instead of Google Maps
-    const destination = `${location.address}, ${location.city}, ${location.state}`;
+    const destinationAddress = `${location.address}, ${location.city}, ${location.state}`;
     onClose();
     navigate('/navigation', { 
       state: { 
-        destination,
+        destinationAddress,
         destinationName: location.name
       } 
     });
