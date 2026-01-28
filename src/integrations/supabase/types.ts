@@ -752,6 +752,60 @@ export type Database = {
         }
         Relationships: []
       }
+      referrals: {
+        Row: {
+          created_at: string
+          fraud_flag: boolean
+          id: string
+          invite_code: string
+          invite_link: string
+          notes: string | null
+          referred_email: string | null
+          referred_phone: string | null
+          referred_user_id: string | null
+          referrer_user_id: string
+          reward_amount_cents: number
+          reward_currency: string
+          reward_reason: string | null
+          status: Database["public"]["Enums"]["referral_status"]
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          fraud_flag?: boolean
+          id?: string
+          invite_code: string
+          invite_link: string
+          notes?: string | null
+          referred_email?: string | null
+          referred_phone?: string | null
+          referred_user_id?: string | null
+          referrer_user_id: string
+          reward_amount_cents?: number
+          reward_currency?: string
+          reward_reason?: string | null
+          status?: Database["public"]["Enums"]["referral_status"]
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          fraud_flag?: boolean
+          id?: string
+          invite_code?: string
+          invite_link?: string
+          notes?: string | null
+          referred_email?: string | null
+          referred_phone?: string | null
+          referred_user_id?: string | null
+          referrer_user_id?: string
+          reward_amount_cents?: number
+          reward_currency?: string
+          reward_reason?: string | null
+          status?: Database["public"]["Enums"]["referral_status"]
+          updated_at?: string
+        }
+        Relationships: []
+      }
       report_votes: {
         Row: {
           created_at: string
@@ -1083,6 +1137,50 @@ export type Database = {
         }
         Relationships: []
       }
+      user_credits: {
+        Row: {
+          amount_cents: number
+          applied_at: string | null
+          created_at: string
+          currency: string
+          id: string
+          referral_id: string | null
+          source: string
+          status: Database["public"]["Enums"]["credit_status"]
+          user_id: string
+        }
+        Insert: {
+          amount_cents: number
+          applied_at?: string | null
+          created_at?: string
+          currency?: string
+          id?: string
+          referral_id?: string | null
+          source?: string
+          status?: Database["public"]["Enums"]["credit_status"]
+          user_id: string
+        }
+        Update: {
+          amount_cents?: number
+          applied_at?: string | null
+          created_at?: string
+          currency?: string
+          id?: string
+          referral_id?: string | null
+          source?: string
+          status?: Database["public"]["Enums"]["credit_status"]
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_credits_referral_id_fkey"
+            columns: ["referral_id"]
+            isOneToOne: false
+            referencedRelation: "referrals"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_roles: {
         Row: {
           created_at: string
@@ -1243,6 +1341,10 @@ export type Database = {
     }
     Functions: {
       can_create_report: { Args: { p_user_id: string }; Returns: boolean }
+      can_earn_referral_reward: {
+        Args: { p_user_id: string }
+        Returns: boolean
+      }
       can_insert_bypass_event: {
         Args: { p_user_id: string; p_weigh_station_id: string }
         Returns: boolean
@@ -1255,6 +1357,7 @@ export type Database = {
         Args: { p_poi_id: string; p_user_id: string }
         Returns: boolean
       }
+      get_available_credits: { Args: { p_user_id: string }; Returns: number }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
@@ -1262,9 +1365,21 @@ export type Database = {
         }
         Returns: boolean
       }
+      is_invite_code_valid: { Args: { p_code: string }; Returns: boolean }
     }
     Enums: {
       app_role: "admin" | "user"
+      credit_status: "available" | "applied" | "expired"
+      referral_status:
+        | "invited"
+        | "installed"
+        | "subscribed"
+        | "cycle1"
+        | "cycle2"
+        | "cycle3"
+        | "reward_earned"
+        | "reward_applied"
+        | "invalid"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -1393,6 +1508,18 @@ export const Constants = {
   public: {
     Enums: {
       app_role: ["admin", "user"],
+      credit_status: ["available", "applied", "expired"],
+      referral_status: [
+        "invited",
+        "installed",
+        "subscribed",
+        "cycle1",
+        "cycle2",
+        "cycle3",
+        "reward_earned",
+        "reward_applied",
+        "invalid",
+      ],
     },
   },
 } as const

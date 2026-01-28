@@ -36,6 +36,13 @@ const PRODUCT_TO_TIER: Record<string, 'silver' | 'gold' | 'diamond'> = {
   'prod_Tqd8hhSX3tN1xF': 'diamond',
 };
 
+// Referral status cycle map
+const CYCLE_PROGRESSION: Record<string, string> = {
+  'subscribed': 'cycle1',
+  'cycle1': 'cycle2',
+  'cycle2': 'cycle3',
+};
+
 function mapStatusToDb(stripeStatus: string): string {
   switch (stripeStatus) {
     case 'active': return 'active';
@@ -109,6 +116,31 @@ async function handleSubscriptionEvent(subscription: Stripe.Subscription) {
   }
 
   await upsertSubscription(userId, subscription);
+
+  // Handle referral status update when user subscribes
+  if (subscription.status === 'active' || subscription.status === 'trialing') {
+    await updateReferralOnSubscribe(userId);
+  }
+}
+
+async function updateReferralOnSubscribe(userId: string) {
+  // Check if this user was referred
+  const { data: referral } = await supabase
+    .from('referrals')
+    .select('*')
+    .eq('referred_user_id', userId)
+    .eq('status', 'installed')
+    .maybeSingle();
+
+  if (referral) {
+    // Update status to subscribed
+    await supabase
+      .from('referrals')
+      .update({ status: 'subscribed' })
+      .eq('id', referral.id);
+    
+    console.log(`[stripe_webhook] Referral ${referral.id} status updated to subscribed`);
+  }
 }
 
 async function handleInvoicePaid(invoice: Stripe.Invoice) {
@@ -116,6 +148,101 @@ async function handleInvoicePaid(invoice: Stripe.Invoice) {
   
   const subscription = await stripe.subscriptions.retrieve(invoice.subscription as string);
   await handleSubscriptionEvent(subscription);
+
+  // Handle referral cycle counting
+  const customer = await stripe.customers.retrieve(invoice.customer as string);
+  if (!customer || customer.deleted || !('email' in customer) || !customer.email) return;
+
+  const userId = await getUserIdByEmail(customer.email);
+  if (!userId) return;
+
+  await processReferralCycle(userId);
+}
+
+async function processReferralCycle(userId: string) {
+  // Check if this user was referred and is in a cycle-counting status
+  const { data: referral } = await supabase
+    .from('referrals')
+    .select('*')
+    .eq('referred_user_id', userId)
+    .in('status', ['subscribed', 'cycle1', 'cycle2'])
+    .maybeSingle();
+
+  if (!referral) return;
+
+  const nextStatus = CYCLE_PROGRESSION[referral.status];
+  if (!nextStatus) return;
+
+  // Update to next cycle
+  const { error: updateError } = await supabase
+    .from('referrals')
+    .update({ status: nextStatus })
+    .eq('id', referral.id);
+
+  if (updateError) {
+    console.error('[stripe_webhook] Failed to update referral cycle:', updateError);
+    return;
+  }
+
+  console.log(`[stripe_webhook] Referral ${referral.id} cycle updated: ${referral.status} -> ${nextStatus}`);
+
+  // If reached cycle3, grant reward to referrer
+  if (nextStatus === 'cycle3') {
+    await grantReferralReward(referral);
+  }
+}
+
+async function grantReferralReward(referral: any) {
+  console.log(`[stripe_webhook] Granting reward for referral ${referral.id}`);
+
+  // Check if referrer can earn more rewards this month (max 2)
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  const { count } = await supabase
+    .from('user_credits')
+    .select('*', { count: 'exact', head: true })
+    .eq('user_id', referral.referrer_user_id)
+    .eq('source', 'referral')
+    .gte('created_at', thirtyDaysAgo);
+
+  if (count && count >= 2) {
+    console.log(`[stripe_webhook] Referrer ${referral.referrer_user_id} has reached monthly reward limit`);
+    await supabase
+      .from('referrals')
+      .update({ 
+        status: 'reward_earned',
+        notes: 'Reward not granted - monthly limit reached'
+      })
+      .eq('id', referral.id);
+    return;
+  }
+
+  // Create credit for referrer
+  const { error: creditError } = await supabase
+    .from('user_credits')
+    .insert({
+      user_id: referral.referrer_user_id,
+      amount_cents: referral.reward_amount_cents,
+      currency: referral.reward_currency,
+      source: 'referral',
+      referral_id: referral.id,
+      status: 'available',
+    });
+
+  if (creditError) {
+    console.error('[stripe_webhook] Failed to create credit:', creditError);
+    return;
+  }
+
+  // Update referral status
+  await supabase
+    .from('referrals')
+    .update({ 
+      status: 'reward_earned',
+      reward_reason: '3 successful payment cycles completed'
+    })
+    .eq('id', referral.id);
+
+  console.log(`[stripe_webhook] Credit of ${referral.reward_amount_cents} cents granted to ${referral.referrer_user_id}`);
 }
 
 async function handlePaymentFailed(invoice: Stripe.Invoice) {
