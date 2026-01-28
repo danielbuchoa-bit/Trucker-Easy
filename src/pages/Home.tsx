@@ -49,6 +49,10 @@ const HomeScreen = () => {
   const navigate = useNavigate();
   const [activeFilter, setActiveFilter] = useState('nearMe');
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<{ id: string; title: string; address: string; lat: number; lng: number }[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [showSearchResults, setShowSearchResults] = useState(false);
+  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [places, setPlaces] = useState<NearbyPlace[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -428,6 +432,69 @@ const HomeScreen = () => {
     }
   }, [userLocation, activeFilter, fetchNearbyPlaces]);
 
+  // Search for addresses/POIs using geocoding API
+  const handleSearch = useCallback(async (query: string) => {
+    if (query.length < 3) {
+      setSearchResults([]);
+      setShowSearchResults(false);
+      return;
+    }
+
+    setIsSearching(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('nb_geocode', {
+        body: { query, limit: 5 },
+      });
+
+      if (error) {
+        console.error('[Search] Geocode error:', error);
+        setSearchResults([]);
+        return;
+      }
+
+      if (data?.results) {
+        setSearchResults(data.results);
+        setShowSearchResults(true);
+      } else {
+        setSearchResults([]);
+      }
+    } catch (err) {
+      console.error('[Search] Error:', err);
+      setSearchResults([]);
+    } finally {
+      setIsSearching(false);
+    }
+  }, []);
+
+  // Handle search input with debouncing
+  const handleSearchInputChange = (value: string) => {
+    setSearchQuery(value);
+    
+    // Clear previous timeout
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+
+    // Debounce API call
+    searchTimeoutRef.current = setTimeout(() => {
+      handleSearch(value);
+    }, 400);
+  };
+
+  // Handle selecting a search result - navigate to that location
+  const handleSelectSearchResult = (result: { id: string; title: string; address: string; lat: number; lng: number }) => {
+    console.log('[Search] Selected result:', result);
+    setShowSearchResults(false);
+    setSearchQuery(result.title);
+    
+    // Navigate to that location and search for POIs there
+    setUserLocation({ lat: result.lat, lng: result.lng });
+    
+    // Force refresh places at new location
+    lastPlacesFetchRef.current = null;
+    fetchNearbyPlaces(result.lat, result.lng, activeFilter);
+  };
+
   // Filter places based on active filter (client-side filtering for nearMe)
   // TRUCK-ONLY: No restaurant filter
   const filteredPlaces = useMemo(() => {
@@ -441,10 +508,9 @@ const HomeScreen = () => {
       return true;
     });
 
-    const q = searchQuery.trim().toLowerCase();
-    if (!q) return byType;
-    return byType.filter((p) => p.name.toLowerCase().includes(q));
-  }, [activeFilter, places, searchQuery]);
+    // Don't filter by search query locally if user selected a destination
+    return byType;
+  }, [activeFilter, places]);
 
   // Fetch batch ratings when places change
   useEffect(() => {
@@ -504,19 +570,55 @@ const HomeScreen = () => {
       {/* Header */}
       <div className="sticky top-0 z-40 bg-background/95 backdrop-blur-sm border-b border-border safe-top">
         <div className="p-4">
-          {/* Search Bar */}
+          {/* Search Bar with Autocomplete */}
           <div className="relative mb-3">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground z-10" />
             <input
               type="text"
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e) => handleSearchInputChange(e.target.value)}
+              onFocus={() => searchResults.length > 0 && setShowSearchResults(true)}
+              onBlur={() => setTimeout(() => setShowSearchResults(false), 200)}
               placeholder={t.map.searchPlaces}
               className="w-full h-12 pl-12 pr-12 bg-card border border-border rounded-xl text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
             />
-            <button className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center rounded-lg bg-secondary text-foreground">
-              <Filter className="w-4 h-4" />
-            </button>
+            {isSearching ? (
+              <div className="absolute right-4 top-1/2 -translate-y-1/2">
+                <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+              </div>
+            ) : (
+              <button className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center rounded-lg bg-secondary text-foreground">
+                <Filter className="w-4 h-4" />
+              </button>
+            )}
+
+            {/* Search Results Dropdown */}
+            {showSearchResults && searchResults.length > 0 && (
+              <div className="absolute top-full left-0 right-0 mt-1 bg-card border border-border rounded-xl shadow-lg overflow-hidden z-50">
+                {searchResults.map((result) => (
+                  <button
+                    key={result.id}
+                    onClick={() => handleSelectSearchResult(result)}
+                    className="w-full flex items-start gap-3 p-3 hover:bg-accent text-left transition-colors border-b border-border last:border-b-0"
+                  >
+                    <MapPin className="w-4 h-4 text-primary mt-0.5 shrink-0" />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium truncate text-foreground">{result.title}</p>
+                      <p className="text-xs text-muted-foreground truncate">{result.address}</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* No Results Message */}
+            {showSearchResults && searchQuery.length >= 3 && searchResults.length === 0 && !isSearching && (
+              <div className="absolute top-full left-0 right-0 mt-1 bg-card border border-border rounded-xl shadow-lg p-3 z-50">
+                <p className="text-sm text-muted-foreground text-center">
+                  {t.navigation?.noResults || 'No results found'}
+                </p>
+              </div>
+            )}
           </div>
 
           {/* Filter Pills */}
