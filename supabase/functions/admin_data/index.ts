@@ -208,16 +208,30 @@ serve(async (req) => {
       
       await logAdminAction("view_subscriptions", "subscriptions", undefined, { status, provider, tier });
       
-      let query = adminClient.from("subscriptions").select(`
-        *,
-        profiles!inner(email, full_name)
-      `);
+      // First get subscriptions
+      let query = adminClient.from("subscriptions").select("*");
       
       if (status) query = query.eq("status", status);
       if (provider) query = query.eq("provider", provider);
       if (tier) query = query.eq("plan_tier", tier);
       
-      const { data, error } = await query.order("updated_at", { ascending: false });
+      const { data: subs, error } = await query.order("updated_at", { ascending: false });
+      
+      if (error) throw error;
+      
+      // Then get profiles for each subscription
+      const userIds = subs?.map(s => s.user_id) || [];
+      const { data: profiles } = await adminClient
+        .from("profiles")
+        .select("id, email, full_name")
+        .in("id", userIds);
+      
+      const profileMap = new Map(profiles?.map(p => [p.id, p]) || []);
+      
+      const data = subs?.map(s => ({
+        ...s,
+        profiles: profileMap.get(s.user_id) || { email: null, full_name: null }
+      })) || [];
       
       if (error) throw error;
 
