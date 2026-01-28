@@ -27,6 +27,7 @@ import ArrivalPrompt from './ArrivalPrompt';
 import ArrivalDebugPanel from './ArrivalDebugPanel';
 import CursorDebugPanel, { type CursorDebugInfo } from './CursorDebugPanel';
 import LaneGuidancePanel from './LaneGuidancePanel';
+import NextExitBadge from './NextExitBadge';
 import SpeedAlertOverlay from './SpeedAlertOverlay';
 import SpeedAlertDetailsSheet from './SpeedAlertDetailsSheet';
 import ReportAlertButton from './ReportAlertButton';
@@ -370,6 +371,59 @@ const ActiveNavigationView = () => {
   const currentInstruction = useMemo(() => {
     return route && progress ? route.instructions[progress.currentInstructionIndex] : null;
   }, [route, progress?.currentInstructionIndex]);
+
+  // Find next exit along the route (look ahead up to 10 miles)
+  const nextExitInfo = useMemo((): { exitNumber: string; distanceMeters: number; roadName?: string } | null => {
+    if (!route?.instructions || !progress) return null;
+    
+    const instructions = route.instructions;
+    const currentIdx = progress.currentInstructionIndex;
+    let accumulatedDistance = progress.distanceToNextManeuver;
+    const maxLookAheadM = 16093; // 10 miles
+    
+    for (let i = currentIdx; i < instructions.length && accumulatedDistance <= maxLookAheadM; i++) {
+      const inst = instructions[i];
+      const instText = (inst.instruction || '').toLowerCase();
+      
+      // Check for exit info field
+      if (inst.exitInfo) {
+        return {
+          exitNumber: inst.exitInfo,
+          distanceMeters: i === currentIdx ? progress.distanceToNextManeuver : accumulatedDistance,
+          roadName: inst.roadName,
+        };
+      }
+      
+      // Extract exit number from text (e.g., "Exit 149", "exit onto 23B")
+      const exitMatch = inst.instruction?.match(/exit\s*(?:onto\s*)?(\d+[A-Za-z]?)/i);
+      if (exitMatch) {
+        return {
+          exitNumber: exitMatch[1],
+          distanceMeters: i === currentIdx ? progress.distanceToNextManeuver : accumulatedDistance,
+          roadName: inst.roadName,
+        };
+      }
+      
+      // Check for exit/ramp keywords
+      if (instText.includes('exit') || instText.includes('off ramp') || instText.includes('take ramp')) {
+        // Try to extract road name as exit identifier
+        const roadMatch = inst.instruction?.match(/(?:onto|toward)\s+([A-Za-z0-9\-\s\/]+?)(?:\s+|$)/i);
+        const exitId = roadMatch ? roadMatch[1].trim().substring(0, 20) : (inst.roadName || 'EXIT');
+        return {
+          exitNumber: exitId,
+          distanceMeters: i === currentIdx ? progress.distanceToNextManeuver : accumulatedDistance,
+          roadName: inst.roadName,
+        };
+      }
+      
+      // Accumulate distance for next iteration (skip current as we use distanceToNextManeuver)
+      if (i > currentIdx) {
+        accumulatedDistance += inst.length || 0;
+      }
+    }
+    
+    return null;
+  }, [route?.instructions, progress]);
 
   // Speed in MPH
   const speedMph = useMemo(() => {
@@ -1041,6 +1095,17 @@ const ActiveNavigationView = () => {
           onPress={() => weighStationAlerts.openStationDetails(weighStationAlerts.nextStation)}
         />
       </div>
+      
+      {/* Next Exit Badge - always visible when there's an upcoming exit (below weigh station) */}
+      {nextExitInfo && (
+        <div className="absolute top-20 right-4 z-30 safe-top">
+          <NextExitBadge
+            exitNumber={nextExitInfo.exitNumber}
+            distanceMeters={nextExitInfo.distanceMeters}
+            roadName={nextExitInfo.roadName}
+          />
+        </div>
+      )}
       
       {/* Collapsible Map Controls Menu */}
       <MapControlsMenu
