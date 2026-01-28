@@ -1,6 +1,6 @@
 import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import { useLanguage } from '@/i18n/LanguageContext';
-import { Search, Filter, MapPin, Navigation, Route, Building2, Loader2, RefreshCw, AlertCircle, Truck, Fuel, Scale, TreePine, Info, Star, Droplets, LogIn } from 'lucide-react';
+import { Search, Filter, MapPin, Navigation, Route, Building2, Loader2, RefreshCw, AlertCircle, Truck, Fuel, Scale, TreePine, Info, Star, Droplets, LogIn, Gift } from 'lucide-react';
 import BottomNav from '@/components/navigation/BottomNav';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -596,6 +596,23 @@ const HomeScreen = () => {
             Refresh
           </Button>
         </div>
+
+        {/* Referral Banner - Only show when authenticated */}
+        {isAuthenticated && (
+          <button
+            onClick={() => navigate('/referrals')}
+            className="w-full mb-4 p-3 bg-gradient-to-r from-primary/10 to-primary/5 border border-primary/20 rounded-xl flex items-center gap-3 hover:from-primary/20 hover:to-primary/10 transition-all"
+          >
+            <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
+              <Gift className="w-5 h-5 text-primary" />
+            </div>
+            <div className="flex-1 text-left">
+              <div className="font-medium text-sm">Refer a Friend</div>
+              <div className="text-xs text-muted-foreground">Earn $3.50 for each referral!</div>
+            </div>
+            <div className="text-primary text-sm font-medium">→</div>
+          </button>
+        )}
 
         {/* Location Error */}
         {locationError && (

@@ -52,6 +52,8 @@ import WellbeingScreen from "./pages/Wellbeing";
 import MedicationsScreen from "./pages/Medications";
 import AdminDashboard from "./pages/AdminDashboard";
 import Privacy from "./pages/Privacy";
+import ReferralsScreen from "./pages/Referrals";
+import InviteLanding from "./pages/InviteLanding";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -114,6 +116,8 @@ const App = () => (
                                 <Route path="/medications" element={<MedicationsScreen />} />
                                 <Route path="/admin" element={<AdminDashboard />} />
                                 <Route path="/privacy" element={<Privacy />} />
+                                <Route path="/referrals" element={<ReferralsScreen />} />
+                                <Route path="/invite" element={<InviteLanding />} />
                                 <Route path="*" element={<NotFound />} />
                               </Routes>
                             </FacilityGeofenceProvider>

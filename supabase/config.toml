@@ -77,3 +77,12 @@ verify_jwt = false
 
 [functions.revenuecat_webhook]
 verify_jwt = false
+
+[functions.create_invite]
+verify_jwt = false
+
+[functions.redeem_invite]
+verify_jwt = false
+
+[functions.list_referrals]
+verify_jwt = false
