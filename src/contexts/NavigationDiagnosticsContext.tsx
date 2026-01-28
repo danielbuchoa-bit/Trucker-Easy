@@ -391,18 +391,18 @@ export const NavigationDiagnosticsProvider: React.FC<{ children: React.ReactNode
   const generateChecklist = useCallback((): DiagnosticChecklist => {
     const checks: DiagnosticCheck[] = [];
 
-    // HERE Request OK?
-    const hereOk = state.hereRouting?.statusCode === 200;
+    // API Request OK?
+    const apiOk = state.hereRouting?.statusCode === 200;
     checks.push({
-      id: 'here_request',
-      name: 'HERE Request OK?',
+      id: 'api_request',
+      name: 'API Request OK?',
       status: state.hereRouting 
-        ? (hereOk ? 'pass' : 'fail')
+        ? (apiOk ? 'pass' : 'fail')
         : 'pending',
       details: state.hereRouting 
         ? `Status ${state.hereRouting.statusCode}, ${state.hereRouting.requestLatencyMs}ms latency`
         : 'No request yet',
-      recommendation: !hereOk && state.hereRouting 
+      recommendation: !apiOk && state.hereRouting 
         ? `Check error: ${state.hereRouting.error || 'Unknown'}` 
         : undefined,
     });
@@ -416,7 +416,7 @@ export const NavigationDiagnosticsProvider: React.FC<{ children: React.ReactNode
       details: polylinePresent 
         ? `Path: ${state.hereRouting?.polylinePath}` 
         : 'No polyline found',
-      recommendation: !polylinePresent ? 'Check HERE API response structure' : undefined,
+      recommendation: !polylinePresent ? 'Check NextBillion API response structure' : undefined,
     });
 
     // Decode OK?
@@ -485,9 +485,9 @@ export const NavigationDiagnosticsProvider: React.FC<{ children: React.ReactNode
       status: authErrors > 0 || rateErrors > 0 ? 'fail' : 'pass',
       details: `Auth: ${authErrors}, Rate: ${rateErrors}`,
       recommendation: authErrors > 0 
-        ? DiagnosticErrorCodes.HERE_AUTH_FAIL 
+        ? DiagnosticErrorCodes.API_AUTH_FAIL 
         : rateErrors > 0 
-          ? DiagnosticErrorCodes.HERE_RATE_LIMIT 
+          ? DiagnosticErrorCodes.API_RATE_LIMIT 
           : undefined,
     });
 

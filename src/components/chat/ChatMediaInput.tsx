@@ -117,7 +117,7 @@ const ChatMediaInput: React.FC<ChatMediaInputProps> = ({
       let locationName = `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
       
       try {
-        const response = await supabase.functions.invoke('here_reverse_geocode', {
+        const response = await supabase.functions.invoke('nb_reverse_geocode', {
           body: { lat: latitude, lng: longitude }
         });
         

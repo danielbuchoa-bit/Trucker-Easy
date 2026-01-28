@@ -84,64 +84,11 @@ export function useSpeedAlerts({
   const lastFetchRef = useRef<{ lat: number; lng: number; time: number } | null>(null);
   const lastAlertRef = useRef<string | null>(null);
 
-  // Fetch alerts from HERE API
-  const fetchHereAlerts = useCallback(async (userLat: number, userLng: number): Promise<SpeedAlert[]> => {
-    const cacheKey = getCacheKey(userLat, userLng);
-    const cached = alertsCache.get(cacheKey);
-    
-    if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
-      console.log('[SPEED_ALERTS] Using cached HERE data');
-      return cached.alerts;
-    }
-
-    // Check throttle
-    if (lastFetchRef.current) {
-      const timeSinceLastFetch = Date.now() - lastFetchRef.current.time;
-      const distanceMoved = haversineDistance(
-        userLat, userLng,
-        lastFetchRef.current.lat, lastFetchRef.current.lng
-      );
-      
-      if (timeSinceLastFetch < FETCH_THROTTLE_MS && distanceMoved < MIN_DISTANCE_FOR_REFETCH) {
-        console.log('[SPEED_ALERTS] Throttled, using existing HERE data');
-        return cached?.alerts || [];
-      }
-    }
-
-    try {
-      console.log('[SPEED_ALERTS] Fetching from HERE API...');
-      
-      const { data, error } = await supabase.functions.invoke('here_speed_alerts', {
-        body: {
-          lat: userLat,
-          lng: userLng,
-          radiusMeters: 16000,
-        },
-      });
-
-      if (error) {
-        console.error('[SPEED_ALERTS] HERE API error:', error);
-        return cached?.alerts || [];
-      }
-
-      if (data?.ok && data.alerts) {
-        console.log('[SPEED_ALERTS] Received', data.alerts.length, 'alerts from HERE');
-        
-        alertsCache.set(cacheKey, {
-          alerts: data.alerts,
-          timestamp: Date.now(),
-        });
-        
-        lastFetchRef.current = { lat: userLat, lng: userLng, time: Date.now() };
-        
-        return data.alerts as SpeedAlert[];
-      }
-      
-      return cached?.alerts || [];
-    } catch (err) {
-      console.error('[SPEED_ALERTS] HERE fetch error:', err);
-      return cached?.alerts || [];
-    }
+  // Speed alerts are now user-reported only (no external API)
+  // NextBillion.ai doesn't provide speed trap/camera data
+  const fetchExternalAlerts = useCallback(async (_userLat: number, _userLng: number): Promise<SpeedAlert[]> => {
+    // External speed alerts API removed - using user-reported alerts only
+    return [];
   }, []);
 
   // Fetch user-reported alerts from database
@@ -195,14 +142,11 @@ export function useSpeedAlerts({
       setLoading(true);
       
       try {
-        // Fetch both HERE and user alerts in parallel
-        const [hereAlerts, userAlerts] = await Promise.all([
-          fetchHereAlerts(lat, lng),
-          fetchUserAlerts(lat, lng),
-        ]);
+        // Fetch user-reported alerts from database
+        const userAlerts = await fetchUserAlerts(lat, lng);
 
-        // Combine alerts, user alerts have priority (shown first)
-        const allAlerts = [...userAlerts, ...hereAlerts];
+        // Use only user-reported alerts
+        const allAlerts = [...userAlerts];
         
         // Deduplicate by proximity (50m threshold)
         const deduped: SpeedAlert[] = [];
@@ -249,7 +193,7 @@ export function useSpeedAlerts({
     // Refresh every 30 seconds
     const interval = setInterval(processAlerts, 30000);
     return () => clearInterval(interval);
-  }, [lat, lng, heading, speedMph, enabled, dismissedIds, fetchHereAlerts, fetchUserAlerts]);
+  }, [lat, lng, heading, speedMph, enabled, dismissedIds, fetchUserAlerts]);
 
   // Get critical alert (closest within critical distance)
   const criticalAlert = alerts.find(alert => {

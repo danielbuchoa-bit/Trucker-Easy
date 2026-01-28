@@ -106,12 +106,12 @@ const FoodSuggestionPrompt: React.FC<FoodSuggestionPromptProps> = ({ stop, onDis
         return [];
       }
       
-      const { data, error: fnError } = await supabase.functions.invoke('here_browse_pois', {
+      const { data, error: fnError } = await supabase.functions.invoke('nb_browse_pois', {
         body: {
           lat: stop.lat,
           lng: stop.lng,
           radiusMeters: 150, // STRICT: Only search within truck stop complex
-          categories: ['100-1000-0000', '100-1000-0006'], // Restaurant, Fast Food only
+          filterType: 'food',
           limit: 10,
         },
       });

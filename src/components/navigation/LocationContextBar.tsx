@@ -42,7 +42,7 @@ const LocationContextBar: React.FC<LocationContextBarProps> = ({ lat, lng }) => 
     const fetchContext = async () => {
       setLoading(true);
       try {
-        const { data, error } = await supabase.functions.invoke('here_reverse_geocode', {
+        const { data, error } = await supabase.functions.invoke('nb_reverse_geocode', {
           body: { lat, lng },
         });
 

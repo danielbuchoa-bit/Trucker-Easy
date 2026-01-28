@@ -66,12 +66,12 @@ const StopAdvisorScreen: React.FC = () => {
     
     try {
       // Search for nearby truck stops, travel centers, and gas stations
-      const { data, error } = await supabase.functions.invoke('here_browse_pois', {
+      const { data, error } = await supabase.functions.invoke('nb_browse_pois', {
         body: {
           lat: latitude,
           lng: longitude,
           radiusMeters: 500, // Within 500m means you're "at" the stop
-          categories: ['700-7850-0000', '700-7600-0116'], // Truck stops and gas stations
+          filterType: 'truckStops',
           limit: 5,
         },
       });
