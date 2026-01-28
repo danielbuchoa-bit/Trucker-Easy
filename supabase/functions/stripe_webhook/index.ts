@@ -12,6 +12,37 @@ const supabase = createClient(
 );
 
 const endpointSecret = Deno.env.get("STRIPE_WEBHOOK_SECRET");
+const telegramBotToken = Deno.env.get("TELEGRAM_BOT_TOKEN");
+const telegramChatId = Deno.env.get("TELEGRAM_CHAT_ID");
+
+// Send Telegram notification
+async function sendTelegramAlert(message: string) {
+  if (!telegramBotToken || !telegramChatId) {
+    console.log('[stripe_webhook] Telegram not configured, skipping notification');
+    return;
+  }
+
+  try {
+    const url = `https://api.telegram.org/bot${telegramBotToken}/sendMessage`;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: telegramChatId,
+        text: message,
+        parse_mode: 'HTML',
+      }),
+    });
+
+    if (!response.ok) {
+      console.error('[stripe_webhook] Telegram error:', await response.text());
+    } else {
+      console.log('[stripe_webhook] Telegram notification sent successfully');
+    }
+  } catch (err) {
+    console.error('[stripe_webhook] Failed to send Telegram notification:', err);
+  }
+}
 
 // Map Stripe price IDs to plan tiers
 const PRICE_TO_TIER: Record<string, 'silver' | 'gold' | 'diamond'> = {
@@ -212,6 +243,21 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
     if (subscription.status === 'active' || subscription.status === 'trialing') {
       await updateReferralOnSubscribe(userId);
     }
+
+    // Get tier for notification
+    const priceId = subscription.items.data[0]?.price?.id;
+    const productId = subscription.items.data[0]?.price?.product as string;
+    const planTier = PRICE_TO_TIER[priceId] || PRODUCT_TO_TIER[productId] || 'silver';
+    
+    // Send Telegram alert for new subscription
+    const tierEmoji = planTier === 'diamond' ? '💎' : planTier === 'gold' ? '🥇' : '🥈';
+    const alertMessage = `${tierEmoji} <b>Nova Assinatura!</b>\n\n` +
+      `📧 <b>Email:</b> ${session.customer_email || 'N/A'}\n` +
+      `📦 <b>Plano:</b> ${planTier.toUpperCase()}\n` +
+      `🆔 <b>User ID:</b> ${userId}\n` +
+      `📅 <b>Data:</b> ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}`;
+    
+    await sendTelegramAlert(alertMessage);
 
     console.log(`[stripe_webhook] Checkout completed and subscription activated for user: ${userId}`);
   } catch (err) {
