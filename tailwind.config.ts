@@ -89,6 +89,10 @@ export default {
           DEFAULT: "hsl(var(--facility-action))",
           foreground: "hsl(var(--facility-action-foreground))",
         },
+        neon: {
+          glow: "hsl(var(--neon-glow))",
+          strong: "hsl(var(--neon-glow-strong))",
+        },
       },
       borderRadius: {
         lg: "var(--radius)",
@@ -113,8 +117,16 @@ export default {
           "100%": { transform: "translateY(0)" },
         },
         "pulse-glow": {
-          "0%, 100%": { opacity: "1", boxShadow: "0 0 20px hsl(var(--primary) / 0.3)" },
-          "50%": { opacity: "0.8", boxShadow: "0 0 30px hsl(var(--primary) / 0.5)" },
+          "0%, 100%": { opacity: "1", boxShadow: "0 0 20px hsl(var(--primary) / 0.4)" },
+          "50%": { opacity: "0.85", boxShadow: "0 0 40px hsl(var(--primary) / 0.6)" },
+        },
+        "neon-pulse": {
+          "0%, 100%": { 
+            boxShadow: "0 0 10px hsl(var(--neon-glow) / 0.5), 0 0 20px hsl(var(--neon-glow) / 0.3)" 
+          },
+          "50%": { 
+            boxShadow: "0 0 20px hsl(var(--neon-glow) / 0.7), 0 0 40px hsl(var(--neon-glow) / 0.5)" 
+          },
         },
       },
       animation: {
@@ -123,6 +135,7 @@ export default {
         "fade-in": "fade-in 0.3s ease-out",
         "slide-up": "slide-up 0.3s ease-out",
         "pulse-glow": "pulse-glow 2s ease-in-out infinite",
+        "neon-pulse": "neon-pulse 2s ease-in-out infinite",
       },
       spacing: {
         "safe-top": "env(safe-area-inset-top)",

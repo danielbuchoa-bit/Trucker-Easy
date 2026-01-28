@@ -2,95 +2,113 @@
 @tailwind components;
 @tailwind utilities;
 
-/* TRUCKEREASY Design System - Dark-first trucker dashboard theme */
+/* TruckerEase Design System - Futuristic Blue Neon Theme */
 
 @layer base {
   :root {
-    /* Dark mode as default */
-    --background: 220 20% 10%;
-    --foreground: 45 10% 95%;
-    --card: 220 18% 13%;
-    --card-foreground: 45 10% 95%;
-    --popover: 220 18% 13%;
-    --popover-foreground: 45 10% 95%;
-    --primary: 38 92% 50%;
-    --primary-foreground: 220 20% 10%;
-    --secondary: 220 15% 20%;
-    --secondary-foreground: 45 10% 95%;
-    --muted: 220 15% 18%;
-    --muted-foreground: 220 10% 60%;
-    --accent: 38 92% 50%;
-    --accent-foreground: 220 20% 10%;
+    /* Dark cyber background */
+    --background: 220 25% 6%;
+    --foreground: 200 20% 95%;
+    --card: 220 25% 10%;
+    --card-foreground: 200 20% 95%;
+    --popover: 220 25% 10%;
+    --popover-foreground: 200 20% 95%;
+    
+    /* Primary: Electric cyan/blue neon */
+    --primary: 200 100% 50%;
+    --primary-foreground: 220 25% 6%;
+    
+    /* Secondary: Deep navy blue */
+    --secondary: 215 30% 16%;
+    --secondary-foreground: 200 20% 95%;
+    
+    /* Muted: Dark blue-gray */
+    --muted: 215 25% 14%;
+    --muted-foreground: 210 15% 55%;
+    
+    /* Accent: Bright cyan glow */
+    --accent: 195 100% 55%;
+    --accent-foreground: 220 25% 6%;
+    
     --destructive: 0 72% 51%;
-    --destructive-foreground: 45 10% 95%;
-    --border: 220 15% 22%;
-    --input: 220 15% 22%;
-    --ring: 38 92% 50%;
+    --destructive-foreground: 200 20% 95%;
+    
+    /* Border with subtle blue tint */
+    --border: 215 30% 18%;
+    --input: 215 30% 18%;
+    --ring: 200 100% 50%;
     --radius: 0.75rem;
     
-    /* Semantic colors */
-    --success: 142 71% 45%;
-    --success-foreground: 220 20% 10%;
-    --warning: 38 92% 50%;
-    --warning-foreground: 220 20% 10%;
-    --info: 199 89% 48%;
-    --info-foreground: 220 20% 10%;
+    /* Semantic colors with cyber palette */
+    --success: 160 84% 45%;
+    --success-foreground: 220 25% 6%;
+    --warning: 45 93% 47%;
+    --warning-foreground: 220 25% 6%;
+    --info: 200 100% 50%;
+    --info-foreground: 220 25% 6%;
     
     /* Action button colors */
-    --facility-action: 210 80% 55%;
+    --facility-action: 200 100% 50%;
     --facility-action-foreground: 0 0% 100%;
     
-    /* Status colors for truck stops */
-    --status-open: 142 71% 45%;
+    /* Status colors */
+    --status-open: 160 84% 45%;
     --status-closed: 0 72% 51%;
-    --status-unknown: 220 10% 50%;
-    --status-limited: 38 92% 50%;
+    --status-unknown: 210 15% 45%;
+    --status-limited: 45 93% 47%;
     
     /* Parking availability */
-    --parking-available: 142 71% 45%;
-    --parking-limited: 38 92% 50%;
+    --parking-available: 160 84% 45%;
+    --parking-limited: 45 93% 47%;
     --parking-full: 0 72% 51%;
 
-    /* Sidebar (keeping for shadcn compatibility) */
-    --sidebar-background: 220 20% 8%;
-    --sidebar-foreground: 45 10% 95%;
-    --sidebar-primary: 38 92% 50%;
-    --sidebar-primary-foreground: 220 20% 10%;
-    --sidebar-accent: 220 15% 18%;
-    --sidebar-accent-foreground: 45 10% 95%;
-    --sidebar-border: 220 15% 22%;
-    --sidebar-ring: 38 92% 50%;
+    /* Neon glow effects */
+    --neon-glow: 200 100% 50%;
+    --neon-glow-strong: 195 100% 60%;
+
+    /* Sidebar with cyber styling */
+    --sidebar-background: 220 25% 5%;
+    --sidebar-foreground: 200 20% 95%;
+    --sidebar-primary: 200 100% 50%;
+    --sidebar-primary-foreground: 220 25% 6%;
+    --sidebar-accent: 215 25% 14%;
+    --sidebar-accent-foreground: 200 20% 95%;
+    --sidebar-border: 215 30% 18%;
+    --sidebar-ring: 200 100% 50%;
   }
 
   .light {
-    --background: 45 20% 96%;
-    --foreground: 220 20% 10%;
+    --background: 210 25% 97%;
+    --foreground: 220 25% 10%;
     --card: 0 0% 100%;
-    --card-foreground: 220 20% 10%;
+    --card-foreground: 220 25% 10%;
     --popover: 0 0% 100%;
-    --popover-foreground: 220 20% 10%;
-    --primary: 38 92% 45%;
+    --popover-foreground: 220 25% 10%;
+    --primary: 200 100% 45%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 220 10% 90%;
-    --secondary-foreground: 220 20% 10%;
-    --muted: 220 10% 92%;
-    --muted-foreground: 220 10% 40%;
-    --accent: 38 92% 45%;
+    --secondary: 210 20% 92%;
+    --secondary-foreground: 220 25% 10%;
+    --muted: 210 15% 94%;
+    --muted-foreground: 215 15% 40%;
+    --accent: 195 100% 45%;
     --accent-foreground: 0 0% 100%;
     --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 100%;
-    --border: 220 10% 85%;
-    --input: 220 10% 85%;
-    --ring: 38 92% 45%;
+    --border: 210 15% 88%;
+    --input: 210 15% 88%;
+    --ring: 200 100% 45%;
+    
+    --neon-glow: 200 100% 45%;
+    --neon-glow-strong: 195 100% 55%;
     
     --sidebar-background: 0 0% 98%;
-    --sidebar-foreground: 220 20% 10%;
-    --sidebar-primary: 38 92% 45%;
+    --sidebar-foreground: 220 25% 10%;
+    --sidebar-primary: 200 100% 45%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 220 10% 92%;
-    --sidebar-accent-foreground: 220 20% 10%;
-    --sidebar-border: 220 10% 85%;
-    --sidebar-ring: 38 92% 45%;
+    --sidebar-accent: 210 15% 94%;
+    --sidebar-accent-foreground: 220 25% 10%;
+    --sidebar-border: 210 15% 88%;
+    --sidebar-ring: 200 100% 45%;
   }
 }
 
@@ -152,11 +170,35 @@
   }
 
   .glow-primary {
-    box-shadow: 0 0 20px hsl(var(--primary) / 0.3);
+    box-shadow: 0 0 20px hsl(var(--primary) / 0.4), 0 0 40px hsl(var(--primary) / 0.2);
   }
 
   .glow-success {
-    box-shadow: 0 0 20px hsl(var(--success) / 0.3);
+    box-shadow: 0 0 20px hsl(var(--success) / 0.4), 0 0 40px hsl(var(--success) / 0.2);
+  }
+
+  .glow-neon {
+    box-shadow: 0 0 10px hsl(var(--neon-glow) / 0.5), 
+                0 0 20px hsl(var(--neon-glow) / 0.3), 
+                0 0 40px hsl(var(--neon-glow) / 0.2);
+  }
+
+  .glow-neon-strong {
+    box-shadow: 0 0 15px hsl(var(--neon-glow-strong) / 0.6), 
+                0 0 30px hsl(var(--neon-glow-strong) / 0.4), 
+                0 0 60px hsl(var(--neon-glow-strong) / 0.2);
+  }
+
+  .cyber-grid {
+    background-image: 
+      linear-gradient(to right, hsl(var(--primary) / 0.05) 1px, transparent 1px),
+      linear-gradient(to bottom, hsl(var(--primary) / 0.05) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+
+  .neon-border {
+    border: 1px solid hsl(var(--primary) / 0.3);
+    box-shadow: inset 0 0 20px hsl(var(--primary) / 0.1);
   }
 
   /* Confetti animation */
