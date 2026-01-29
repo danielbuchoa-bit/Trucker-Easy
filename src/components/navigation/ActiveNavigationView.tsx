@@ -34,7 +34,8 @@ import ReportAlertButton from './ReportAlertButton';
 import TrafficLightOverlay from './TrafficLightOverlay';
 import { createTruckCursorElement } from './TruckCursor';
 import EngineIndicator from './EngineIndicator';
-import { MapPin, Navigation as NavIcon, RotateCcw } from 'lucide-react';
+import NativeNavigationDebugPanel from './NativeNavigationDebugPanel';
+import { MapPin, Navigation as NavIcon, RotateCcw, Bug } from 'lucide-react';
 import MapControlsMenu from './MapControlsMenu';
 import WeighStationOverlay from '@/components/weighstation/WeighStationOverlay';
 import WeighStationAlert from '@/components/weighstation/WeighStationAlert';
@@ -46,6 +47,8 @@ import { useRoadTestSafe } from '@/contexts/RoadTestContext';
 import { Button } from '@/components/ui/button';
 import { useLanguage } from '@/i18n/LanguageContext';
 import { useRouteStyle, ROUTE_STYLES } from '@/hooks/useRouteStyle';
+import { useNativeNavigation } from '@/hooks/useNativeNavigation';
+import { isNativeNavigationAvailable } from '@/plugins/TruckerNavigationPlugin';
 
 // === SPEED ALERT ICON HELPER ===
 function getSpeedAlertIconSvg(type: SpeedAlertType): string {
@@ -253,6 +256,7 @@ const ActiveNavigationView = () => {
   
   // Debug state
   const [showDebug, setShowDebug] = useState(false);
+  const [showNativeDebug, setShowNativeDebug] = useState(false);
   const [debugInfo, setDebugInfo] = useState<OrientationDebug>({
     speed: 0,
     gpsAccuracy: null,
@@ -263,6 +267,19 @@ const ActiveNavigationView = () => {
     headingSource: 'none',
     lastUpdate: Date.now(),
   });
+  
+  // Native navigation integration (iOS only - source of truth for GPS)
+  const nativeNav = useNativeNavigation({
+    autoStart: isNativeNavigationAvailable(),
+    onReroute: (reason) => console.log('[NativeNav] Reroute:', reason),
+  });
+  
+  // Sync route polyline to native engine
+  useEffect(() => {
+    if (routeCoords.length > 1 && nativeNav.isActive) {
+      nativeNav.setRoute(routeCoords.map(c => ({ lat: c[1], lng: c[0] })));
+    }
+  }, [routeCoords, nativeNav.isActive]);
 
   // Nearby POIs for arrival detection (populated by NearbyPoisOverlay callback)
   const [nearbyPois, setNearbyPois] = useState<DetectedPoi[]>([]);
@@ -1345,6 +1362,22 @@ const ActiveNavigationView = () => {
           </div>
         </div>
       )}
+
+      {/* Native Navigation Debug Panel */}
+      <NativeNavigationDebugPanel 
+        isVisible={showNativeDebug} 
+        onClose={() => setShowNativeDebug(false)} 
+      />
+      
+      {/* Native Debug Toggle Button */}
+      <Button
+        className="absolute top-48 right-4 z-30 rounded-full shadow-lg"
+        size="icon"
+        variant="outline"
+        onClick={() => setShowNativeDebug(!showNativeDebug)}
+      >
+        <Bug className="w-4 h-4" />
+      </Button>
 
       {/* Re-center button */}
       {!followUser && (
