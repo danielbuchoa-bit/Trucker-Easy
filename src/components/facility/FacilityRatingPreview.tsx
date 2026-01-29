@@ -5,6 +5,25 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import FacilityReviewsModal from './FacilityReviewsModal';
 
+// Type for the public view (excludes user_id for privacy)
+interface FacilityRatingPublic {
+  id: string;
+  lat: number | null;
+  lng: number | null;
+  overall_rating: number;
+  wait_time_rating: number | null;
+  dock_access_rating: number | null;
+  staff_rating: number | null;
+  restroom_rating: number | null;
+  avg_wait_minutes: number | null;
+  created_at: string;
+  tags: string[] | null;
+  comment: string | null;
+  facility_name: string;
+  facility_type: string;
+  address: string | null;
+}
+
 interface FacilityRatingSummary {
   avgRating: number;
   totalReviews: number;
@@ -70,9 +89,9 @@ const FacilityRatingPreview = ({
           lng,
         });
 
-        // First try: search by name
-        let { data: facilityRatings, error: queryError } = await supabase
-          .from('facility_ratings')
+        // First try: search by name (using public view to protect user_id)
+        const { data: rawData, error: queryError } = await supabase
+          .from('facility_ratings_public' as any)
           .select('*')
           .ilike('facility_name', `%${normalizedName.split(' ')[0]}%`);
 
@@ -81,8 +100,11 @@ const FacilityRatingPreview = ({
           throw queryError;
         }
 
+        // Cast to proper type
+        const facilityRatings = (rawData || []) as unknown as FacilityRatingPublic[];
+
         // Filter for better matches
-        let matchedRatings = facilityRatings?.filter((r) => {
+        let matchedRatings = facilityRatings.filter((r) => {
           const rName = normalizeName(r.facility_name || '');
           const rAddr = normalizeAddress(r.address || '');
 
@@ -105,22 +127,23 @@ const FacilityRatingPreview = ({
           return (nameMatch && addrMatch) || locationMatch;
         });
 
-        // If no matches by name, try by location only
-        if ((!matchedRatings || matchedRatings.length === 0) && lat && lng) {
-          const { data: nearbyRatings } = await supabase
-            .from('facility_ratings')
+        // If no matches by name, try by location only (using public view)
+        if (matchedRatings.length === 0 && lat && lng) {
+          const { data: nearbyRaw } = await supabase
+            .from('facility_ratings_public' as any)
             .select('*')
             .gte('lat', lat - 0.005)
             .lte('lat', lat + 0.005)
             .gte('lng', lng - 0.005)
             .lte('lng', lng + 0.005);
 
-          if (nearbyRatings && nearbyRatings.length > 0) {
+          const nearbyRatings = (nearbyRaw || []) as unknown as FacilityRatingPublic[];
+          if (nearbyRatings.length > 0) {
             matchedRatings = nearbyRatings;
           }
         }
 
-        if (!matchedRatings || matchedRatings.length === 0) {
+        if (matchedRatings.length === 0) {
           console.log('[FacilityRatingPreview] No ratings found for facility');
           setLoading(false);
           return;

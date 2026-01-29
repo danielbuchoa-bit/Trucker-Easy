@@ -13,6 +13,25 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
 
+// Type for the public view (excludes user_id for privacy)
+interface FacilityRatingPublic {
+  id: string;
+  lat: number | null;
+  lng: number | null;
+  overall_rating: number;
+  wait_time_rating: number | null;
+  dock_access_rating: number | null;
+  staff_rating: number | null;
+  restroom_rating: number | null;
+  avg_wait_minutes: number | null;
+  created_at: string;
+  tags: string[] | null;
+  comment: string | null;
+  facility_name: string;
+  facility_type: string;
+  address: string | null;
+}
+
 interface FacilityReview {
   id: string;
   overall_rating: number;
@@ -103,16 +122,19 @@ const FacilityReviewsModal = ({
       const normalizedName = normalizeName(facilityName);
       const normalizedAddr = normalizeAddress(facilityAddress);
 
-      // First try: search by name
-      let { data: facilityRatings } = await supabase
-        .from('facility_ratings')
+      // First try: search by name (using public view to protect user_id)
+      const { data: rawData } = await supabase
+        .from('facility_ratings_public' as any)
         .select('*')
         .ilike('facility_name', `%${normalizedName.split(' ')[0]}%`)
         .order('created_at', { ascending: false })
         .limit(50);
 
+      // Cast to proper type
+      const facilityRatings = (rawData || []) as unknown as FacilityRatingPublic[];
+
       // Filter for better matches
-      let matchedRatings = facilityRatings?.filter((r) => {
+      let matchedRatings = facilityRatings.filter((r) => {
         const rName = normalizeName(r.facility_name || '');
         const rAddr = normalizeAddress(r.address || '');
 
@@ -132,9 +154,9 @@ const FacilityReviewsModal = ({
       });
 
       // If no matches by name, try by location only
-      if ((!matchedRatings || matchedRatings.length === 0) && lat && lng) {
-        const { data: nearbyRatings } = await supabase
-          .from('facility_ratings')
+      if (matchedRatings.length === 0 && lat && lng) {
+        const { data: nearbyRaw } = await supabase
+          .from('facility_ratings_public' as any)
           .select('*')
           .gte('lat', lat - 0.005)
           .lte('lat', lat + 0.005)
@@ -143,13 +165,11 @@ const FacilityReviewsModal = ({
           .order('created_at', { ascending: false })
           .limit(20);
 
-        if (nearbyRatings) {
-          matchedRatings = nearbyRatings;
-        }
+        matchedRatings = (nearbyRaw || []) as unknown as FacilityRatingPublic[];
       }
 
-      // Take only the last 20
-      setReviews((matchedRatings || []).slice(0, 20));
+      // Take only the last 20 - cast to FacilityReview
+      setReviews(matchedRatings.slice(0, 20) as unknown as FacilityReview[]);
     } catch (err) {
       console.error('[FacilityReviewsModal] Error fetching reviews:', err);
     } finally {
