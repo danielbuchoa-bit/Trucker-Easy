@@ -1347,6 +1347,60 @@ export type Database = {
         }
         Relationships: []
       }
+      facility_ratings_public: {
+        Row: {
+          address: string | null
+          avg_wait_minutes: number | null
+          comment: string | null
+          created_at: string | null
+          dock_access_rating: number | null
+          facility_name: string | null
+          facility_type: string | null
+          id: string | null
+          lat: number | null
+          lng: number | null
+          overall_rating: number | null
+          restroom_rating: number | null
+          staff_rating: number | null
+          tags: string[] | null
+          wait_time_rating: number | null
+        }
+        Insert: {
+          address?: string | null
+          avg_wait_minutes?: number | null
+          comment?: string | null
+          created_at?: string | null
+          dock_access_rating?: number | null
+          facility_name?: string | null
+          facility_type?: string | null
+          id?: string | null
+          lat?: number | null
+          lng?: number | null
+          overall_rating?: number | null
+          restroom_rating?: number | null
+          staff_rating?: number | null
+          tags?: string[] | null
+          wait_time_rating?: number | null
+        }
+        Update: {
+          address?: string | null
+          avg_wait_minutes?: number | null
+          comment?: string | null
+          created_at?: string | null
+          dock_access_rating?: number | null
+          facility_name?: string | null
+          facility_type?: string | null
+          id?: string | null
+          lat?: number | null
+          lng?: number | null
+          overall_rating?: number | null
+          restroom_rating?: number | null
+          staff_rating?: number | null
+          tags?: string[] | null
+          wait_time_rating?: number | null
+        }
+        Relationships: []
+      }
       poi_ratings_aggregate: {
         Row: {
           avg_cleanliness: number | null

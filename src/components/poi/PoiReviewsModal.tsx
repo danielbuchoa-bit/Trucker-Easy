@@ -27,6 +27,25 @@ interface PoiReview {
   poi_type: string;
 }
 
+// Type for the public view (excludes user_id for privacy)
+interface FacilityRatingPublic {
+  id: string;
+  lat: number | null;
+  lng: number | null;
+  overall_rating: number;
+  wait_time_rating: number | null;
+  dock_access_rating: number | null;
+  staff_rating: number | null;
+  restroom_rating: number | null;
+  avg_wait_minutes: number | null;
+  created_at: string;
+  tags: string[] | null;
+  comment: string | null;
+  facility_name: string;
+  facility_type: string;
+  address: string | null;
+}
+
 interface FacilityReview {
   id: string;
   overall_rating: number;
@@ -125,9 +144,9 @@ const PoiReviewsModal = ({
         }
       }
 
-      // Also fetch from facility_ratings by location
-      const { data: facilityRatings } = await supabase
-        .from('facility_ratings')
+      // Also fetch from facility_ratings_public view (protects user_id)
+      const { data: rawFacilityData } = await supabase
+        .from('facility_ratings_public' as any)
         .select('*')
         .gte('lat', poi.lat - 0.002)
         .lte('lat', poi.lat + 0.002)
@@ -136,14 +155,25 @@ const PoiReviewsModal = ({
         .order('created_at', { ascending: false })
         .limit(20);
 
-      if (facilityRatings && facilityRatings.length > 0) {
-        for (const fr of facilityRatings) {
-          allReviews.push({
-            ...fr,
-            avgRating: fr.overall_rating,
-            type: 'facility',
-          });
-        }
+      // Cast to proper type
+      const facilityRatings = (rawFacilityData || []) as unknown as FacilityRatingPublic[];
+
+      for (const fr of facilityRatings) {
+        allReviews.push({
+          id: fr.id,
+          overall_rating: fr.overall_rating,
+          wait_time_rating: fr.wait_time_rating,
+          dock_access_rating: fr.dock_access_rating,
+          staff_rating: fr.staff_rating,
+          restroom_rating: fr.restroom_rating,
+          comment: fr.comment,
+          created_at: fr.created_at,
+          tags: fr.tags,
+          avg_wait_minutes: fr.avg_wait_minutes,
+          facility_type: fr.facility_type,
+          avgRating: fr.overall_rating,
+          type: 'facility',
+        } as Review);
       }
 
       // Sort by date and take top 20

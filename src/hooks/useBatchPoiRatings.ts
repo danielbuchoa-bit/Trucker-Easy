@@ -7,6 +7,15 @@ export interface PoiRatingSummary {
   ratingType: 'poi' | 'facility';
 }
 
+// Type for the public view (excludes user_id for privacy)
+interface FacilityRatingPublic {
+  id: string;
+  facility_name: string;
+  lat: number | null;
+  lng: number | null;
+  overall_rating: number;
+}
+
 interface CacheEntry {
   data: PoiRatingSummary;
   timestamp: number;
@@ -90,14 +99,17 @@ export const useBatchPoiRatings = () => {
         .select('poi_id, poi_name, friendliness_rating, cleanliness_rating, structure_rating, recommendation_rating')
         .in('poi_id', poiIds.length > 0 ? poiIds : ['__none__']);
 
-      // Fetch from facility_ratings table (for facilities by location)
-      const { data: facilityRatings } = await supabase
-        .from('facility_ratings')
+      // Fetch from facility_ratings_public view (protects user_id from exposure)
+      const { data: rawFacilityData } = await supabase
+        .from('facility_ratings_public' as any)
         .select('id, facility_name, lat, lng, overall_rating')
         .gte('lat', minLat)
         .lte('lat', maxLat)
         .gte('lng', minLng)
         .lte('lng', maxLng);
+
+      // Cast to proper type
+      const facilityRatings = (rawFacilityData || []) as unknown as FacilityRatingPublic[];
 
       // Process POI feedback
       const poiFeedbackMap = new Map<string, { total: number; count: number }>();
@@ -119,20 +131,18 @@ export const useBatchPoiRatings = () => {
 
       // Process facility ratings by location
       const facilityRatingsMap = new Map<string, { total: number; count: number }>();
-      if (facilityRatings) {
-        for (const rating of facilityRatings) {
-          // Find matching POI by location
-          for (const poi of poisToFetch) {
-            if (rating.lat && rating.lng) {
-              const latDiff = Math.abs(poi.lat - rating.lat);
-              const lngDiff = Math.abs(poi.lng - rating.lng);
-              if (latDiff < 0.002 && lngDiff < 0.002) {
-                const key = generatePoiKey(poi);
-                const existing = facilityRatingsMap.get(key) || { total: 0, count: 0 };
-                existing.total += rating.overall_rating;
-                existing.count += 1;
-                facilityRatingsMap.set(key, existing);
-              }
+      for (const rating of facilityRatings) {
+        // Find matching POI by location
+        for (const poi of poisToFetch) {
+          if (rating.lat && rating.lng) {
+            const latDiff = Math.abs(poi.lat - rating.lat);
+            const lngDiff = Math.abs(poi.lng - rating.lng);
+            if (latDiff < 0.002 && lngDiff < 0.002) {
+              const key = generatePoiKey(poi);
+              const existing = facilityRatingsMap.get(key) || { total: 0, count: 0 };
+              existing.total += rating.overall_rating;
+              existing.count += 1;
+              facilityRatingsMap.set(key, existing);
             }
           }
         }
