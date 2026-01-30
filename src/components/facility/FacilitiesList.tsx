@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Building2, Star, Clock, Search, Loader2, Plus, MapPin, Navigation, MessageSquare, Sparkles, Calendar } from 'lucide-react';
+import { Building2, Star, Clock, Search, Loader2, Plus, MapPin, Navigation, MessageSquare, Sparkles, Calendar, Fuel } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { Input } from '@/components/ui/input';
@@ -14,6 +14,7 @@ import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { detectLocationType } from '@/components/facility/UnifiedRatingPrompt';
 
 // Helper to check if facility was created in the last 7 days
 const isNewFacility = (createdAt: string): boolean => {
@@ -446,6 +447,9 @@ const FacilitiesList: React.FC = () => {
               {filteredFacilities.map((facility) => {
                 const agg = aggregates[facility.id];
                 const distance = getDistance(facility);
+                const locationType = detectLocationType(facility.name, facility.address || undefined);
+                const isFuelStop = locationType === 'truck_stop' || locationType === 'fuel';
+                const FacilityIcon = isFuelStop ? Fuel : Building2;
                 
                 return (
                   <Card 
@@ -457,7 +461,7 @@ const FacilitiesList: React.FC = () => {
                       <div className="flex items-start justify-between mb-2">
                         <div className="flex items-start gap-3">
                           <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
-                            <Building2 className="w-5 h-5 text-primary" />
+                            <FacilityIcon className="w-5 h-5 text-primary" />
                           </div>
                           <div>
                             <h3 className="font-semibold">{facility.name}</h3>

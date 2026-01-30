@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Building2, Star, Clock, Car, Bath, MapPin, Lightbulb, Loader2, PenLine } from 'lucide-react';
+import { ArrowLeft, Building2, Star, Clock, Car, Bath, MapPin, Lightbulb, Loader2, PenLine, Fuel } from 'lucide-react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import EnhancedFacilityReviewForm from '@/components/facility/EnhancedFacilityReviewForm';
+import TruckStopReviewForm from '@/components/poi/TruckStopReviewForm';
+import { detectLocationType } from '@/components/facility/UnifiedRatingPrompt';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -288,24 +290,42 @@ const FacilityDetailScreen: React.FC = () => {
         </Card>
       </div>
 
-      {/* Rating Sheet */}
-      <Sheet open={showRatingSheet} onOpenChange={setShowRatingSheet}>
-        <SheetContent side="bottom" className="h-[90vh] overflow-y-auto rounded-t-2xl">
-          <SheetHeader>
-            <SheetTitle className="flex items-center gap-2">
-              <Building2 className="w-5 h-5 text-primary" />
-              Avaliar {facility.name}
-            </SheetTitle>
-          </SheetHeader>
-          <div className="mt-4">
-            <EnhancedFacilityReviewForm
-              facility={facility}
-              onComplete={handleReviewComplete}
-              onCancel={() => setShowRatingSheet(false)}
-            />
-          </div>
-        </SheetContent>
-      </Sheet>
+      {/* Rating Sheet - Use appropriate form based on location type */}
+      {(() => {
+        const locationType = detectLocationType(facility.name, facility.address || undefined);
+        const isFuelStop = locationType === 'truck_stop' || locationType === 'fuel';
+        const Icon = isFuelStop ? Fuel : Building2;
+        
+        return (
+          <Sheet open={showRatingSheet} onOpenChange={setShowRatingSheet}>
+            <SheetContent side="bottom" className="h-[90vh] overflow-y-auto rounded-t-2xl">
+              <SheetHeader>
+                <SheetTitle className="flex items-center gap-2">
+                  <Icon className="w-5 h-5 text-primary" />
+                  Avaliar {facility.name}
+                </SheetTitle>
+              </SheetHeader>
+              <div className="mt-4">
+                {isFuelStop ? (
+                  <TruckStopReviewForm
+                    poiId={facility.id}
+                    poiName={facility.name}
+                    poiType="truck_stop"
+                    onComplete={handleReviewComplete}
+                    onCancel={() => setShowRatingSheet(false)}
+                  />
+                ) : (
+                  <EnhancedFacilityReviewForm
+                    facility={facility}
+                    onComplete={handleReviewComplete}
+                    onCancel={() => setShowRatingSheet(false)}
+                  />
+                )}
+              </div>
+            </SheetContent>
+          </Sheet>
+        );
+      })()}
 
       <BottomNav activeTab="community" onTabChange={(tab) => navigate(`/${tab}`)} />
     </div>
