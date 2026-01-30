@@ -179,7 +179,7 @@ const CompleteFacilityReviewModal: React.FC<CompleteFacilityReviewModalProps> = 
           lat: userLocation?.lat || null,
           lng: userLocation?.lng || null,
           user_id: user.id,
-          overall_rating: Math.round(finalRating * 10) / 10,
+          overall_rating: Math.round(finalRating),
           staff_rating: friendlyStaff || null,
           wait_time_rating: loadingTime || null,
           dock_access_rating: easyAccess || null,
