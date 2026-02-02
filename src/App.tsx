@@ -15,6 +15,7 @@ import { EmotionalCheckInProvider } from "./contexts/EmotionalCheckInContext";
 import { MedicationReminderProvider } from "./contexts/MedicationReminderContext";
 import { SubscriptionProvider } from "./contexts/SubscriptionContext";
 import { AuthProvider } from "./contexts/AuthContext";
+import { DotHosProvider } from "./contexts/DotHosContext";
 import DiagnosticsPanel from "./components/diagnostics/DiagnosticsPanel";
 import RoadTestDiagnosticsPanel from "./components/diagnostics/RoadTestDiagnosticsPanel";
 import LocationPermissionRequest from "./components/location/LocationPermissionRequest";
@@ -75,8 +76,9 @@ const App = () => (
                 <AuthProvider>
                   <ChatProvider>
                     <ActiveNavigationProvider>
-                      <EmotionalCheckInProvider>
-                        <MedicationReminderProvider>
+                      <DotHosProvider>
+                        <EmotionalCheckInProvider>
+                          <MedicationReminderProvider>
                           <PoiFeedbackProvider>
                             <GeofenceProvider>
                               <FacilityGeofenceProvider>
@@ -129,8 +131,9 @@ const App = () => (
                               </FacilityGeofenceProvider>
                             </GeofenceProvider>
                           </PoiFeedbackProvider>
-                        </MedicationReminderProvider>
-                      </EmotionalCheckInProvider>
+                          </MedicationReminderProvider>
+                        </EmotionalCheckInProvider>
+                      </DotHosProvider>
                     </ActiveNavigationProvider>
                   </ChatProvider>
                 </AuthProvider>
