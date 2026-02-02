@@ -35,6 +35,7 @@ import TrafficLightOverlay from './TrafficLightOverlay';
 import { createTruckCursorElement } from './TruckCursor';
 import EngineIndicator from './EngineIndicator';
 import NativeNavigationDebugPanel from './NativeNavigationDebugPanel';
+import DotHosBar from './DotHosBar';
 import { MapPin, Navigation as NavIcon, RotateCcw, Bug } from 'lucide-react';
 import MapControlsMenu from './MapControlsMenu';
 import WeighStationOverlay from '@/components/weighstation/WeighStationOverlay';
@@ -44,6 +45,7 @@ import WeighStationQuestionnaire from '@/components/weighstation/WeighStationQue
 import { useGeofence } from '@/contexts/GeofenceContext';
 import { usePoiFeedback } from '@/contexts/PoiFeedbackContext';
 import { useRoadTestSafe } from '@/contexts/RoadTestContext';
+import { useDotHosSafe } from '@/contexts/DotHosContext';
 import { Button } from '@/components/ui/button';
 import { useLanguage } from '@/i18n/LanguageContext';
 import { useRouteStyle, ROUTE_STYLES } from '@/hooks/useRouteStyle';
@@ -182,10 +184,21 @@ const ActiveNavigationView = () => {
   
   // Road Test diagnostics
   const roadTest = useRoadTestSafe();
+  
+  // DOT Hours of Service tracking
+  const dotHos = useDotHosSafe();
 
   useEffect(() => {
     voiceRef.current = voice;
   }, [voice]);
+  
+  // Update DOT HOS with current speed
+  useEffect(() => {
+    if (!userPosition?.speed || !dotHos) return;
+    // Convert m/s to mph
+    const speedMph = userPosition.speed * 2.237;
+    dotHos.updateSpeed(speedMph);
+  }, [userPosition?.speed, dotHos]);
   
   // Update Road Test diagnostics when position changes
   useEffect(() => {
@@ -1305,6 +1318,11 @@ const ActiveNavigationView = () => {
         }}
         visible={showDebug}
       />
+
+      {/* DOT Hours of Service Bar - Top Right Corner */}
+      <div className="absolute top-4 right-4 z-40 pointer-events-none">
+        <DotHosBar />
+      </div>
 
       {/* Rerouting indicator */}
       {isRerouting && (
