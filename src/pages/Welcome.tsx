@@ -1,6 +1,6 @@
 import { useLanguage } from '@/i18n/LanguageContext';
 import { useNavigate } from 'react-router-dom';
-import truckerEaseLogo from '@/assets/trucker-ease-logo.png';
+import truckerEasyLogo from '@/assets/trucker-easy-logo-new.png';
 
 interface WelcomeScreenProps {
   onComplete: () => void;
@@ -17,39 +17,42 @@ const WelcomeScreen = ({ onComplete }: WelcomeScreenProps) => {
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-background relative overflow-hidden">
-      {/* Cyber grid background effect */}
-      <div className="absolute inset-0 cyber-grid opacity-30" />
+      {/* Hexagon tech pattern background */}
+      <div className="absolute inset-0 hexagon-pattern opacity-40" />
       
-      {/* Glow effect behind logo */}
-      <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-96 h-96 bg-primary rounded-full blur-[120px] opacity-20" />
+      {/* Circuit line decorations */}
+      <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-primary/30 to-transparent" />
+      <div className="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-primary/30 to-transparent" />
+      
+      {/* Steel glow effect behind logo */}
+      <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-80 h-80 bg-primary rounded-full blur-[100px] opacity-15" />
 
       {/* Logo */}
-      <div className="flex flex-col items-center mb-8 animate-fade-in relative z-10">
+      <div className="flex flex-col items-center mb-6 animate-fade-in relative z-10">
         <img 
-          src={truckerEaseLogo} 
-          alt="TruckerEase" 
-          className="w-64 h-64 object-contain mb-4 drop-shadow-[0_0_30px_hsl(var(--primary)/0.5)]"
+          src={truckerEasyLogo} 
+          alt="TruckerEasy Technologies" 
+          className="w-72 h-72 object-contain drop-shadow-[0_0_40px_hsl(200_55%_50%/0.4)]"
         />
-        <p className="text-lg text-primary mt-2 font-medium tracking-wide">
-          {t.welcome.subtitle}
-        </p>
       </div>
 
       {/* Tagline */}
-      <p className="text-center text-muted-foreground mb-10 max-w-xs relative z-10">
+      <p className="text-center text-muted-foreground mb-10 max-w-sm relative z-10 text-lg tracking-wide">
         {t.welcome.tagline}
       </p>
 
-      {/* Get Started Button with cyber styling */}
+      {/* Get Started Button with metallic styling */}
       <button
         onClick={handleGetStarted}
-        className="w-full max-w-sm py-4 px-6 bg-primary text-primary-foreground rounded-xl font-semibold text-lg transition-all duration-300 glow-primary hover:glow-neon-strong active:scale-[0.98] relative z-10 neon-border"
+        className="w-full max-w-sm py-4 px-6 metallic-gradient text-white rounded-xl font-semibold text-lg transition-all duration-300 glow-steel hover:glow-steel-strong active:scale-[0.98] relative z-10 tech-border tracking-wider uppercase"
       >
         {t.welcome.getStarted}
       </button>
-      
-      {/* Bottom accent line */}
-      <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-primary to-transparent opacity-50" />
+
+      {/* Version badge */}
+      <p className="absolute bottom-8 text-xs text-muted-foreground/60 tracking-widest uppercase">
+        Technologies
+      </p>
     </div>
   );
 };
