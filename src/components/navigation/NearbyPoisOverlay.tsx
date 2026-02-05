@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { Navigation, MapPin, Star } from 'lucide-react';
+import { Navigation, MapPin, Star, Phone, Car, ParkingCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Sheet,
@@ -23,6 +23,7 @@ import { getBrandLogo, GenericTruckStopLogo } from '@/lib/truckStopLogos';
 import { usePoiRatings } from '@/hooks/usePoiRatings';
 import PoiRatingBadge from '@/components/poi/PoiRatingBadge';
 import PoiRatingDetails from '@/components/poi/PoiRatingDetails';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface Poi {
   id: string;
@@ -36,10 +37,20 @@ interface Poi {
   chainName: string | null;
   openingHours: string | null;
   contacts: string | null;
+  phone: string | null;
 }
 
 // Export Poi type for use in arrival detection
 export type { Poi };
+
+// Parking status type
+type ParkingStatus = 'many' | 'some' | 'full' | null;
+
+interface ParkingReport {
+  status: ParkingStatus;
+  created_at: string;
+  count: number;
+}
 
 interface NearbyPoisOverlayProps {
   lat: number | null;
@@ -65,6 +76,30 @@ const COLOR_TO_HEX: Record<string, string> = {
   'bg-indigo-600': '#4f46e5',
   'bg-rose-600': '#e11d48',
 };
+
+/**
+ * Parking Status Badge - shows current parking availability
+ */
+const ParkingStatusBadge = React.memo<{ status: ParkingStatus; count?: number }>(({ status, count }) => {
+  if (!status) return null;
+  
+  const config = {
+    many: { label: 'MANY', color: 'bg-success text-success-foreground', icon: ParkingCircle },
+    some: { label: 'SOME', color: 'bg-warning text-warning-foreground', icon: ParkingCircle },
+    full: { label: 'FULL', color: 'bg-destructive text-destructive-foreground', icon: Car },
+  };
+  
+  const { label, color, icon: Icon } = config[status];
+  
+  return (
+    <div className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold ${color}`}>
+      <Icon className="w-3 h-3" />
+      <span>{label}</span>
+      {count && count > 1 && <span className="opacity-70">({count})</span>}
+    </div>
+  );
+});
+ParkingStatusBadge.displayName = 'ParkingStatusBadge';
 
 /**
  * Brand Logo Component - shows SVG logo for known brands, initial for others
@@ -193,6 +228,80 @@ const NearbyPoisOverlay: React.FC<NearbyPoisOverlayProps> = ({
   
   // POI ratings hook
   const { ratings, fetchRatingsForPois } = usePoiRatings();
+  
+  // Auth for parking reports
+  const { user } = useAuth();
+  
+  // Parking availability state
+  const [parkingStatus, setParkingStatus] = useState<Map<string, ParkingReport>>(new Map());
+  const [submittingParking, setSubmittingParking] = useState(false);
+
+  // Fetch parking status for POIs
+  const fetchParkingStatus = async (poiIds: string[]) => {
+    if (poiIds.length === 0) return;
+    
+    const { data, error } = await supabase
+      .from('parking_reports')
+      .select('poi_id, status, created_at')
+      .in('poi_id', poiIds)
+      .gt('expires_at', new Date().toISOString())
+      .order('created_at', { ascending: false });
+    
+    if (!error && data) {
+      // Group by poi_id and get most recent + count
+      const statusMap = new Map<string, ParkingReport>();
+      const counts = new Map<string, number>();
+      
+      data.forEach((report) => {
+        counts.set(report.poi_id, (counts.get(report.poi_id) || 0) + 1);
+        if (!statusMap.has(report.poi_id)) {
+          statusMap.set(report.poi_id, {
+            status: report.status as ParkingStatus,
+            created_at: report.created_at,
+            count: 1,
+          });
+        }
+      });
+      
+      // Update counts
+      statusMap.forEach((report, poiId) => {
+        report.count = counts.get(poiId) || 1;
+      });
+      
+      setParkingStatus(statusMap);
+    }
+  };
+
+  // Submit parking report
+  const submitParkingReport = async (status: 'many' | 'some' | 'full') => {
+    if (!selectedPoi || !user) return;
+    
+    setSubmittingParking(true);
+    try {
+      const { error } = await supabase.from('parking_reports').insert({
+        poi_id: selectedPoi.id,
+        poi_name: selectedPoi.chainName || selectedPoi.name,
+        user_id: user.id,
+        status,
+      });
+      
+      if (!error) {
+        // Update local state immediately
+        setParkingStatus(prev => {
+          const newMap = new Map(prev);
+          const existing = newMap.get(selectedPoi.id);
+          newMap.set(selectedPoi.id, {
+            status,
+            created_at: new Date().toISOString(),
+            count: (existing?.count || 0) + 1,
+          });
+          return newMap;
+        });
+      }
+    } finally {
+      setSubmittingParking(false);
+    }
+  };
 
   useEffect(() => {
     if (lat === null || lng === null) return;
@@ -249,13 +358,15 @@ const NearbyPoisOverlay: React.FC<NearbyPoisOverlayProps> = ({
             chainName: poi.chainName || null,
             openingHours: poi.openingHours || null,
             contacts: poi.contacts || null,
+            phone: poi.contacts || poi.phone || null,
           }));
           
           setPois(transformedPois.slice(0, 5));
           
-          // Fetch ratings for these POIs
+          // Fetch ratings and parking status for these POIs
           const poiIds = transformedPois.map((p: Poi) => p.id);
           fetchRatingsForPois(poiIds);
+          fetchParkingStatus(poiIds);
           
           // Notify parent for arrival detection
           if (onPoisUpdate) {
@@ -361,15 +472,81 @@ const NearbyPoisOverlay: React.FC<NearbyPoisOverlayProps> = ({
                           size="md"
                         />
                       )}
+                      {parkingStatus.get(selectedPoi.id) && (
+                        <ParkingStatusBadge 
+                          status={parkingStatus.get(selectedPoi.id)!.status}
+                          count={parkingStatus.get(selectedPoi.id)!.count}
+                        />
+                      )}
                     </div>
                   </div>
                 </div>
               </SheetHeader>
 
               <div className="mt-4 space-y-4">
+                {/* Parking Availability Section */}
+                <div className="p-3 bg-muted/50 rounded-lg">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-medium">Parking Availability</span>
+                    {parkingStatus.get(selectedPoi.id) && (
+                      <span className="text-xs text-muted-foreground">
+                        Updated {new Date(parkingStatus.get(selectedPoi.id)!.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      variant={parkingStatus.get(selectedPoi.id)?.status === 'many' ? 'default' : 'outline'}
+                      className="flex-1 bg-success/10 hover:bg-success/20 text-success border-success/30"
+                      onClick={() => submitParkingReport('many')}
+                      disabled={submittingParking || !user}
+                    >
+                      MANY
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant={parkingStatus.get(selectedPoi.id)?.status === 'some' ? 'default' : 'outline'}
+                      className="flex-1 bg-warning/10 hover:bg-warning/20 text-warning border-warning/30"
+                      onClick={() => submitParkingReport('some')}
+                      disabled={submittingParking || !user}
+                    >
+                      SOME
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant={parkingStatus.get(selectedPoi.id)?.status === 'full' ? 'default' : 'outline'}
+                      className="flex-1 bg-destructive/10 hover:bg-destructive/20 text-destructive border-destructive/30"
+                      onClick={() => submitParkingReport('full')}
+                      disabled={submittingParking || !user}
+                    >
+                      FULL
+                    </Button>
+                  </div>
+                  {!user && (
+                    <p className="text-xs text-muted-foreground mt-2">Login to report parking availability</p>
+                  )}
+                </div>
+
                 {/* Rating Details Section */}
                 {ratings.get(selectedPoi.id) && (
                   <PoiRatingDetails rating={ratings.get(selectedPoi.id)!} />
+                )}
+
+                {/* Phone - Click to Call */}
+                {selectedPoi.phone && (
+                  <a 
+                    href={`tel:${selectedPoi.phone.replace(/\D/g, '')}`}
+                    className="flex items-center gap-3 p-3 bg-primary/10 hover:bg-primary/20 rounded-lg transition-colors"
+                  >
+                    <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
+                      <Phone className="w-5 h-5 text-primary" />
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-sm font-medium">Call {selectedPoi.chainName || selectedPoi.name}</p>
+                      <p className="text-xs text-muted-foreground">{selectedPoi.phone}</p>
+                    </div>
+                  </a>
                 )}
 
                 <div className="text-sm text-muted-foreground">
@@ -380,15 +557,6 @@ const NearbyPoisOverlay: React.FC<NearbyPoisOverlayProps> = ({
                   <div className="text-sm">
                     <span className="text-muted-foreground">Horário: </span>
                     {selectedPoi.openingHours}
-                  </div>
-                )}
-
-                {selectedPoi.contacts && (
-                  <div className="text-sm">
-                    <span className="text-muted-foreground">Telefone: </span>
-                    <a href={`tel:${selectedPoi.contacts}`} className="text-primary">
-                      {selectedPoi.contacts}
-                    </a>
                   </div>
                 )}
 

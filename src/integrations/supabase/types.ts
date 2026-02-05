@@ -707,6 +707,36 @@ export type Database = {
         }
         Relationships: []
       }
+      parking_reports: {
+        Row: {
+          created_at: string
+          expires_at: string
+          id: string
+          poi_id: string
+          poi_name: string
+          status: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          expires_at?: string
+          id?: string
+          poi_id: string
+          poi_name: string
+          status: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          expires_at?: string
+          id?: string
+          poi_id?: string
+          poi_name?: string
+          status?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       poi_feedback: {
         Row: {
           cleanliness_rating: number
