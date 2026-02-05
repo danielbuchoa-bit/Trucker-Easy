@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface CheckInData {
   energyLevel: number;
@@ -51,6 +52,7 @@ const MORNING_DISMISSED_KEY = 'emotional_checkin_morning_dismissed';
 const EVENING_DISMISSED_KEY = 'emotional_checkin_evening_dismissed';
 
 export const EmotionalCheckInProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+  const { user, isLoading: isAuthLoading } = useAuth();
   const [isCheckInModalOpen, setIsCheckInModalOpen] = useState(false);
   const [checkInType, setCheckInType] = useState<'morning' | 'evening'>('morning');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -58,9 +60,11 @@ export const EmotionalCheckInProvider: React.FC<{ children: ReactNode }> = ({ ch
   const [todayEveningCheckIn, setTodayEveningCheckIn] = useState<CheckInRecord | null>(null);
   const [weeklyHistory, setWeeklyHistory] = useState<CheckInRecord[]>([]);
   const [insights, setInsights] = useState<WellnessInsight[]>([]);
-  const [userId, setUserId] = useState<string | null>(null);
   const [morningDismissed, setMorningDismissed] = useState(false);
   const [eveningDismissed, setEveningDismissed] = useState(false);
+  
+  // Use centralized user ID from AuthContext
+  const userId = user?.id ?? null;
 
   // Check if dismissed today
   useEffect(() => {
@@ -72,18 +76,16 @@ export const EmotionalCheckInProvider: React.FC<{ children: ReactNode }> = ({ ch
     setEveningDismissed(eveningDismissedDate === today);
   }, []);
 
-  // Get user and fetch today's check-ins
+  // Fetch today's check-ins when user is authenticated and auth loading completes
   useEffect(() => {
-    const initUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        setUserId(user.id);
-        await fetchTodayCheckIns(user.id);
-        await fetchWeeklyHistory(user.id);
-      }
-    };
-    initUser();
-  }, []);
+    // Wait until auth is fully loaded before fetching
+    if (isAuthLoading) return;
+    
+    if (userId) {
+      fetchTodayCheckIns(userId);
+      fetchWeeklyHistory(userId);
+    }
+  }, [userId, isAuthLoading]);
 
   const fetchTodayCheckIns = async (uid: string) => {
     const today = new Date();
@@ -196,12 +198,12 @@ export const EmotionalCheckInProvider: React.FC<{ children: ReactNode }> = ({ ch
     return { energy: avgEnergy, stress: avgStress, body: avgBody, overall: avgOverall };
   }, [weeklyHistory]);
 
-  // Check if should show morning check-in (first app open of the day)
-  const shouldShowMorningCheckIn = !todayMorningCheckIn && !morningDismissed && userId !== null;
+  // Check if should show morning check-in (first app open of the day) - only after auth is loaded
+  const shouldShowMorningCheckIn = !isAuthLoading && !todayMorningCheckIn && !morningDismissed && userId !== null;
   
-  // Check if should show evening check-in (after 6 PM and no evening check-in yet)
+  // Check if should show evening check-in (after 6 PM and no evening check-in yet) - only after auth is loaded
   const currentHour = new Date().getHours();
-  const shouldShowEveningCheckIn = !todayEveningCheckIn && !eveningDismissed && currentHour >= 18 && userId !== null;
+  const shouldShowEveningCheckIn = !isAuthLoading && !todayEveningCheckIn && !eveningDismissed && currentHour >= 18 && userId !== null;
 
   const openMorningCheckIn = () => {
     setCheckInType('morning');
