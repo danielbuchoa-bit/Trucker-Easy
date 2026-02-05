@@ -11,7 +11,7 @@
    }
  
    try {
-     const { email, password, phone, full_name, tier } = await req.json();
+    const { email, password, phone, full_name, tier, update_password } = await req.json();
  
      // Validate required fields
      if (!email || !password) {
@@ -28,6 +28,37 @@
        { auth: { autoRefreshToken: false, persistSession: false } }
      );
  
+    // Check if user already exists
+    const { data: existingUsers } = await supabaseAdmin.auth.admin.listUsers();
+    const existingUser = existingUsers?.users?.find(
+      (u) => u.email?.toLowerCase() === email.toLowerCase()
+    );
+
+    // If update_password is true and user exists, just update password
+    if (update_password && existingUser) {
+      const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(
+        existingUser.id,
+        { password }
+      );
+
+      if (updateError) {
+        return new Response(
+          JSON.stringify({ error: updateError.message }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          user_id: existingUser.id,
+          email,
+          message: "Password updated successfully",
+        }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
      // Create the user using admin API (phone is stored in metadata, not as auth phone)
      const { data: userData, error: userError } = await supabaseAdmin.auth.admin.createUser({
        email,
