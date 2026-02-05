@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useEmotionalCheckIn } from '@/contexts/EmotionalCheckInContext';
 import { useActiveNavigation } from '@/contexts/ActiveNavigationContext';
-import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
 
 /**
  * Invisible component that triggers check-in prompts based on context:
@@ -19,31 +19,22 @@ const CheckInTrigger: React.FC = () => {
   } = useEmotionalCheckIn();
   
   const { isNavigating, userPosition } = useActiveNavigation();
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const { user, isLoading: isAuthLoading } = useAuth();
   const hasTriggeredMorning = useRef(false);
   const hasTriggeredEvening = useRef(false);
   const navigationEndedRef = useRef(false);
 
-  // Check authentication status
-  useEffect(() => {
-    const checkAuth = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      setIsAuthenticated(!!user);
-    };
-    checkAuth();
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_, session) => {
-      setIsAuthenticated(!!session?.user);
-    });
-
-    return () => subscription.unsubscribe();
-  }, []);
+  // Use centralized auth state - only consider authenticated after loading completes
+  const isAuthenticated = !isAuthLoading && !!user;
 
   // Determine if truck is stopped (speed < 5 km/h or no speed data)
   const isTruckStopped = !userPosition?.speed || userPosition.speed < 5;
 
   // Morning check-in: First app open, truck stopped, not navigating, authenticated
   useEffect(() => {
+    // Don't trigger anything while auth is still loading
+    if (isAuthLoading) return;
+    
     if (
       isAuthenticated &&
       shouldShowMorningCheckIn && 
@@ -60,7 +51,7 @@ const CheckInTrigger: React.FC = () => {
       
       return () => clearTimeout(timer);
     }
-  }, [isAuthenticated, shouldShowMorningCheckIn, isNavigating, isTruckStopped, openMorningCheckIn, isCheckInModalOpen]);
+  }, [isAuthLoading, isAuthenticated, shouldShowMorningCheckIn, isNavigating, isTruckStopped, openMorningCheckIn, isCheckInModalOpen]);
 
   // Track navigation end
   useEffect(() => {
@@ -72,6 +63,9 @@ const CheckInTrigger: React.FC = () => {
 
   // Evening check-in: After navigation ends, truck stopped, authenticated
   useEffect(() => {
+    // Don't trigger anything while auth is still loading
+    if (isAuthLoading) return;
+    
     if (
       isAuthenticated &&
       shouldShowEveningCheckIn && 
@@ -89,7 +83,7 @@ const CheckInTrigger: React.FC = () => {
       
       return () => clearTimeout(timer);
     }
-  }, [isAuthenticated, shouldShowEveningCheckIn, isNavigating, isTruckStopped, openEveningCheckIn, isCheckInModalOpen]);
+  }, [isAuthLoading, isAuthenticated, shouldShowEveningCheckIn, isNavigating, isTruckStopped, openEveningCheckIn, isCheckInModalOpen]);
 
   // Reset triggers on new day
   useEffect(() => {
