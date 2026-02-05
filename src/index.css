@@ -2,79 +2,79 @@
 @tailwind components;
 @tailwind utilities;
 
-/* TruckerEase Design System - Futuristic Blue Neon Theme */
+/* TruckerEasy Technologies Design System - Steel Metallic Tech Theme */
 
 @layer base {
   :root {
-    /* Dark cyber background */
-    --background: 220 25% 6%;
-    --foreground: 200 20% 95%;
-    --card: 220 25% 10%;
-    --card-foreground: 200 20% 95%;
-    --popover: 220 25% 10%;
-    --popover-foreground: 200 20% 95%;
+    /* Deep charcoal slate background */
+    --background: 220 15% 12%;
+    --foreground: 210 20% 92%;
+    --card: 220 15% 16%;
+    --card-foreground: 210 20% 92%;
+    --popover: 220 15% 16%;
+    --popover-foreground: 210 20% 92%;
     
-    /* Primary: Electric cyan/blue neon */
-    --primary: 200 100% 50%;
-    --primary-foreground: 220 25% 6%;
+    /* Primary: Steel blue metallic */
+    --primary: 200 55% 50%;
+    --primary-foreground: 220 15% 98%;
     
-    /* Secondary: Deep navy blue */
-    --secondary: 215 30% 16%;
-    --secondary-foreground: 200 20% 95%;
+    /* Secondary: Dark slate */
+    --secondary: 215 18% 22%;
+    --secondary-foreground: 210 20% 92%;
     
-    /* Muted: Dark blue-gray */
-    --muted: 215 25% 14%;
-    --muted-foreground: 210 15% 55%;
+    /* Muted: Charcoal gray */
+    --muted: 215 15% 18%;
+    --muted-foreground: 210 10% 50%;
     
-    /* Accent: Bright cyan glow */
-    --accent: 195 100% 55%;
-    --accent-foreground: 220 25% 6%;
+    /* Accent: Cyan steel highlight */
+    --accent: 195 60% 55%;
+    --accent-foreground: 220 15% 10%;
     
     --destructive: 0 72% 51%;
-    --destructive-foreground: 200 20% 95%;
+    --destructive-foreground: 210 20% 98%;
     
-    /* Border with subtle blue tint */
-    --border: 215 30% 18%;
-    --input: 215 30% 18%;
-    --ring: 200 100% 50%;
+    /* Border with subtle steel tint */
+    --border: 215 15% 24%;
+    --input: 215 15% 20%;
+    --ring: 200 55% 50%;
     --radius: 0.75rem;
     
-    /* Semantic colors with cyber palette */
-    --success: 160 84% 45%;
-    --success-foreground: 220 25% 6%;
+    /* Semantic colors with metallic palette */
+    --success: 160 60% 42%;
+    --success-foreground: 220 15% 98%;
     --warning: 45 93% 47%;
-    --warning-foreground: 220 25% 6%;
-    --info: 200 100% 50%;
-    --info-foreground: 220 25% 6%;
+    --warning-foreground: 220 15% 10%;
+    --info: 200 55% 50%;
+    --info-foreground: 220 15% 98%;
     
     /* Action button colors */
-    --facility-action: 200 100% 50%;
+    --facility-action: 200 55% 50%;
     --facility-action-foreground: 0 0% 100%;
     
     /* Status colors */
-    --status-open: 160 84% 45%;
+    --status-open: 160 60% 42%;
     --status-closed: 0 72% 51%;
     --status-unknown: 210 15% 45%;
     --status-limited: 45 93% 47%;
     
     /* Parking availability */
-    --parking-available: 160 84% 45%;
+    --parking-available: 160 60% 42%;
     --parking-limited: 45 93% 47%;
     --parking-full: 0 72% 51%;
 
-    /* Neon glow effects */
-    --neon-glow: 200 100% 50%;
-    --neon-glow-strong: 195 100% 60%;
+    /* Steel glow effects */
+    --neon-glow: 200 55% 50%;
+    --neon-glow-strong: 195 60% 60%;
 
-    /* Sidebar with cyber styling */
-    --sidebar-background: 220 25% 5%;
-    --sidebar-foreground: 200 20% 95%;
-    --sidebar-primary: 200 100% 50%;
-    --sidebar-primary-foreground: 220 25% 6%;
-    --sidebar-accent: 215 25% 14%;
-    --sidebar-accent-foreground: 200 20% 95%;
-    --sidebar-border: 215 30% 18%;
-    --sidebar-ring: 200 100% 50%;
+    /* Sidebar with steel styling */
+    --sidebar-background: 220 15% 10%;
+    --sidebar-foreground: 210 20% 92%;
+    --sidebar-primary: 200 55% 50%;
+    --sidebar-primary-foreground: 220 15% 98%;
+    --sidebar-accent: 215 15% 18%;
+    --sidebar-accent-foreground: 210 20% 92%;
+    --sidebar-border: 215 15% 24%;
+    --sidebar-ring: 200 55% 50%;
   }
 
   .light {
@@ -119,7 +119,7 @@
 
   body {
     @apply bg-background text-foreground antialiased;
-    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-family: 'Rajdhani', 'Inter', system-ui, -apple-system, sans-serif;
     -webkit-tap-highlight-color: transparent;
   }
 
@@ -177,28 +177,38 @@
     box-shadow: 0 0 20px hsl(var(--success) / 0.4), 0 0 40px hsl(var(--success) / 0.2);
   }
 
-  .glow-neon {
-    box-shadow: 0 0 10px hsl(var(--neon-glow) / 0.5), 
-                0 0 20px hsl(var(--neon-glow) / 0.3), 
-                0 0 40px hsl(var(--neon-glow) / 0.2);
+  .glow-steel {
+    box-shadow: 0 0 15px hsl(var(--neon-glow) / 0.4), 
+                0 0 30px hsl(var(--neon-glow) / 0.2);
   }
 
-  .glow-neon-strong {
-    box-shadow: 0 0 15px hsl(var(--neon-glow-strong) / 0.6), 
-                0 0 30px hsl(var(--neon-glow-strong) / 0.4), 
-                0 0 60px hsl(var(--neon-glow-strong) / 0.2);
+  .glow-steel-strong {
+    box-shadow: 0 0 20px hsl(var(--neon-glow-strong) / 0.5), 
+                0 0 40px hsl(var(--neon-glow-strong) / 0.3);
   }
 
-  .cyber-grid {
+  .tech-grid {
     background-image: 
       linear-gradient(to right, hsl(var(--primary) / 0.05) 1px, transparent 1px),
       linear-gradient(to bottom, hsl(var(--primary) / 0.05) 1px, transparent 1px);
     background-size: 40px 40px;
   }
 
-  .neon-border {
+  .tech-border {
     border: 1px solid hsl(var(--primary) / 0.3);
-    box-shadow: inset 0 0 20px hsl(var(--primary) / 0.1);
+    box-shadow: inset 0 0 15px hsl(var(--primary) / 0.08);
+  }
+
+  .metallic-gradient {
+    background: linear-gradient(135deg, 
+      hsl(200 55% 55% / 0.9) 0%, 
+      hsl(210 45% 40% / 0.9) 50%,
+      hsl(200 55% 50% / 0.9) 100%);
+  }
+
+  .hexagon-pattern {
+    background-image: url("data:image/svg+xml,%3Csvg width='60' height='52' viewBox='0 0 60 52' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M30 0l25.98 15v30L30 60 4.02 45V15z' fill='none' stroke='%233a9cc5' stroke-opacity='0.08' stroke-width='1'/%3E%3C/svg%3E");
+    background-size: 60px 52px;
   }
 
   /* Confetti animation */
