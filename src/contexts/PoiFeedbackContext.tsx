@@ -312,6 +312,15 @@ export const PoiFeedbackProvider: React.FC<{ children: React.ReactNode }> = ({ c
       }
     }
 
+    // Re-check food suggestion if already inside POI but not showing
+    if (currentVisitedPoi && !isShowingFoodSuggestion && closestPoi && closestDistance < ENTER_RADIUS_M) {
+      const poiType = currentVisitedPoi.type;
+      if ((poiType === 'truck_stop' || poiType === 'fuel') && !dismissedFoodSuggestions.current.has(currentVisitedPoi.id)) {
+        console.log('[PoiFeedback] Re-triggering food suggestion for:', currentVisitedPoi.name);
+        setIsShowingFoodSuggestion(true);
+      }
+    }
+
     // Handle exit
     if (currentVisitedPoi) {
       const distanceFromVisited = calculateDistance(
