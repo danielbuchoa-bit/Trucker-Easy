@@ -8,7 +8,7 @@ import { useLanguage } from '@/i18n/LanguageContext';
 import { useFeatureAccess } from '@/hooks/useFeatureAccess';
 import { useNavigate } from 'react-router-dom';
 import type { DriverFoodProfile } from '@/types/stops';
-import { getRestaurantsForBrand } from '@/lib/truckStopRestaurants';
+// Restaurant discovery via dedicated edge function (no truck-only filter)
 
 interface VisitedStop {
   id: string;
@@ -89,13 +89,30 @@ const FoodSuggestionPrompt: React.FC<FoodSuggestionPromptProps> = ({ stop, onDis
     }
   }, []);
 
-  // Get known restaurants for this truck stop brand (no API call needed)
-  const getKnownRestaurants = useCallback((): string[] => {
-    const restaurants = getRestaurantsForBrand(stop.name, stop.brand);
-    console.log('[FoodSuggestion] Known restaurants for', stop.name, '(brand:', stop.brand, '):', restaurants);
-    setNearbyRestaurants(restaurants);
-    return restaurants;
-  }, [stop.name, stop.brand]);
+  // Fetch nearby restaurants using dedicated restaurant search (not truck-only POI API)
+  const fetchNearbyRestaurants = useCallback(async (): Promise<string[]> => {
+    try {
+      console.log('[FoodSuggestion] Searching restaurants near:', stop.name, 'at', stop.lat, stop.lng);
+      const { data, error: fnError } = await supabase.functions.invoke('nearby_restaurants', {
+        body: {
+          lat: stop.lat,
+          lng: stop.lng,
+          radiusMeters: 500,
+        },
+      });
+      if (fnError) {
+        console.error('[FoodSuggestion] Restaurant search error:', fnError);
+        return [];
+      }
+      const names = data?.restaurants || [];
+      console.log('[FoodSuggestion] Nearby restaurants found:', names.length, names);
+      setNearbyRestaurants(names);
+      return names;
+    } catch (err) {
+      console.error('[FoodSuggestion] Error fetching restaurants:', err);
+      return [];
+    }
+  }, [stop.lat, stop.lng, stop.name]);
 
   // Build profile payload
   const buildProfilePayload = (profile: DriverFoodProfile | null) => {
@@ -158,7 +175,7 @@ const FoodSuggestionPrompt: React.FC<FoodSuggestionPromptProps> = ({ stop, onDis
       setError(null);
 
       const profile = await fetchUserProfile();
-      const restaurants = getKnownRestaurants();
+      const restaurants = await fetchNearbyRestaurants();
 
       console.log('[FoodSuggestion] Fetching recommendations. Restaurants:', restaurants.length);
 
