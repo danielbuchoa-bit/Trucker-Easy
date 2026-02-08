@@ -35,7 +35,7 @@ import TrafficLightOverlay from './TrafficLightOverlay';
 import { createTruckCursorElement } from './TruckCursor';
 import EngineIndicator from './EngineIndicator';
 import NativeNavigationDebugPanel from './NativeNavigationDebugPanel';
-import DotHosBar from './DotHosBar';
+import DotHud from './DotHud';
 import { MapPin, Navigation as NavIcon, RotateCcw, Bug } from 'lucide-react';
 import MapControlsMenu from './MapControlsMenu';
 import WeighStationOverlay from '@/components/weighstation/WeighStationOverlay';
@@ -1319,9 +1319,9 @@ const ActiveNavigationView = () => {
         visible={showDebug}
       />
 
-      {/* DOT Hours of Service Bar - Top Right Corner */}
+      {/* DOT Hours of Service HUD - Top Right Corner */}
       <div className="absolute top-4 right-4 z-40 pointer-events-none">
-        <DotHosBar />
+        <DotHud />
       </div>
 
       {/* Rerouting indicator */}
