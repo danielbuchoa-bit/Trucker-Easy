@@ -188,16 +188,16 @@ const HomeScreen = () => {
     setLocationErrorCode(err.code);
     switch (err.code) {
       case 1: // PERMISSION_DENIED
-        setLocationError('Permissão de localização negada');
+        setLocationError('Location permission denied');
         break;
       case 2: // POSITION_UNAVAILABLE
-        setLocationError('Localização indisponível');
+        setLocationError('Location unavailable');
         break;
       case 3: // TIMEOUT
-        setLocationError('Tempo esgotado ao buscar localização');
+        setLocationError('Location request timed out');
         break;
       default:
-        setLocationError('Erro ao obter localização');
+        setLocationError('Error getting location');
     }
     setLoading(false);
   };

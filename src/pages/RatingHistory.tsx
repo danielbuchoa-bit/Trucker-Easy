@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
+import { enUS } from 'date-fns/locale';
 import EditPoiRatingModal from '@/components/poi/EditPoiRatingModal';
 
 interface PoiFeedbackRecord {
@@ -155,12 +155,12 @@ const RatingHistory: React.FC = () => {
 
       if (error) throw error;
 
-      toast.success('Avaliação atualizada!');
+      toast.success('Rating updated!');
       setEditingPoi(null);
       fetchRatings();
     } catch (err) {
       console.error('Error updating rating:', err);
-      toast.error('Erro ao atualizar avaliação');
+      toast.error('Error updating rating');
     }
   };
 
@@ -183,9 +183,9 @@ const RatingHistory: React.FC = () => {
             <ArrowLeft className="w-6 h-6" />
           </button>
           <div>
-            <h1 className="text-xl font-bold">Minhas Avaliações</h1>
+            <h1 className="text-xl font-bold">My Reviews</h1>
             <p className="text-sm text-muted-foreground">
-              {totalRatings} avaliação{totalRatings !== 1 ? 'ões' : ''} feita{totalRatings !== 1 ? 's' : ''}
+              {totalRatings} review{totalRatings !== 1 ? 's' : ''} submitted
             </p>
           </div>
         </div>
@@ -200,13 +200,13 @@ const RatingHistory: React.FC = () => {
           </Card>
           <Card className="p-3 text-center">
             <p className="text-2xl font-bold text-primary">{stopRatings.length}</p>
-            <p className="text-xs text-muted-foreground">Paradas</p>
+            <p className="text-xs text-muted-foreground">Stops</p>
           </Card>
           <Card className="p-3 text-center">
             <p className="text-2xl font-bold text-green-600">
               {poiFeedback.filter(p => p.would_return).length}
             </p>
-            <p className="text-xs text-muted-foreground">Voltariam</p>
+            <p className="text-xs text-muted-foreground">Would return</p>
           </Card>
         </div>
       </div>
@@ -220,7 +220,7 @@ const RatingHistory: React.FC = () => {
           </TabsTrigger>
           <TabsTrigger value="stops" className="gap-2">
             <Star className="w-4 h-4" />
-            Paradas ({stopRatings.length})
+            Stops ({stopRatings.length})
           </TabsTrigger>
         </TabsList>
 
@@ -230,10 +230,10 @@ const RatingHistory: React.FC = () => {
             <Card className="p-8 text-center">
               <MapPin className="w-12 h-12 mx-auto text-muted-foreground/50 mb-3" />
               <p className="text-muted-foreground">
-                Você ainda não avaliou nenhum POI
+                You haven't rated any POIs yet
               </p>
               <p className="text-sm text-muted-foreground mt-1">
-                Visite postos e truck stops para avaliar
+                Visit gas stations and truck stops to rate them
               </p>
             </Card>
           ) : (
@@ -256,33 +256,33 @@ const RatingHistory: React.FC = () => {
                       {record.would_return && (
                         <Badge variant="outline" className="text-green-600 border-green-600/50">
                           <ThumbsUp className="w-3 h-3 mr-1" />
-                          Voltaria
+                           Would return
                         </Badge>
                       )}
                     </div>
 
                     <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
                       <div className="flex items-center justify-between">
-                        <span className="text-muted-foreground">Atendimento:</span>
+                        <span className="text-muted-foreground">Service:</span>
                         {renderStars(record.friendliness_rating)}
                       </div>
                       <div className="flex items-center justify-between">
-                        <span className="text-muted-foreground">Limpeza:</span>
+                        <span className="text-muted-foreground">Cleanliness:</span>
                         {renderStars(record.cleanliness_rating)}
                       </div>
                       <div className="flex items-center justify-between">
-                        <span className="text-muted-foreground">Estrutura:</span>
+                        <span className="text-muted-foreground">Facilities:</span>
                         {renderStars(record.structure_rating || 0)}
                       </div>
                       <div className="flex items-center justify-between">
-                        <span className="text-muted-foreground">Recomendação:</span>
+                        <span className="text-muted-foreground">Recommendation:</span>
                         {renderStars(record.recommendation_rating)}
                       </div>
                     </div>
 
                     <div className="flex items-center gap-1 mt-2 text-xs text-muted-foreground">
                       <Calendar className="w-3 h-3" />
-                      {format(new Date(record.created_at), "d 'de' MMM 'de' yyyy", { locale: ptBR })}
+                      {format(new Date(record.created_at), "MMM d, yyyy", { locale: enUS })}
                     </div>
                   </div>
 
@@ -306,10 +306,10 @@ const RatingHistory: React.FC = () => {
             <Card className="p-8 text-center">
               <Star className="w-12 h-12 mx-auto text-muted-foreground/50 mb-3" />
               <p className="text-muted-foreground">
-                Você ainda não avaliou nenhuma parada
+                You haven't rated any stops yet
               </p>
               <p className="text-sm text-muted-foreground mt-1">
-                Avalie paradas de sua rota
+                Rate stops along your route
               </p>
             </Card>
           ) : (
@@ -331,25 +331,25 @@ const RatingHistory: React.FC = () => {
                     <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
                       {record.food_rating && (
                         <div className="flex items-center justify-between">
-                          <span className="text-muted-foreground">Comida:</span>
+                          <span className="text-muted-foreground">Food:</span>
                           {renderStars(record.food_rating)}
                         </div>
                       )}
                       {record.bathroom_rating && (
                         <div className="flex items-center justify-between">
-                          <span className="text-muted-foreground">Banheiro:</span>
+                          <span className="text-muted-foreground">Restroom:</span>
                           {renderStars(record.bathroom_rating)}
                         </div>
                       )}
                       {record.parking_rating && (
                         <div className="flex items-center justify-between">
-                          <span className="text-muted-foreground">Estacionamento:</span>
+                          <span className="text-muted-foreground">Parking:</span>
                           {renderStars(record.parking_rating)}
                         </div>
                       )}
                       {record.safety_rating && (
                         <div className="flex items-center justify-between">
-                          <span className="text-muted-foreground">Segurança:</span>
+                          <span className="text-muted-foreground">Safety:</span>
                           {renderStars(record.safety_rating)}
                         </div>
                       )}
@@ -363,7 +363,7 @@ const RatingHistory: React.FC = () => {
 
                     <div className="flex items-center gap-1 mt-2 text-xs text-muted-foreground">
                       <Calendar className="w-3 h-3" />
-                      {format(new Date(record.created_at), "d 'de' MMM 'de' yyyy", { locale: ptBR })}
+                      {format(new Date(record.created_at), "MMM d, yyyy", { locale: enUS })}
                     </div>
                   </div>
                 </div>

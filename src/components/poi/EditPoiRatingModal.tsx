@@ -92,7 +92,7 @@ const EditPoiRatingModal: React.FC<EditPoiRatingModalProps> = ({
         {/* Header */}
         <div className="sticky top-0 bg-background border-b border-border p-4 flex items-center justify-between">
           <div>
-            <h2 className="text-lg font-bold">Editar Avaliação</h2>
+            <h2 className="text-lg font-bold">Edit Review</h2>
             <p className="text-sm text-muted-foreground">{rating.poi_name}</p>
           </div>
           <Button variant="ghost" size="icon" onClick={onCancel}>
@@ -103,25 +103,25 @@ const EditPoiRatingModal: React.FC<EditPoiRatingModalProps> = ({
         {/* Content */}
         <div className="p-4 space-y-6">
           <StarRating
-            label="Atendimento / Simpatia"
+            label="Service / Friendliness"
             value={friendliness}
             onChange={setFriendliness}
           />
 
           <StarRating
-            label="Limpeza"
+            label="Cleanliness"
             value={cleanliness}
             onChange={setCleanliness}
           />
 
           <StarRating
-            label="Estrutura / Instalações"
+            label="Facilities"
             value={structure}
             onChange={setStructure}
           />
 
           <StarRating
-            label="Recomendação Geral"
+            label="Overall Recommendation"
             value={recommendation}
             onChange={setRecommendation}
           />
@@ -129,7 +129,7 @@ const EditPoiRatingModal: React.FC<EditPoiRatingModalProps> = ({
           {/* Would Return */}
           <div className="space-y-2">
             <label className="text-sm font-medium text-foreground">
-              Você voltaria a este local?
+              Would you return to this location?
             </label>
             <div className="flex gap-3">
               <Button
@@ -142,7 +142,7 @@ const EditPoiRatingModal: React.FC<EditPoiRatingModalProps> = ({
                 onClick={() => setWouldReturn(true)}
               >
                 <ThumbsUp className="w-4 h-4" />
-                Sim
+                Yes
               </Button>
               <Button
                 type="button"
@@ -154,7 +154,7 @@ const EditPoiRatingModal: React.FC<EditPoiRatingModalProps> = ({
                 onClick={() => setWouldReturn(false)}
               >
                 <ThumbsDown className="w-4 h-4" />
-                Não
+                No
               </Button>
             </div>
           </div>
@@ -163,7 +163,7 @@ const EditPoiRatingModal: React.FC<EditPoiRatingModalProps> = ({
         {/* Footer */}
         <div className="sticky bottom-0 bg-background border-t border-border p-4 flex gap-3">
           <Button variant="outline" className="flex-1" onClick={onCancel}>
-            Cancelar
+            Cancel
           </Button>
           <Button
             className="flex-1"
@@ -173,10 +173,10 @@ const EditPoiRatingModal: React.FC<EditPoiRatingModalProps> = ({
             {saving ? (
               <>
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Salvando...
+                 Saving...
               </>
             ) : (
-              'Salvar Alterações'
+              'Save Changes'
             )}
           </Button>
         </div>

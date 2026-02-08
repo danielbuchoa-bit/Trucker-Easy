@@ -117,7 +117,7 @@ export function useDriverChat() {
 
     } catch (err) {
       console.error('Chat error:', err);
-      setError('Erro ao enviar mensagem. Tente novamente.');
+      setError('Error sending message. Please try again.');
     } finally {
       setIsLoading(false);
     }

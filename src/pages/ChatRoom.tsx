@@ -607,7 +607,7 @@ const ChatRoomScreen = () => {
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
             {messages.length === 0 && (
               <div className="text-center py-12">
-                <p className="text-muted-foreground">Nenhuma mensagem ainda. Seja o primeiro a enviar!</p>
+                <p className="text-muted-foreground">No messages yet. Be the first to send one!</p>
               </div>
             )}
             

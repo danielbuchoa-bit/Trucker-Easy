@@ -309,8 +309,8 @@ export const FacilityGeofenceProvider = ({ children }: FacilityGeofenceProviderP
       }
       
       toast({
-        title: 'Chegou ao posto!',
-        description: 'Boas sugestões de alimentação para você.',
+         title: 'Arrived at the stop!',
+         description: 'Check out food suggestions for you.',
       });
     } else {
       // For facilities (shippers/receivers), create facility and track

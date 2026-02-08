@@ -51,10 +51,10 @@ const PoiFeedbackModal: React.FC<PoiFeedbackModalProps> = ({
 
   const getPoiTypeLabel = () => {
     switch (poiType) {
-      case 'fuel': return 'Posto';
+      case 'fuel': return 'Gas Station';
       case 'truck_stop': return 'Truck Stop';
-      case 'rest_area': return 'Área de Descanso';
-      default: return 'Local';
+      case 'rest_area': return 'Rest Area';
+      default: return 'Location';
     }
   };
 
@@ -65,7 +65,7 @@ const PoiFeedbackModal: React.FC<PoiFeedbackModalProps> = ({
         <div className="flex items-start justify-between mb-3">
           <div className="flex-1 pr-2">
             <p className="text-xs text-muted-foreground uppercase tracking-wide">
-              Como foi sua visita?
+              How was your visit?
             </p>
             <h3 className="text-sm font-semibold text-foreground truncate">
               {poiName} ({getPoiTypeLabel()})
@@ -74,7 +74,7 @@ const PoiFeedbackModal: React.FC<PoiFeedbackModalProps> = ({
           <button
             onClick={onSkip}
             className="p-1 hover:bg-muted rounded-full transition-colors"
-            aria-label="Fechar"
+            aria-label="Close"
           >
             <X className="w-4 h-4 text-muted-foreground" />
           </button>
@@ -85,7 +85,7 @@ const PoiFeedbackModal: React.FC<PoiFeedbackModalProps> = ({
           {/* Friendliness */}
           <div className="space-y-1">
             <p className="text-xs text-muted-foreground">
-              Atendimento (funcionários foram atenciosos?)
+              Service (was the staff friendly?)
             </p>
             <StarRating
               rating={friendlinessRating}
@@ -98,7 +98,7 @@ const PoiFeedbackModal: React.FC<PoiFeedbackModalProps> = ({
           {/* Cleanliness */}
           <div className="space-y-1">
             <p className="text-xs text-muted-foreground">
-              Limpeza (banheiros, área comum)
+              Cleanliness (restrooms, common area)
             </p>
             <StarRating
               rating={cleanlinessRating}
@@ -111,7 +111,7 @@ const PoiFeedbackModal: React.FC<PoiFeedbackModalProps> = ({
           {/* Structure */}
           <div className="space-y-1">
             <p className="text-xs text-muted-foreground">
-              Estrutura (estacionamento, comodidades)
+              Facilities (parking, amenities)
             </p>
             <StarRating
               rating={structureRating}
@@ -124,7 +124,7 @@ const PoiFeedbackModal: React.FC<PoiFeedbackModalProps> = ({
           {/* Recommendation */}
           <div className="space-y-1">
             <p className="text-xs text-muted-foreground">
-              Nota geral
+              Overall rating
             </p>
             <StarRating
               rating={recommendationRating}
@@ -137,7 +137,7 @@ const PoiFeedbackModal: React.FC<PoiFeedbackModalProps> = ({
           {/* Would Return */}
           <div className="space-y-2">
             <p className="text-xs text-muted-foreground">
-              Voltaria aqui?
+              Would you return?
             </p>
             <div className="flex gap-2">
               <Button
@@ -147,7 +147,7 @@ const PoiFeedbackModal: React.FC<PoiFeedbackModalProps> = ({
                 onClick={() => setWouldReturn(true)}
               >
                 <ThumbsUp className="w-4 h-4" />
-                Sim
+                Yes
               </Button>
               <Button
                 variant={wouldReturn === false ? "destructive" : "outline"}
@@ -156,7 +156,7 @@ const PoiFeedbackModal: React.FC<PoiFeedbackModalProps> = ({
                 onClick={() => setWouldReturn(false)}
               >
                 <ThumbsDown className="w-4 h-4" />
-                Não
+                No
               </Button>
             </div>
           </div>
@@ -170,7 +170,7 @@ const PoiFeedbackModal: React.FC<PoiFeedbackModalProps> = ({
             onClick={onSkip}
             className="flex-1 text-muted-foreground"
           >
-            Pular
+            Skip
           </Button>
           <Button
             size="sm"
@@ -178,7 +178,7 @@ const PoiFeedbackModal: React.FC<PoiFeedbackModalProps> = ({
             disabled={!canSubmit || isSubmitting}
             className="flex-1"
           >
-            {isSubmitting ? 'Enviando...' : 'Enviar'}
+            {isSubmitting ? 'Submitting...' : 'Submit'}
           </Button>
         </div>
       </div>

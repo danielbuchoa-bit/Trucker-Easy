@@ -333,8 +333,8 @@ export const PoiFeedbackProvider: React.FC<{ children: React.ReactNode }> = ({ c
           canSubmitFeedback(poiToRate.id).then((canSubmit) => {
             if (canSubmit) {
               sendNotification({
-                title: '⭐ Avalie sua visita!',
-                body: `Como foi sua experiência em ${poiName}?`,
+                title: '⭐ Rate your visit!',
+                body: `How was your experience at ${poiName}?`,
                 tag: `poi-feedback-${poiToRate.id}`,
                 requireInteraction: true,
                 onClick: () => {
@@ -342,11 +342,11 @@ export const PoiFeedbackProvider: React.FC<{ children: React.ReactNode }> = ({ c
                   setIsShowingFeedback(true);
                 },
               });
-              toast.info(`Como foi ${poiName}?`, {
-                description: 'Toque para avaliar',
+               toast.info(`How was ${poiName}?`, {
+                description: 'Tap to rate',
                 duration: 5000,
                 action: {
-                  label: 'Avaliar',
+                  label: 'Rate',
                   onClick: () => {
                     setPendingFeedbackPoi(poiToRate);
                     setIsShowingFeedback(true);
@@ -387,14 +387,14 @@ export const PoiFeedbackProvider: React.FC<{ children: React.ReactNode }> = ({ c
       });
       if (error) {
         console.error('[PoiFeedback] Error submitting feedback:', error);
-        toast.error('Erro ao enviar avaliação');
+        toast.error('Error submitting review');
       } else {
         recentlyRatedPois.current.add(pendingFeedbackPoi.id);
-        toast.success('Avaliação enviada! Obrigado pelo feedback.');
+        toast.success('Review submitted! Thanks for your feedback.');
       }
     } catch (err) {
       console.error('[PoiFeedback] Submit failed:', err);
-      toast.error('Erro ao enviar avaliação');
+      toast.error('Error submitting review');
     }
     setIsShowingFeedback(false);
     setPendingFeedbackPoi(null);

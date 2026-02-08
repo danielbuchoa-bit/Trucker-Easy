@@ -37,7 +37,7 @@ const DestinationArrivalPrompt: React.FC<DestinationArrivalPromptProps> = ({
           <div className="flex items-center justify-between">
             <SheetTitle className="flex items-center gap-2 text-lg">
               <Navigation className="h-5 w-5 text-primary" />
-              Chegou ao destino?
+              Arrived at destination?
             </SheetTitle>
             <Button variant="ghost" size="icon" onClick={onDismiss}>
               <X className="h-5 w-5" />
@@ -62,7 +62,7 @@ const DestinationArrivalPrompt: React.FC<DestinationArrivalPromptProps> = ({
           {!showEasyQuestion ? (
             <>
               <p className="text-sm text-muted-foreground text-center">
-                Você chegou ao seu destino?
+                Have you arrived at your destination?
               </p>
               
               <div className="flex gap-3">
@@ -72,21 +72,21 @@ const DestinationArrivalPrompt: React.FC<DestinationArrivalPromptProps> = ({
                   className="flex-1"
                 >
                   <ThumbsUp className="w-4 h-4 mr-2" />
-                  Sim, cheguei!
+                  Yes, I arrived!
                 </Button>
                 <Button 
                   variant="outline" 
                   onClick={onDismiss}
                   className="flex-1"
                 >
-                  Ainda não
+                  Not yet
                 </Button>
               </div>
             </>
           ) : (
             <>
               <p className="text-sm text-center font-medium">
-                Foi fácil encontrar este local?
+                Was it easy to find this location?
               </p>
               
               <div className="flex gap-3">
@@ -96,7 +96,7 @@ const DestinationArrivalPrompt: React.FC<DestinationArrivalPromptProps> = ({
                   className="flex-1 bg-green-600 hover:bg-green-700"
                 >
                   <ThumbsUp className="w-4 h-4 mr-2" />
-                  Sim, fácil
+                  Yes, easy
                 </Button>
                 <Button 
                   variant="default" 
@@ -104,7 +104,7 @@ const DestinationArrivalPrompt: React.FC<DestinationArrivalPromptProps> = ({
                   className="flex-1 bg-orange-500 hover:bg-orange-600"
                 >
                   <ThumbsDown className="w-4 h-4 mr-2" />
-                  Difícil
+                  Difficult
                 </Button>
               </div>
               
@@ -113,7 +113,7 @@ const DestinationArrivalPrompt: React.FC<DestinationArrivalPromptProps> = ({
                 onClick={handleSkip}
                 className="w-full text-muted-foreground"
               >
-                Pular
+                Skip
               </Button>
             </>
           )}

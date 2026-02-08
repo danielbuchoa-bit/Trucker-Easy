@@ -600,7 +600,7 @@ const NearbyPoisOverlay: React.FC<NearbyPoisOverlayProps> = ({
                   <div className="p-3 bg-muted/50 rounded-lg text-center">
                     <Star className="w-5 h-5 text-muted-foreground mx-auto mb-1" />
                     <p className="text-xs text-muted-foreground">
-                      Nenhuma avaliação ainda. Seja o primeiro a avaliar!
+                       No reviews yet. Be the first to rate!
                     </p>
                   </div>
                 )}
