@@ -40,14 +40,7 @@ const AuthScreen = ({ onComplete, onBack }: AuthScreenProps) => {
           description: t.auth.login,
         });
         
-        // Check if there's a pending plan to subscribe to
-        const pendingPlan = sessionStorage.getItem('pendingPlan');
-        if (pendingPlan) {
-          sessionStorage.removeItem('pendingPlan');
-          navigate('/choose-plan');
-        } else {
-          navigate('/home');
-        }
+        navigate('/home');
       } else {
         const { error } = await supabase.auth.signUp({
           email,
@@ -66,8 +59,7 @@ const AuthScreen = ({ onComplete, onBack }: AuthScreenProps) => {
           title: t.common.success,
           description: t.auth.signup,
         });
-        // Redirect to plan selection after signup
-        navigate('/choose-plan');
+        navigate('/home');
       }
       onComplete();
     } catch (error: any) {

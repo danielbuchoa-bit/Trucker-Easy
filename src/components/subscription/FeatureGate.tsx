@@ -21,13 +21,8 @@ export function FeatureGate({
   feature, children, fallback, 
   showUpgradePrompt = true, compact = false 
 }: FeatureGateProps) {
-  const { canAccess, isLoading } = useFeatureAccess();
-  
-  if (isLoading) return null;
-  if (canAccess(feature)) return <>{children}</>;
-  if (fallback) return <>{fallback}</>;
-  if (showUpgradePrompt) return <FeatureUpgradePrompt feature={feature} compact={compact} />;
-  return null;
+  // Single PRO plan — always show content, no upgrade gating
+  return <>{children}</>;
 }
 
 interface FeatureUpgradePromptProps {
