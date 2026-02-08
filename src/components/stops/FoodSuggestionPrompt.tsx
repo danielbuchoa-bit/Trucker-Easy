@@ -95,14 +95,14 @@ const FoodSuggestionPrompt: React.FC<FoodSuggestionPromptProps> = ({ stop, onDis
   // Fetch nearby restaurants
   const fetchNearbyRestaurants = useCallback(async (): Promise<string[]> => {
     try {
-      console.log('[FoodSuggestion] Searching truck-friendly restaurants for:', stop.name);
+      console.log('[FoodSuggestion] Searching truck-friendly restaurants for:', stop.name, 'at', stop.lat, stop.lng);
       const { data, error: fnError } = await supabase.functions.invoke('nb_browse_pois', {
         body: {
           lat: stop.lat,
           lng: stop.lng,
-          radiusMeters: 200,
+          radiusMeters: 500,
           filterType: 'food',
-          limit: 15,
+          limit: 25,
         },
       });
       if (fnError) {
@@ -110,19 +110,25 @@ const FoodSuggestionPrompt: React.FC<FoodSuggestionPromptProps> = ({ stop, onDis
         return [];
       }
       if (data?.pois) {
+        console.log('[FoodSuggestion] All food POIs returned:', data.pois.length, data.pois.map((p: any) => p.name));
         const truckFriendlyRestaurants = data.pois.filter((p: any) => {
           const name = (p.name || '').toLowerCase();
           const chainName = (p.chainName || '').toLowerCase();
           const searchText = `${name} ${chainName}`;
-          return TRUCK_STOP_ATTACHED_RESTAURANTS.some(brand =>
+          const match = TRUCK_STOP_ATTACHED_RESTAURANTS.some(brand =>
             searchText.includes(brand.toLowerCase())
           );
+          if (!match) {
+            console.log('[FoodSuggestion] POI not matched:', p.name, '| chainName:', p.chainName);
+          }
+          return match;
         });
         const names = truckFriendlyRestaurants.map((p: any) => p.name).filter(Boolean);
         console.log('[FoodSuggestion] Truck-friendly restaurants found:', names.length, names);
         setNearbyRestaurants(names);
         return names;
       }
+      console.log('[FoodSuggestion] No pois in response:', data);
       return [];
     } catch (err) {
       console.error('[FoodSuggestion] Error fetching restaurants:', err);
