@@ -66,6 +66,9 @@ interface StopDwellState {
   startedAt: number;
   anchorLat: number;
   anchorLng: number;
+  lastLat?: number;
+  lastLng?: number;
+  lastTs?: number;
 }
 
 // Detect brand from POI name
@@ -133,33 +136,63 @@ export function scoreTruckStopPoi(
   return { poi, score, confidence, distanceMeters, effectiveRadius };
 }
 
-// Hook for stop + dwell detection
+// Hook for stop + dwell detection (no speedMps required — uses position deltas)
+const MOVEMENT_SAMPLE_RESET_M = 120;
+
 export function useDwellDetection() {
   const dwellState = useRef<StopDwellState | null>(null);
 
-  const checkDwell = useCallback((lat: number, lng: number, speedMps?: number | null): boolean => {
-    const speed = speedMps ?? 0;
-    const isStopped = speed < STOP_SPEED_THRESHOLD_MPS;
-
-    if (!isStopped) {
-      dwellState.current = null;
-      return false;
-    }
+  const checkDwell = useCallback((lat: number, lng: number): boolean => {
+    const now = Date.now();
 
     if (!dwellState.current) {
-      dwellState.current = { startedAt: Date.now(), anchorLat: lat, anchorLng: lng };
+      dwellState.current = {
+        startedAt: now, anchorLat: lat, anchorLng: lng,
+        lastLat: lat, lastLng: lng, lastTs: now,
+      };
       return false;
     }
 
-    const moved = calculateDistance(lat, lng, dwellState.current.anchorLat, dwellState.current.anchorLng);
+    const s = dwellState.current;
 
-    if (moved > STOP_DWELL_METERS) {
-      dwellState.current = { startedAt: Date.now(), anchorLat: lat, anchorLng: lng };
+    // Estimate speed from position deltas
+    let estimatedSpeedMps = 0;
+    if (s.lastLat != null && s.lastLng != null && s.lastTs != null) {
+      const dtSec = Math.max(0.001, (now - s.lastTs) / 1000);
+      const dMeters = calculateDistance(lat, lng, s.lastLat, s.lastLng);
+      estimatedSpeedMps = dMeters / dtSec;
+      s.lastLat = lat;
+      s.lastLng = lng;
+      s.lastTs = now;
+    }
+
+    // If clearly moving, reset dwell
+    if (estimatedSpeedMps > STOP_SPEED_THRESHOLD_MPS) {
+      dwellState.current = {
+        startedAt: now, anchorLat: lat, anchorLng: lng,
+        lastLat: lat, lastLng: lng, lastTs: now,
+      };
       return false;
     }
 
-    const minutes = (Date.now() - dwellState.current.startedAt) / 60000;
-    return minutes >= STOP_DWELL_MINUTES;
+    // If drifted too far from anchor, reset
+    const movedFromAnchor = calculateDistance(lat, lng, s.anchorLat, s.anchorLng);
+    if (movedFromAnchor > MOVEMENT_SAMPLE_RESET_M) {
+      dwellState.current = {
+        startedAt: now, anchorLat: lat, anchorLng: lng,
+        lastLat: lat, lastLng: lng, lastTs: now,
+      };
+      return false;
+    }
+
+    // Within dwell radius — check time
+    if (movedFromAnchor <= STOP_DWELL_METERS) {
+      const minutes = (now - s.startedAt) / 60000;
+      return minutes >= STOP_DWELL_MINUTES;
+    }
+
+    // Between STOP_DWELL_METERS and MOVEMENT_SAMPLE_RESET_M: keep state, not dwelling yet
+    return false;
   }, []);
 
   const resetDwell = useCallback(() => {
