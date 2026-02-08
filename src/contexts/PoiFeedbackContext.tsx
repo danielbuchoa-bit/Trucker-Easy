@@ -67,9 +67,10 @@ const TRUCK_STOP_BRANDS = [
   "roady's truck", 'catlins truck', 'big rig travel',
 ];
 
-// Distance thresholds - More generous for detection
-const ENTER_RADIUS_M = 150; // Enter when within 150m
-const EXIT_RADIUS_M = 250; // Exit when beyond 250m
+// Distance thresholds - Generous for truck stops (POI coords often point to main building, not parking)
+const ENTER_RADIUS_M = 300; // Enter when within 300m (truck stops are large)
+const ENTER_RADIUS_BRAND_M = 500; // Even more generous for known truck stop brands
+const EXIT_RADIUS_M = 600; // Exit when beyond 600m
 const MIN_STAY_TIME_MS = 30000; // Minimum 30 seconds stay to trigger feedback
 
 // Detect truck stop brand from POI name
@@ -151,7 +152,7 @@ export const PoiFeedbackProvider: React.FC<{ children: React.ReactNode }> = ({ c
         body: {
           lat,
           lng,
-          radiusMeters: 800, // Increased radius
+          radiusMeters: 2000, // Large radius to catch truck stops with offset coordinates
           categories: TRUCK_CATEGORIES,
           limit: 30,
         },
@@ -172,7 +173,7 @@ export const PoiFeedbackProvider: React.FC<{ children: React.ReactNode }> = ({ c
             body: {
               lat,
               lng,
-              radiusMeters: 800,
+              radiusMeters: 2000,
               limit: 20,
             },
           });
@@ -285,11 +286,17 @@ export const PoiFeedbackProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
     // Log closest POI for debugging
     if (closestPoi) {
-      console.log('[PoiFeedback] Closest POI:', closestPoi.title, 'at', Math.round(closestDistance), 'm (threshold:', ENTER_RADIUS_M, 'm)');
+      const isBrandedTruckStop = !!detectBrandFromName(closestPoi.title || '');
+      const effectiveRadius = isBrandedTruckStop ? ENTER_RADIUS_BRAND_M : ENTER_RADIUS_M;
+      console.log('[PoiFeedback] Closest POI:', closestPoi.title, 'at', Math.round(closestDistance), 'm (threshold:', effectiveRadius, 'm, branded:', isBrandedTruckStop, ')');
     }
 
+    // Determine effective entry radius based on brand
+    const isBrandedStop = closestPoi ? !!detectBrandFromName(closestPoi.title || '') : false;
+    const effectiveEnterRadius = isBrandedStop ? ENTER_RADIUS_BRAND_M : ENTER_RADIUS_M;
+
     // Handle entry
-    if (closestPoi && closestDistance < ENTER_RADIUS_M && !currentVisitedPoi) {
+    if (closestPoi && closestDistance < effectiveEnterRadius && !currentVisitedPoi) {
       const poiType = mapPoiType(closestPoi.categories?.[0]?.id || 'fuel');
       const newPoi: VisitedPoi = {
         id: closestPoi.id,
@@ -303,20 +310,20 @@ export const PoiFeedbackProvider: React.FC<{ children: React.ReactNode }> = ({ c
         placeId: closestPoi.placeId || closestPoi.id,
       };
       setCurrentVisitedPoi(newPoi);
-      console.log('[PoiFeedback] Entered POI:', closestPoi.title, '| Brand:', newPoi.brand, '| Address:', newPoi.address);
+      console.log('[PoiFeedback] ✅ Entered POI:', closestPoi.title, '| Brand:', newPoi.brand, '| Distance:', Math.round(closestDistance), 'm');
       
       // Show food suggestion prompt for truck stops (only if not dismissed before)
       if ((poiType === 'truck_stop' || poiType === 'fuel') && !dismissedFoodSuggestions.current.has(closestPoi.id)) {
         setIsShowingFoodSuggestion(true);
-        console.log('[PoiFeedback] Showing food suggestion for:', closestPoi.title, 'brand:', newPoi.brand);
+        console.log('[PoiFeedback] 🍔 Showing food suggestion for:', closestPoi.title, 'brand:', newPoi.brand);
       }
     }
 
     // Re-check food suggestion if already inside POI but not showing
-    if (currentVisitedPoi && !isShowingFoodSuggestion && closestPoi && closestDistance < ENTER_RADIUS_M) {
+    if (currentVisitedPoi && !isShowingFoodSuggestion && closestPoi && closestDistance < effectiveEnterRadius) {
       const poiType = currentVisitedPoi.type;
       if ((poiType === 'truck_stop' || poiType === 'fuel') && !dismissedFoodSuggestions.current.has(currentVisitedPoi.id)) {
-        console.log('[PoiFeedback] Re-triggering food suggestion for:', currentVisitedPoi.name);
+        console.log('[PoiFeedback] 🍔 Re-triggering food suggestion for:', currentVisitedPoi.name);
         setIsShowingFoodSuggestion(true);
       }
     }
@@ -395,7 +402,7 @@ export const PoiFeedbackProvider: React.FC<{ children: React.ReactNode }> = ({ c
         }
       }
     }
-  }, [latitude, longitude, currentVisitedPoi, fetchNearbyPois, canSubmitFeedback, hasCriticalManeuver, sendNotification]);
+  }, [latitude, longitude, currentVisitedPoi, isShowingFoodSuggestion, fetchNearbyPois, canSubmitFeedback, hasCriticalManeuver, sendNotification]);
 
   // Handle feedback submission
   const handleSubmitFeedback = async (ratings: {
