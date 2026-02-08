@@ -725,7 +725,7 @@ const HomeScreen = () => {
             </div>
             <div className="flex-1 text-left">
               <div className="font-medium text-sm">Refer a Friend</div>
-              <div className="text-xs text-muted-foreground">Earn $3.50 for each referral!</div>
+              <div className="text-xs text-muted-foreground">You and your friend get 50% off!</div>
             </div>
             <div className="text-primary text-sm font-medium">→</div>
           </button>
