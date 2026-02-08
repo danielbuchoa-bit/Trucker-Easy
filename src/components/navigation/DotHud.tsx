@@ -107,10 +107,10 @@ function computeBarFill(state: any): number {
 
   const driveFrac = clamp01((state.drivingTodaySec ?? 0) / DRIVE_LIMIT_SEC);
 
-  const dutyConsumed = state.dutyWindowSec != null
+  const dutyElapsed = (state.dutyWindowSec != null && state.dutyWindowSec > 0)
     ? state.dutyWindowSec
-    : SHIFT_LIMIT_SEC - (state.dutyRemainingSec ?? SHIFT_LIMIT_SEC);
-  const shiftFrac = clamp01(dutyConsumed / SHIFT_LIMIT_SEC);
+    : (SHIFT_LIMIT_SEC - (state.dutyRemainingSec ?? SHIFT_LIMIT_SEC));
+  const shiftFrac = clamp01(dutyElapsed / SHIFT_LIMIT_SEC);
 
   const breakFrac = state.needsBreak
     ? 1
@@ -310,10 +310,10 @@ const DotHud = memo(function DotHud({ onStopNow }: { onStopNow?: () => void }) {
   const modeLabel = ui.mode === "quiet" ? "Quiet" : ui.mode === "normal" ? "Normal" : "Hardcore";
 
   const driveLine = `Drive: ${fmtHM(state.drivingTodaySec ?? 0)} / ${fmtHM(DRIVE_LIMIT_SEC)}`;
-  const shiftConsumed = state.dutyWindowSec != null
+  const shiftElapsed = (state.dutyWindowSec != null && state.dutyWindowSec > 0)
     ? state.dutyWindowSec
-    : SHIFT_LIMIT_SEC - (state.dutyRemainingSec ?? SHIFT_LIMIT_SEC);
-  const shiftLine = `Shift: ${fmtHM(shiftConsumed)} / ${fmtHM(SHIFT_LIMIT_SEC)}`;
+    : (SHIFT_LIMIT_SEC - (state.dutyRemainingSec ?? SHIFT_LIMIT_SEC));
+  const shiftLine = `Shift: ${fmtHM(shiftElapsed)} / ${fmtHM(SHIFT_LIMIT_SEC)}`;
   const breakLine = getBreakText(state);
 
   return (
