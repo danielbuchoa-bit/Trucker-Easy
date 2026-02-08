@@ -322,7 +322,7 @@ const DotHud = memo(function DotHud({ onStopNow }: { onStopNow?: () => void }) {
   const breakLine = getBreakText(state);
 
   return (
-    <div className="fixed top-[82px] right-[12px] z-[999] select-none">
+    <div className="select-none pointer-events-auto">
       {/* === DOT BAR === */}
       <div
         onMouseDown={onPressStart}
