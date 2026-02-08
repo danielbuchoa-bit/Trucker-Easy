@@ -6,6 +6,15 @@ import { useNotifications } from '@/hooks/useNotifications';
 import PoiFeedbackModal from '@/components/poi/PoiFeedbackModal';
 import FoodSuggestionPrompt from '@/components/stops/FoodSuggestionPrompt';
 import { toast } from 'sonner';
+import {
+  scoreTruckStopPoi,
+  detectBrandFromName,
+  useDwellDetection,
+  useTriggerCooldown,
+  SEARCH_RADIUS_METERS,
+  EXIT_RADIUS_M,
+  type ScoredPoi,
+} from '@/hooks/useTruckStopDetection';
 
 interface VisitedPoi {
   id: string;
@@ -24,6 +33,7 @@ interface PoiFeedbackContextType {
   isShowingFeedback: boolean;
   isShowingFoodSuggestion: boolean;
   dismissFoodSuggestion: () => void;
+  triggerManualFoodSuggestion: () => void;
 }
 
 const PoiFeedbackContext = createContext<PoiFeedbackContextType | undefined>(undefined);
@@ -36,78 +46,40 @@ export const usePoiFeedback = () => {
   return context;
 };
 
-// POI types that trigger feedback
-const FEEDBACK_POI_TYPES = ['fuel', 'truck_stop', 'rest_area'];
-
 // NextBillion POI categories for truck-related POIs
 const TRUCK_CATEGORIES = [
-  'fuel_station',
-  'truck_stop',
-  'rest_area',
-  'parking',
-  'diesel',
-  'gas_station',
+  'fuel_station', 'truck_stop', 'rest_area', 'parking', 'diesel', 'gas_station',
 ];
 
-// STRICT TRUCK STOP BRANDS ONLY - No regular gas stations
-// Must match TRUCK_STOP_BRANDS from truckPoiAllowlist.ts
-const TRUCK_STOP_BRANDS = [
-  // Major national truck stop chains
-  'pilot', 'flying j', 'flyingj', 'pilot flying j',
-  "love's", 'loves', "love's travel", 'loves travel',
-  'travelcenters of america', 'travelamerica',
-  'petro', 'petro stopping', 'petro stopping centers',
-  'one9', 'one 9',
-  'sapp bros', 'sappbros', 'sapp brothers',
-  'ambest', 'am best',
-  "buc-ee's", 'bucees', "buc-ees",
-  // Regional truck stops
-  'kenly 95', 'iowa 80', 'road ranger truck', 'town pump truck',
-  'little america travel', 'truckstops of america', 'boss truck',
-  "roady's truck", 'catlins truck', 'big rig travel',
-];
+const MIN_STAY_TIME_MS = 30000;
 
-// Distance thresholds - Generous for truck stops (POI coords often point to main building, not parking)
-const ENTER_RADIUS_M = 300; // Enter when within 300m (truck stops are large)
-const ENTER_RADIUS_BRAND_M = 500; // Even more generous for known truck stop brands
-const EXIT_RADIUS_M = 600; // Exit when beyond 600m
-const MIN_STAY_TIME_MS = 30000; // Minimum 30 seconds stay to trigger feedback
-
-// Detect truck stop brand from POI name
-function detectBrandFromName(name: string): string | null {
-  const n = name.toLowerCase();
-  if (n.includes("love's") || n.includes("loves")) return "Love's";
-  if (n.includes("pilot") || n.includes("flying j")) return "Pilot Flying J";
-  if (n.includes("ta ") || n.includes("travelcenter") || n.includes("travel center") || n.includes("travelamerica")) return "TA";
-  if (n.includes("petro")) return "Petro";
-  if (n.includes("sapp bros") || n.includes("sappbros")) return "Sapp Bros";
-  if (n.includes("bucee") || n.includes("buc-ee")) return "Buc-ee's";
-  if (n.includes("ambest") || n.includes("am best")) return "AmBest";
-  if (n.includes("one9") || n.includes("one 9")) return "One9";
-  if (n.includes("kenly 95")) return "Kenly 95";
-  if (n.includes("iowa 80")) return "Iowa 80";
-  if (n.includes("town pump")) return "Town Pump";
-  if (n.includes("boss truck")) return "Boss Truck";
-  if (n.includes("little america")) return "Little America";
-  return null;
-}
+// Map POI category to our type
+const mapPoiType = (category: string): 'fuel' | 'truck_stop' | 'rest_area' => {
+  if (category.includes('truck_stop') || category.includes('7850')) return 'truck_stop';
+  if (category.includes('rest') || category.includes('5510')) return 'rest_area';
+  return 'fuel';
+};
 
 export const PoiFeedbackProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { latitude, longitude } = useGeolocation({ enableHighAccuracy: true, watchPosition: true });
   const { isNavigating, progress } = useActiveNavigation();
   const { sendNotification, requestPermission, permission } = useNotifications();
-  
+
   const [currentVisitedPoi, setCurrentVisitedPoi] = useState<VisitedPoi | null>(null);
   const [pendingFeedbackPoi, setPendingFeedbackPoi] = useState<VisitedPoi | null>(null);
   const [isShowingFeedback, setIsShowingFeedback] = useState(false);
   const [isShowingFoodSuggestion, setIsShowingFoodSuggestion] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
-  
+
   const nearbyPoisCache = useRef<Map<string, any>>(new Map());
   const lastPoisFetch = useRef<number>(0);
   const recentlyRatedPois = useRef<Set<string>>(new Set());
   const dismissedFoodSuggestions = useRef<Set<string>>(new Set());
   const notificationPermissionRequested = useRef(false);
+
+  const { checkDwell, resetDwell } = useDwellDetection();
+  const { canTrigger, markTriggered } = useTriggerCooldown();
+  const dwellTriggeredRef = useRef(false);
 
   // Dismiss food suggestion
   const dismissFoodSuggestion = useCallback(() => {
@@ -117,7 +89,46 @@ export const PoiFeedbackProvider: React.FC<{ children: React.ReactNode }> = ({ c
     setIsShowingFoodSuggestion(false);
   }, [currentVisitedPoi]);
 
-  // Request notification permission when entering a POI for the first time
+  // Manual "I'm at a truck stop" trigger
+  const triggerManualFoodSuggestion = useCallback(() => {
+    if (!latitude || !longitude) {
+      toast.error('Localização não disponível');
+      return;
+    }
+
+    // Find best candidate from cache
+    let bestScored: ScoredPoi | null = null;
+    nearbyPoisCache.current.forEach((poi) => {
+      if (!poi.position) return;
+      const scored = scoreTruckStopPoi(latitude, longitude, poi);
+      if (!bestScored || scored.score > bestScored.score) {
+        bestScored = scored;
+      }
+    });
+
+    const poi = bestScored?.poi;
+    const name = poi?.title || poi?.name || 'Truck Stop';
+    const poiType = poi ? mapPoiType(poi.categories?.[0]?.id || 'fuel') : 'truck_stop';
+
+    const manualPoi: VisitedPoi = {
+      id: poi?.id || `manual_${Date.now()}`,
+      name,
+      type: poiType,
+      lat: poi?.position?.lat || latitude,
+      lng: poi?.position?.lng || longitude,
+      enteredAt: Date.now(),
+      brand: poi ? detectBrandFromName(name) : undefined,
+      address: poi?.address || undefined,
+      placeId: poi?.placeId || poi?.id,
+    };
+
+    console.log('[PoiFeedback] 🖐️ Manual trigger:', manualPoi.name, '| Confidence:', bestScored?.confidence || 'unknown');
+    setCurrentVisitedPoi(manualPoi);
+    setIsShowingFoodSuggestion(true);
+    markTriggered();
+  }, [latitude, longitude, markTriggered]);
+
+  // Request notification permission on first POI visit
   useEffect(() => {
     if (currentVisitedPoi && !notificationPermissionRequested.current && permission === 'default') {
       notificationPermissionRequested.current = true;
@@ -132,78 +143,53 @@ export const PoiFeedbackProvider: React.FC<{ children: React.ReactNode }> = ({ c
       setUserId(user?.id || null);
     };
     getUser();
-
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_, session) => {
       setUserId(session?.user?.id || null);
     });
-
     return () => subscription.unsubscribe();
   }, []);
 
-  // Fetch nearby POIs using NextBillion
+  // Fetch nearby POIs
   const fetchNearbyPois = useCallback(async (lat: number, lng: number) => {
     const now = Date.now();
-    if (now - lastPoisFetch.current < 20000) return; // Cache for 20s
+    if (now - lastPoisFetch.current < 20000) return;
     lastPoisFetch.current = now;
 
     try {
-      // Use NextBillion POI search
       const { data, error } = await supabase.functions.invoke('nb_browse_pois', {
-        body: {
-          lat,
-          lng,
-          radiusMeters: 2000, // Large radius to catch truck stops with offset coordinates
-          categories: TRUCK_CATEGORIES,
-          limit: 30,
-        },
+        body: { lat, lng, radiusMeters: SEARCH_RADIUS_METERS, categories: TRUCK_CATEGORIES, limit: 30 },
       });
 
-      if (error) {
-        console.error('[PoiFeedback] Error fetching POIs:', error);
-      }
+      if (error) console.error('[PoiFeedback] Error fetching POIs:', error);
 
       let pois = data?.pois || data?.items || [];
       console.log('[PoiFeedback] POI search returned:', pois.length, 'POIs');
 
-      // If no POIs found, try general search
+      // Fallback: general search
       if (pois.length === 0) {
         console.log('[PoiFeedback] Trying general search fallback...');
         try {
-          const { data: fallbackData } = await supabase.functions.invoke('nb_browse_pois', {
-            body: {
-              lat,
-              lng,
-              radiusMeters: 2000,
-              limit: 20,
-            },
+          const { data: fb } = await supabase.functions.invoke('nb_browse_pois', {
+            body: { lat, lng, radiusMeters: SEARCH_RADIUS_METERS, limit: 20 },
           });
-          if (fallbackData?.pois || fallbackData?.items) {
-            pois = fallbackData.pois || fallbackData.items || [];
-            console.log('[PoiFeedback] Fallback search returned:', pois.length, 'POIs');
-          }
-        } catch (fallbackErr) {
-          console.error('[PoiFeedback] Fallback search failed:', fallbackErr);
+          pois = fb?.pois || fb?.items || [];
+          console.log('[PoiFeedback] Fallback returned:', pois.length, 'POIs');
+        } catch (e) {
+          console.error('[PoiFeedback] Fallback failed:', e);
         }
       }
 
-      // Cache all found POIs
       if (pois.length > 0) {
         nearbyPoisCache.current.clear();
         pois.forEach((poi: any) => {
-          // Check if name matches known truck stop brands
-          const nameLower = (poi.name || poi.title || '').toLowerCase();
-          const isTruckStop = TRUCK_STOP_BRANDS.some(brand => nameLower.includes(brand));
-          
-          // Detect brand from name for food suggestions
-          const detectedBrand = detectBrandFromName(nameLower);
-          
+          const brand = detectBrandFromName(poi.name || poi.title || '');
           nearbyPoisCache.current.set(poi.id, {
             ...poi,
             position: poi.position || { lat: poi.lat, lng: poi.lng },
             title: poi.title || poi.name,
-            brand: detectedBrand || poi.chainName || poi.brand || null,
+            brand: brand || poi.chainName || poi.brand || null,
             address: poi.address?.label || poi.address?.street || poi.address || null,
-            categories: [{ id: isTruckStop ? 'truck_stop' : 'fuel_station' }],
+            categories: poi.categories || [{ id: brand ? 'truck_stop' : 'fuel_station' }],
           });
         });
         console.log('[PoiFeedback] Cached POIs:', nearbyPoisCache.current.size);
@@ -213,160 +199,142 @@ export const PoiFeedbackProvider: React.FC<{ children: React.ReactNode }> = ({ c
     }
   }, []);
 
-  // Check if user can submit feedback (24h cooldown)
+  // Check feedback eligibility
   const canSubmitFeedback = useCallback(async (poiId: string): Promise<boolean> => {
     if (!userId) return false;
     if (recentlyRatedPois.current.has(poiId)) return false;
-
     try {
-      const { data, error } = await supabase.rpc('can_submit_poi_feedback', {
-        p_user_id: userId,
-        p_poi_id: poiId,
-      });
-
-      if (error) {
-        console.error('[PoiFeedback] Error checking feedback eligibility:', error);
-        return false;
-      }
-
+      const { data } = await supabase.rpc('can_submit_poi_feedback', { p_user_id: userId, p_poi_id: poiId });
       return data === true;
-    } catch {
-      return false;
-    }
+    } catch { return false; }
   }, [userId]);
 
-  // Check for critical maneuver during navigation
+  // Check for critical maneuver
   const hasCriticalManeuver = useCallback(() => {
     if (!isNavigating || !progress) return false;
-    // Consider maneuvers within 200m as critical
     return progress.distanceToNextManeuver !== undefined && progress.distanceToNextManeuver < 200;
   }, [isNavigating, progress]);
 
-  // Map POI category to our type
-  const mapPoiType = (category: string): 'fuel' | 'truck_stop' | 'rest_area' => {
-    if (category.includes('truck_stop') || category.includes('7850')) return 'truck_stop';
-    if (category.includes('rest') || category.includes('5510')) return 'rest_area';
-    return 'fuel'; // Default to fuel for gas stations
-  };
-
-  // Monitor position and detect POI entry/exit
+  // ========================================
+  // MAIN DETECTION LOOP
+  // ========================================
   useEffect(() => {
-    if (!latitude || !longitude) {
-      console.log('[PoiFeedback] No position available');
-      return;
-    }
+    if (!latitude || !longitude) return;
 
-    // Fetch nearby POIs periodically
     fetchNearbyPois(latitude, longitude);
 
-    // Debug: log cache size
     const cacheSize = nearbyPoisCache.current.size;
-    if (cacheSize > 0) {
-      console.log('[PoiFeedback] Checking', cacheSize, 'cached POIs at:', latitude.toFixed(5), longitude.toFixed(5));
-    }
+    if (cacheSize === 0) return;
 
-    // Check if we're inside any POI
-    let closestPoi: any = null;
-    let closestDistance = Infinity;
-
+    // Score all cached POIs
+    const scored: ScoredPoi[] = [];
     nearbyPoisCache.current.forEach((poi) => {
       if (!poi.position) return;
-      const distance = calculateDistance(
-        latitude,
-        longitude,
-        poi.position.lat,
-        poi.position.lng
-      );
-
-      if (distance < closestDistance) {
-        closestDistance = distance;
-        closestPoi = poi;
-      }
+      const s = scoreTruckStopPoi(latitude, longitude, poi);
+      if (s.score > 0) scored.push(s);
     });
+    scored.sort((a, b) => b.score - a.score);
 
-    // Log closest POI for debugging
-    if (closestPoi) {
-      const isBrandedTruckStop = !!detectBrandFromName(closestPoi.title || '');
-      const effectiveRadius = isBrandedTruckStop ? ENTER_RADIUS_BRAND_M : ENTER_RADIUS_M;
-      console.log('[PoiFeedback] Closest POI:', closestPoi.title, 'at', Math.round(closestDistance), 'm (threshold:', effectiveRadius, 'm, branded:', isBrandedTruckStop, ')');
+    const top = scored[0] || null;
+
+    // Log best candidate
+    if (top) {
+      console.log(
+        `[PoiFeedback] Best: ${top.poi.title} | score=${top.score} conf=${top.confidence} dist=${Math.round(top.distanceMeters)}m radius=${top.effectiveRadius}m`
+      );
     }
 
-    // Determine effective entry radius based on brand
-    const isBrandedStop = closestPoi ? !!detectBrandFromName(closestPoi.title || '') : false;
-    const effectiveEnterRadius = isBrandedStop ? ENTER_RADIUS_BRAND_M : ENTER_RADIUS_M;
-
-    // Handle entry
-    if (closestPoi && closestDistance < effectiveEnterRadius && !currentVisitedPoi) {
-      const poiType = mapPoiType(closestPoi.categories?.[0]?.id || 'fuel');
+    // ---- ENTRY DETECTION (POI-based) ----
+    if (top && top.distanceMeters <= top.effectiveRadius && !currentVisitedPoi) {
+      const poiType = mapPoiType(top.poi.categories?.[0]?.id || 'fuel');
       const newPoi: VisitedPoi = {
-        id: closestPoi.id,
-        name: closestPoi.title || 'Local',
+        id: top.poi.id,
+        name: top.poi.title || 'Local',
         type: poiType,
-        lat: closestPoi.position.lat,
-        lng: closestPoi.position.lng,
+        lat: top.poi.position.lat,
+        lng: top.poi.position.lng,
         enteredAt: Date.now(),
-        brand: closestPoi.brand || null,
-        address: closestPoi.address || null,
-        placeId: closestPoi.placeId || closestPoi.id,
+        brand: top.poi.brand || null,
+        address: top.poi.address || null,
+        placeId: top.poi.placeId || top.poi.id,
       };
       setCurrentVisitedPoi(newPoi);
-      console.log('[PoiFeedback] ✅ Entered POI:', closestPoi.title, '| Brand:', newPoi.brand, '| Distance:', Math.round(closestDistance), 'm');
-      
-      // Show food suggestion prompt for truck stops (only if not dismissed before)
-      if ((poiType === 'truck_stop' || poiType === 'fuel') && !dismissedFoodSuggestions.current.has(closestPoi.id)) {
+      dwellTriggeredRef.current = false;
+      resetDwell();
+      console.log(`[PoiFeedback] ✅ Entered POI: ${newPoi.name} | Brand: ${newPoi.brand} | dist=${Math.round(top.distanceMeters)}m`);
+
+      // Show food suggestion
+      if ((poiType === 'truck_stop' || poiType === 'fuel') &&
+          !dismissedFoodSuggestions.current.has(top.poi.id) &&
+          canTrigger()) {
         setIsShowingFoodSuggestion(true);
-        console.log('[PoiFeedback] 🍔 Showing food suggestion for:', closestPoi.title, 'brand:', newPoi.brand);
+        markTriggered();
+        console.log(`[PoiFeedback] 🍔 Food suggestion for: ${newPoi.name}`);
       }
     }
 
-    // Re-check food suggestion if already inside POI but not showing
-    if (currentVisitedPoi && !isShowingFoodSuggestion && closestPoi && closestDistance < effectiveEnterRadius) {
+    // ---- RE-TRIGGER if inside POI but food not showing ----
+    if (currentVisitedPoi && !isShowingFoodSuggestion && top && top.distanceMeters <= top.effectiveRadius) {
       const poiType = currentVisitedPoi.type;
-      if ((poiType === 'truck_stop' || poiType === 'fuel') && !dismissedFoodSuggestions.current.has(currentVisitedPoi.id)) {
-        console.log('[PoiFeedback] 🍔 Re-triggering food suggestion for:', currentVisitedPoi.name);
+      if ((poiType === 'truck_stop' || poiType === 'fuel') &&
+          !dismissedFoodSuggestions.current.has(currentVisitedPoi.id) &&
+          canTrigger()) {
+        console.log(`[PoiFeedback] 🍔 Re-triggering food for: ${currentVisitedPoi.name}`);
         setIsShowingFoodSuggestion(true);
+        markTriggered();
       }
     }
 
-    // Handle exit
+    // ---- DWELL FALLBACK: stopped for 2.5min near a truck stop ----
+    if (!currentVisitedPoi && !dwellTriggeredRef.current && canTrigger()) {
+      const isDwelling = checkDwell(latitude, longitude);
+      if (isDwelling && top && top.score > 0) {
+        console.log(`[PoiFeedback] 🛑 Dwell detected near: ${top.poi.title} (dist=${Math.round(top.distanceMeters)}m, score=${top.score})`);
+        const poiType = mapPoiType(top.poi.categories?.[0]?.id || 'fuel');
+        const dwellPoi: VisitedPoi = {
+          id: top.poi.id,
+          name: top.poi.title || 'Truck Stop',
+          type: poiType,
+          lat: top.poi.position?.lat || latitude,
+          lng: top.poi.position?.lng || longitude,
+          enteredAt: Date.now(),
+          brand: top.poi.brand || null,
+          address: top.poi.address || null,
+          placeId: top.poi.placeId || top.poi.id,
+        };
+        setCurrentVisitedPoi(dwellPoi);
+        dwellTriggeredRef.current = true;
+
+        if (!dismissedFoodSuggestions.current.has(dwellPoi.id)) {
+          setIsShowingFoodSuggestion(true);
+          markTriggered();
+          console.log(`[PoiFeedback] 🍔 Dwell food suggestion for: ${dwellPoi.name}`);
+        }
+      }
+    }
+
+    // ---- EXIT DETECTION ----
     if (currentVisitedPoi) {
-      const distanceFromVisited = calculateDistance(
-        latitude,
-        longitude,
-        currentVisitedPoi.lat,
-        currentVisitedPoi.lng
-      );
+      const distFromPoi = calculateDistance(latitude, longitude, currentVisitedPoi.lat, currentVisitedPoi.lng);
 
-      console.log('[PoiFeedback] Distance from', currentVisitedPoi.name, ':', Math.round(distanceFromVisited), 'm (exit threshold:', EXIT_RADIUS_M, 'm)');
-
-      if (distanceFromVisited > EXIT_RADIUS_M) {
+      if (distFromPoi > EXIT_RADIUS_M) {
         const stayDuration = Date.now() - currentVisitedPoi.enteredAt;
         const poiName = currentVisitedPoi.name;
         const poiToRate = { ...currentVisitedPoi };
-        
-        console.log('[PoiFeedback] 🚪 LEFT POI:', poiName, '| Stay:', Math.round(stayDuration / 1000), 's | Min required:', MIN_STAY_TIME_MS / 1000, 's');
 
-        // Clear current visited POI first
+        console.log(`[PoiFeedback] 🚪 LEFT: ${poiName} | Stay: ${Math.round(stayDuration / 1000)}s`);
+
         setCurrentVisitedPoi(null);
         setIsShowingFoodSuggestion(false);
+        dwellTriggeredRef.current = false;
+        resetDwell();
 
-        // Only show feedback if stayed long enough
-        if (stayDuration >= MIN_STAY_TIME_MS) {
-          console.log('[PoiFeedback] ✅ Stay time sufficient, checking if can submit feedback...');
-          
-          // Don't show if critical maneuver
-          if (hasCriticalManeuver()) {
-            console.log('[PoiFeedback] ⚠️ Critical maneuver - delaying feedback prompt');
-            return;
-          }
-
+        if (stayDuration >= MIN_STAY_TIME_MS && !hasCriticalManeuver()) {
           canSubmitFeedback(poiToRate.id).then((canSubmit) => {
-            console.log('[PoiFeedback] Can submit feedback:', canSubmit);
             if (canSubmit) {
-              // Send push notification
               sendNotification({
                 title: '⭐ Avalie sua visita!',
-                body: `Como foi sua experiência em ${poiName}? Sua avaliação ajuda outros motoristas.`,
+                body: `Como foi sua experiência em ${poiName}?`,
                 tag: `poi-feedback-${poiToRate.id}`,
                 requireInteraction: true,
                 onClick: () => {
@@ -374,10 +342,7 @@ export const PoiFeedbackProvider: React.FC<{ children: React.ReactNode }> = ({ c
                   setIsShowingFeedback(true);
                 },
               });
-              
-              // Show the modal directly after a short delay
-              console.log('[PoiFeedback] 📝 Showing rating prompt for:', poiName);
-              toast.info(`Como foi ${poiName}?`, { 
+              toast.info(`Como foi ${poiName}?`, {
                 description: 'Toque para avaliar',
                 duration: 5000,
                 action: {
@@ -385,24 +350,19 @@ export const PoiFeedbackProvider: React.FC<{ children: React.ReactNode }> = ({ c
                   onClick: () => {
                     setPendingFeedbackPoi(poiToRate);
                     setIsShowingFeedback(true);
-                  }
-                }
+                  },
+                },
               });
-              
               setTimeout(() => {
                 setPendingFeedbackPoi(poiToRate);
                 setIsShowingFeedback(true);
               }, 1500);
-            } else {
-              console.log('[PoiFeedback] ❌ User already rated this POI recently');
             }
           });
-        } else {
-          console.log('[PoiFeedback] ⏱️ Stay too short:', Math.round(stayDuration / 1000), 's < required', MIN_STAY_TIME_MS / 1000, 's');
         }
       }
     }
-  }, [latitude, longitude, currentVisitedPoi, isShowingFoodSuggestion, fetchNearbyPois, canSubmitFeedback, hasCriticalManeuver, sendNotification]);
+  }, [latitude, longitude, currentVisitedPoi, isShowingFoodSuggestion, fetchNearbyPois, canSubmitFeedback, hasCriticalManeuver, sendNotification, checkDwell, resetDwell, canTrigger, markTriggered]);
 
   // Handle feedback submission
   const handleSubmitFeedback = async (ratings: {
@@ -413,7 +373,6 @@ export const PoiFeedbackProvider: React.FC<{ children: React.ReactNode }> = ({ c
     would_return: boolean;
   }) => {
     if (!pendingFeedbackPoi || !userId) return;
-
     try {
       const { error } = await supabase.from('poi_feedback').insert({
         user_id: userId,
@@ -426,7 +385,6 @@ export const PoiFeedbackProvider: React.FC<{ children: React.ReactNode }> = ({ c
         recommendation_rating: ratings.recommendation_rating,
         would_return: ratings.would_return,
       });
-
       if (error) {
         console.error('[PoiFeedback] Error submitting feedback:', error);
         toast.error('Erro ao enviar avaliação');
@@ -438,27 +396,25 @@ export const PoiFeedbackProvider: React.FC<{ children: React.ReactNode }> = ({ c
       console.error('[PoiFeedback] Submit failed:', err);
       toast.error('Erro ao enviar avaliação');
     }
-
     setIsShowingFeedback(false);
     setPendingFeedbackPoi(null);
   };
 
-  // Handle skip
   const handleSkip = () => {
     setIsShowingFeedback(false);
     setPendingFeedbackPoi(null);
   };
 
   return (
-    <PoiFeedbackContext.Provider value={{ 
-      currentVisitedPoi, 
-      isShowingFeedback, 
+    <PoiFeedbackContext.Provider value={{
+      currentVisitedPoi,
+      isShowingFeedback,
       isShowingFoodSuggestion,
-      dismissFoodSuggestion 
+      dismissFoodSuggestion,
+      triggerManualFoodSuggestion,
     }}>
       {children}
-      
-      {/* Food suggestion prompt on entry */}
+
       {isShowingFoodSuggestion && currentVisitedPoi && (
         <FoodSuggestionPrompt
           stop={{
@@ -474,8 +430,7 @@ export const PoiFeedbackProvider: React.FC<{ children: React.ReactNode }> = ({ c
           onDismiss={dismissFoodSuggestion}
         />
       )}
-      
-      {/* Feedback modal on exit */}
+
       {isShowingFeedback && pendingFeedbackPoi && (
         <PoiFeedbackModal
           poiName={pendingFeedbackPoi.name}
