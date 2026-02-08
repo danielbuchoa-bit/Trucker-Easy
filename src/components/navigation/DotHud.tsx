@@ -4,10 +4,19 @@
  * Integrates with DotHosContext for real-time HOS tracking.
  * Two parallel states: DOT real (truth) + override (driver's choice).
  * Never blocks the map. Always shows the truth.
+ * 
+ * Fixes applied:
+ * 1) Break warning math (needsBreak=true → breakRem=0, wins minRem)
+ * 2) Alert triggers on violation type change (not only from 'none')
+ * 3) Correct useEffect dependencies for alert logic
+ * 4) Break reset UX (progress text when resting)
+ * 5) Safer barFill (clamped)
+ * 6) Separate dismiss X (short quiet, no override) vs Ignore (override + 30m quiet)
+ * 7) Stop Now integration hook
  */
 
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useDotHosSafe, type DotDutyStatus } from '@/contexts/DotHosContext';
+import { useDotHosSafe } from '@/contexts/DotHosContext';
 import { cn } from '@/lib/utils';
 import { Clock, AlertTriangle, Square, X, RotateCcw, Coffee, Truck, Shield } from 'lucide-react';
 
@@ -15,8 +24,10 @@ import { Clock, AlertTriangle, Square, X, RotateCcw, Coffee, Truck, Shield } fro
 const DRIVE_LIMIT_SEC = 11 * 3600;
 const SHIFT_LIMIT_SEC = 14 * 3600;
 const BREAK_REQUIRED_AFTER_SEC = 8 * 3600;
+const BREAK_DURATION_SEC = 30 * 60;
 const WARN_THRESHOLD_SEC = 15 * 60;
 const QUIET_MINUTES = 30;
+const DISMISS_QUIET_MINUTES = 5;
 
 const OVERRIDE_STORAGE_KEY = 'dot_hud_override';
 
@@ -31,6 +42,8 @@ type ViolationType = 'none' | 'break_due' | 'drive_exceeded' | 'shift_exceeded';
 type BarVisual = 'green' | 'yellow' | 'red_blink' | 'red_fixed';
 
 // === Helpers ===
+const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
+
 function fmtHM(totalSec: number): string {
   const sec = Math.max(0, Math.floor(totalSec));
   const h = Math.floor(sec / 3600);
@@ -52,13 +65,75 @@ function saveOverride(ov: OverrideState) {
   } catch { /* ignore */ }
 }
 
+// === Pure computation functions ===
+
+function computeWarning(state: any): { warn: boolean; label: string; remainingSec: number } {
+  if (!state) return { warn: false, label: '', remainingSec: 0 };
+
+  const driveRem = state.drivingRemainingSec;
+  const shiftRem = state.dutyRemainingSec;
+
+  // When break is needed now → 0 remaining (most urgent)
+  // When not needed yet → countdown to 8h threshold
+  // When satisfied → Infinity (not a concern)
+  const breakRem = state.needsBreak
+    ? 0
+    : Math.max(0, BREAK_REQUIRED_AFTER_SEC - (state.breakDrivingSinceLastBreakSec ?? 0));
+
+  const breakCandidate = (state.needsBreak || breakRem > 0) ? breakRem : Infinity;
+  const minRem = Math.min(driveRem, shiftRem, breakCandidate);
+  const warn = minRem <= WARN_THRESHOLD_SEC && minRem > 0;
+
+  let label = '';
+  if (minRem === 0 && state.needsBreak) label = 'break';
+  else if (minRem === breakCandidate) label = 'break';
+  else if (minRem === driveRem) label = 'drive limit';
+  else label = 'shift limit';
+
+  return { warn, label, remainingSec: Math.max(0, minRem === Infinity ? 0 : minRem) };
+}
+
+function computeBarFill(state: any): number {
+  if (!state) return 0;
+
+  const driveFrac = clamp01((state.drivingTodaySec ?? 0) / DRIVE_LIMIT_SEC);
+  const shiftFrac = clamp01((state.dutyWindowSec ?? 0) / SHIFT_LIMIT_SEC);
+  const breakFrac = state.needsBreak
+    ? 1
+    : clamp01((state.breakDrivingSinceLastBreakSec ?? 0) / BREAK_REQUIRED_AFTER_SEC);
+
+  return clamp01(Math.max(driveFrac, shiftFrac, breakFrac));
+}
+
+function getBreakClockText(state: any): { text: string; urgent: boolean } {
+  if (!state) return { text: 'Break: —', urgent: false };
+
+  if (state.needsBreak) return { text: 'Necessário ⚠️', urgent: true };
+
+  const restSec = state.restContinuousSec ?? 0;
+  const isResting = state.currentStatus === 'OFF_DUTY' || state.currentStatus === 'SLEEPER';
+
+  // Actively resting but break not yet complete
+  if (isResting && restSec > 0 && restSec < BREAK_DURATION_SEC) {
+    return { text: `em progresso ${fmtHM(restSec)} / 00:30`, urgent: false };
+  }
+
+  // Break completed
+  if ((state.breakDrivingSinceLastBreakSec ?? 0) === 0 && restSec >= BREAK_DURATION_SEC) {
+    return { text: 'OK ✅', urgent: false };
+  }
+
+  // Countdown to when break will be required
+  const remaining = Math.max(0, BREAK_REQUIRED_AFTER_SEC - (state.breakDrivingSinceLastBreakSec ?? 0));
+  return { text: `em ${fmtHM(remaining)}`, urgent: remaining <= WARN_THRESHOLD_SEC };
+}
+
 // === Component ===
 const DotHud = memo(function DotHud({ onStopNow }: { onStopNow?: () => void }) {
   const dotHos = useDotHosSafe();
 
   const [override, setOverride] = useState<OverrideState>(loadOverride);
   const [showClock, setShowClock] = useState(false);
-  const [showDetails, setShowDetails] = useState(false);
   const [showActions, setShowActions] = useState(false);
   const [showAlert, setShowAlert] = useState(false);
   const [showResetMenu, setShowResetMenu] = useState(false);
@@ -82,23 +157,8 @@ const DotHud = memo(function DotHud({ onStopNow }: { onStopNow?: () => void }) {
     return 'none';
   }, [state]);
 
-  // Warning detection
-  const warning = useMemo(() => {
-    if (!state) return { warn: false, label: '', remainingSec: 0 };
-    const driveRem = state.drivingRemainingSec;
-    const shiftRem = state.dutyRemainingSec;
-    const breakRem = state.needsBreak ? 0 : Math.max(0, BREAK_REQUIRED_AFTER_SEC - state.breakDrivingSinceLastBreakSec);
-
-    const minRem = Math.min(driveRem, shiftRem, breakRem > 0 ? breakRem : Infinity);
-    const warn = minRem <= WARN_THRESHOLD_SEC && minRem > 0;
-
-    let label = '';
-    if (minRem === breakRem) label = 'break';
-    else if (minRem === driveRem) label = 'drive limit';
-    else label = 'shift limit';
-
-    return { warn, label, remainingSec: Math.max(0, minRem === Infinity ? 0 : minRem) };
-  }, [state]);
+  // Warning detection (fix #1)
+  const warning = useMemo(() => computeWarning(state), [state]);
 
   // Bar visual state
   const barVisual: BarVisual = useMemo(() => {
@@ -108,14 +168,11 @@ const DotHud = memo(function DotHud({ onStopNow }: { onStopNow?: () => void }) {
     return 'green';
   }, [override.overrideActive, violation, warning.warn]);
 
-  // Bar fill (shows consumption, not remaining)
-  const barFill = useMemo(() => {
-    if (!state) return 0;
-    const driveFrac = state.drivingTodaySec / DRIVE_LIMIT_SEC;
-    const shiftFrac = state.dutyWindowSec / SHIFT_LIMIT_SEC;
-    const breakFrac = state.needsBreak ? 1 : state.breakDrivingSinceLastBreakSec / BREAK_REQUIRED_AFTER_SEC;
-    return Math.min(1, Math.max(driveFrac, shiftFrac, breakFrac));
-  }, [state]);
+  // Bar fill (fix #5 — clamped)
+  const barFill = useMemo(() => computeBarFill(state), [state]);
+
+  // Break clock text (fix #4)
+  const breakInfo = useMemo(() => getBreakClockText(state), [state]);
 
   // Blink animation for red_blink
   useEffect(() => {
@@ -151,17 +208,25 @@ const DotHud = memo(function DotHud({ onStopNow }: { onStopNow?: () => void }) {
     }
   }, [violation, updateOverride]);
 
-  // Alert logic (anti-spam)
+  // Alert logic (fix #2 + #3: trigger on type change, not only from 'none')
   useEffect(() => {
     const inQuiet = override.quietUntilTs > 0 && Date.now() < override.quietUntilTs;
-    if (violation !== 'none' && !inQuiet && lastViolation === 'none' && !override.overrideActive) {
+
+    if (
+      violation !== 'none' &&
+      !inQuiet &&
+      violation !== lastViolation &&
+      !override.overrideActive
+    ) {
       setShowAlert(true);
     }
+
     if (violation === 'none') {
       setShowAlert(false);
     }
+
     setLastViolation(violation);
-  }, [violation, override.quietUntilTs, override.overrideActive]);
+  }, [violation, override.quietUntilTs, override.overrideActive, lastViolation]);
 
   // Overtime text
   const overtimeText = useMemo(() => {
@@ -172,11 +237,17 @@ const DotHud = memo(function DotHud({ onStopNow }: { onStopNow?: () => void }) {
 
   // Handlers
   const closeAll = useCallback(() => {
-    setShowDetails(false);
     setShowActions(false);
     setShowAlert(false);
     setShowResetMenu(false);
   }, []);
+
+  // Fix #6: separate dismiss (X) vs ignore
+  const dismissAlert = useCallback(() => {
+    const quietUntil = Date.now() + DISMISS_QUIET_MINUTES * 60 * 1000;
+    updateOverride(prev => ({ ...prev, quietUntilTs: quietUntil })); // NO overrideActive
+    setShowAlert(false);
+  }, [updateOverride]);
 
   const ignoreAlert = useCallback(() => {
     const quietUntil = Date.now() + QUIET_MINUTES * 60 * 1000;
@@ -184,6 +255,7 @@ const DotHud = memo(function DotHud({ onStopNow }: { onStopNow?: () => void }) {
     setShowAlert(false);
   }, [updateOverride]);
 
+  // Fix #7: Stop Now integration
   const handleStopNow = useCallback(() => {
     setShowAlert(false);
     closeAll();
@@ -195,13 +267,12 @@ const DotHud = memo(function DotHud({ onStopNow }: { onStopNow?: () => void }) {
 
     if (choice === 'break') {
       dotHos.setStatus('OFF_DUTY');
-      // The context handles break reset after 30min rest
       updateOverride(prev => ({ ...prev, overrideActive: false }));
     } else if (choice === 'new_shift') {
       dotHos.performFullReset();
       updateOverride(() => ({ overrideActive: false, quietUntilTs: 0, overtimeStartTs: null }));
     } else {
-      // Manual non-compliant: UI reset but override stays
+      // Manual non-compliant: override stays true
       updateOverride(prev => ({ ...prev, overrideActive: true }));
     }
     closeAll();
@@ -214,7 +285,6 @@ const DotHud = memo(function DotHud({ onStopNow }: { onStopNow?: () => void }) {
     pressTimer.current = window.setTimeout(() => {
       longPressFired.current = true;
       setShowActions(true);
-      setShowDetails(false);
       setShowResetMenu(false);
     }, 600);
   }, []);
@@ -229,8 +299,8 @@ const DotHud = memo(function DotHud({ onStopNow }: { onStopNow?: () => void }) {
   if (!dotHos || !state) return null;
 
   // Color classes
-  const barBgClass = barVisual === 'green' ? 'bg-green-900/40' 
-    : barVisual === 'yellow' ? 'bg-yellow-900/40' 
+  const barBgClass = barVisual === 'green' ? 'bg-green-900/40'
+    : barVisual === 'yellow' ? 'bg-yellow-900/40'
     : 'bg-red-900/40';
 
   const barFillClass = barVisual === 'green' ? 'bg-green-500'
@@ -242,7 +312,7 @@ const DotHud = memo(function DotHud({ onStopNow }: { onStopNow?: () => void }) {
 
   return (
     <div className="pointer-events-auto flex flex-col items-end gap-1.5" style={{ minWidth: 140 }}>
-      
+
       {/* === DOT BAR === */}
       <div
         onMouseDown={onPressStart}
@@ -290,13 +360,8 @@ const DotHud = memo(function DotHud({ onStopNow }: { onStopNow?: () => void }) {
 
             <div className="flex justify-between">
               <span>Break:</span>
-              <span className={cn(state.needsBreak && 'text-red-400 font-bold')}>
-                {state.needsBreak
-                  ? 'Necessário ⚠️'
-                  : state.breakDrivingSinceLastBreakSec === 0 && state.restContinuousSec >= 1800
-                    ? 'OK ✅'
-                    : `em ${fmtHM(Math.max(0, BREAK_REQUIRED_AFTER_SEC - state.breakDrivingSinceLastBreakSec))}`
-                }
+              <span className={cn(breakInfo.urgent && 'text-red-400 font-bold')}>
+                {breakInfo.text}
               </span>
             </div>
 
@@ -330,7 +395,8 @@ const DotHud = memo(function DotHud({ onStopNow }: { onStopNow?: () => void }) {
             <span className="text-xs font-extrabold text-red-400 flex items-center gap-1">
               <AlertTriangle className="w-3.5 h-3.5" /> Tempo DOT estourado
             </span>
-            <button onClick={ignoreAlert} className="p-0.5 hover:bg-white/10 rounded" aria-label="Fechar">
+            {/* Fix #6: X = dismiss (short quiet, no override) */}
+            <button onClick={dismissAlert} className="p-0.5 hover:bg-white/10 rounded" aria-label="Dispensar">
               <X className="w-3.5 h-3.5 text-white/60" />
             </button>
           </div>
@@ -346,6 +412,7 @@ const DotHud = memo(function DotHud({ onStopNow }: { onStopNow?: () => void }) {
             >
               Parar agora
             </button>
+            {/* Fix #6: Ignorar = override + 30min quiet */}
             <button
               onClick={ignoreAlert}
               className="flex-1 text-[11px] font-bold py-2 rounded-lg bg-red-500/15 border border-red-500/25 text-red-400 hover:bg-red-500/25 transition-colors"
