@@ -1,24 +1,15 @@
 /**
- * DOT HUD — Bar + Clock + Alerts + Override system
- * 
- * Integrates with DotHosContext for real-time HOS tracking.
- * Two parallel states: DOT real (truth) + override (driver's choice).
- * Never blocks the map. Always shows the truth.
- * 
- * Fixes applied:
- * 1) Break warning math (needsBreak=true → breakRem=0, wins minRem)
- * 2) Alert triggers on violation type change (not only from 'none')
- * 3) Correct useEffect dependencies for alert logic
- * 4) Break reset UX (progress text when resting)
- * 5) Safer barFill (clamped)
- * 6) Separate dismiss X (short quiet, no override) vs Ignore (override + 30m quiet)
- * 7) Stop Now integration hook
+ * DOT HUD "Support Mode" — Visual support inside GPS, NOT a full logbook.
+ * - Default QUIET mode: minimal alerts (15min before + at violation once)
+ * - No operational "reset DOT" (only UI/ack/snooze)
+ * - "Stop Now" = primary value (opens POIs/parking suggestions)
+ * - Future-ready: truth (external logbook) separate from UI state
  */
 
-import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useDotHosSafe } from '@/contexts/DotHosContext';
-import { cn } from '@/lib/utils';
-import { Clock, AlertTriangle, Square, X, RotateCcw, Coffee, Truck, Shield } from 'lucide-react';
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useDotHosSafe } from "@/contexts/DotHosContext";
+import { cn } from "@/lib/utils";
+import { Clock, AlertTriangle, X, Shield } from "lucide-react";
 
 // === Constants ===
 const DRIVE_LIMIT_SEC = 11 * 3600;
@@ -26,20 +17,25 @@ const SHIFT_LIMIT_SEC = 14 * 3600;
 const BREAK_REQUIRED_AFTER_SEC = 8 * 3600;
 const BREAK_DURATION_SEC = 30 * 60;
 const WARN_THRESHOLD_SEC = 15 * 60;
-const QUIET_MINUTES = 30;
-const DISMISS_QUIET_MINUTES = 5;
 
-const OVERRIDE_STORAGE_KEY = 'dot_hud_override';
+const QUIET_SNOOZE_MINUTES_DEFAULT = 30;
+const DISMISS_QUIET_MINUTES_DEFAULT = 60;
 
 // === Types ===
-interface OverrideState {
-  overrideActive: boolean;
+type HudMode = "quiet" | "normal" | "hardcore";
+type ViolationType = "none" | "break_due" | "drive_exceeded" | "shift_exceeded";
+type BarVisual = "green" | "yellow" | "red_blink" | "red_fixed";
+
+interface SupportUiState {
+  mode: HudMode;
   quietUntilTs: number;
-  overtimeStartTs: number | null;
+  ackedViolation: ViolationType;
+  overrideActive: boolean;
+  lastWarnAtTs: number;
+  lastViolateAtTs: number;
 }
 
-type ViolationType = 'none' | 'break_due' | 'drive_exceeded' | 'shift_exceeded';
-type BarVisual = 'green' | 'yellow' | 'red_blink' | 'red_fixed';
+const UI_STORAGE_KEY = "dotHud_support_ui_v1";
 
 // === Helpers ===
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
@@ -48,50 +44,60 @@ function fmtHM(totalSec: number): string {
   const sec = Math.max(0, Math.floor(totalSec));
   const h = Math.floor(sec / 3600);
   const m = Math.floor((sec % 3600) / 60);
-  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
 
-function loadOverride(): OverrideState {
+function loadUiState(): SupportUiState {
   try {
-    const raw = localStorage.getItem(OVERRIDE_STORAGE_KEY);
+    const raw = localStorage.getItem(UI_STORAGE_KEY);
     if (raw) return JSON.parse(raw);
   } catch { /* ignore */ }
-  return { overrideActive: false, quietUntilTs: 0, overtimeStartTs: null };
+  return {
+    mode: "quiet",
+    quietUntilTs: 0,
+    ackedViolation: "none",
+    overrideActive: false,
+    lastWarnAtTs: 0,
+    lastViolateAtTs: 0,
+  };
 }
 
-function saveOverride(ov: OverrideState) {
-  try {
-    localStorage.setItem(OVERRIDE_STORAGE_KEY, JSON.stringify(ov));
-  } catch { /* ignore */ }
+function saveUiState(s: SupportUiState) {
+  try { localStorage.setItem(UI_STORAGE_KEY, JSON.stringify(s)); } catch { /* ignore */ }
 }
 
-// === Pure computation functions ===
+// === Pure computation ===
+
+function computeViolation(state: any): ViolationType {
+  if (!state) return "none";
+  if ((state.dutyRemainingSec ?? 1) <= 0) return "shift_exceeded";
+  if ((state.drivingRemainingSec ?? 1) <= 0) return "drive_exceeded";
+  if (state.needsBreak) return "break_due";
+  return "none";
+}
 
 function computeWarning(state: any): { warn: boolean; label: string; remainingSec: number } {
-  if (!state) return { warn: false, label: '', remainingSec: 0 };
+  if (!state) return { warn: false, label: "", remainingSec: 0 };
 
-  const driveRem = state.drivingRemainingSec;
-  const shiftRem = state.dutyRemainingSec;
-
-  // Airbag 1: only count break as satisfied when actually resting
-  const isResting = state.currentStatus === 'OFF_DUTY' || state.currentStatus === 'SLEEPER';
-  const breakSatisfied = isResting && (state.restContinuousSec ?? 0) >= BREAK_DURATION_SEC;
+  const driveRem = state.drivingRemainingSec ?? DRIVE_LIMIT_SEC;
+  const shiftRem = state.dutyRemainingSec ?? SHIFT_LIMIT_SEC;
 
   const breakRem = state.needsBreak
     ? 0
     : Math.max(0, BREAK_REQUIRED_AFTER_SEC - (state.breakDrivingSinceLastBreakSec ?? 0));
 
-  // If needsBreak → 0 (urgent). If satisfied → Infinity (ignore). Otherwise → countdown.
-  const breakCandidate = state.needsBreak ? 0 : (breakSatisfied ? Infinity : breakRem);
+  const isResting = state.currentStatus === "OFF_DUTY" || state.currentStatus === "SLEEPER";
+  const breakSatisfied = isResting && (state.restContinuousSec ?? 0) >= BREAK_DURATION_SEC;
 
+  const breakCandidate = state.needsBreak ? 0 : (breakSatisfied ? Infinity : breakRem);
   const minRem = Math.min(driveRem, shiftRem, breakCandidate);
   const warn = minRem <= WARN_THRESHOLD_SEC && minRem > 0;
 
-  let label = '';
-  if (minRem === 0 && state.needsBreak) label = 'break';
-  else if (minRem === breakCandidate) label = 'break';
-  else if (minRem === driveRem) label = 'drive limit';
-  else label = 'shift limit';
+  let label = "";
+  if (minRem === 0 && state.needsBreak) label = "break";
+  else if (minRem === breakCandidate) label = "break";
+  else if (minRem === driveRem) label = "drive limit";
+  else label = "shift limit";
 
   return { warn, label, remainingSec: Math.max(0, minRem === Infinity ? 0 : minRem) };
 }
@@ -101,10 +107,9 @@ function computeBarFill(state: any): number {
 
   const driveFrac = clamp01((state.drivingTodaySec ?? 0) / DRIVE_LIMIT_SEC);
 
-  // Fix B: use dutyWindowSec (consumed), fallback to computed from remaining
-  const dutyConsumed = (state.dutyWindowSec ?? null) !== null
+  const dutyConsumed = state.dutyWindowSec != null
     ? state.dutyWindowSec
-    : (SHIFT_LIMIT_SEC - (state.dutyRemainingSec ?? SHIFT_LIMIT_SEC));
+    : SHIFT_LIMIT_SEC - (state.dutyRemainingSec ?? SHIFT_LIMIT_SEC);
   const shiftFrac = clamp01(dutyConsumed / SHIFT_LIMIT_SEC);
 
   const breakFrac = state.needsBreak
@@ -114,220 +119,202 @@ function computeBarFill(state: any): number {
   return clamp01(Math.max(driveFrac, shiftFrac, breakFrac));
 }
 
-function getBreakClockText(state: any): { text: string; urgent: boolean } {
-  if (!state) return { text: 'Break: —', urgent: false };
+function getBreakText(state: any): string {
+  if (!state) return "Break: —";
 
-  if (state.needsBreak) return { text: 'Necessário ⚠️', urgent: true };
-
+  const isResting = state.currentStatus === "OFF_DUTY" || state.currentStatus === "SLEEPER";
   const restSec = state.restContinuousSec ?? 0;
-  const isResting = state.currentStatus === 'OFF_DUTY' || state.currentStatus === 'SLEEPER';
 
-  // Actively resting but break not yet complete
+  if (state.needsBreak) return "Break: Necessário ⚠️";
+
   if (isResting && restSec > 0 && restSec < BREAK_DURATION_SEC) {
-    return { text: `em progresso ${fmtHM(restSec)} / 00:30`, urgent: false };
+    return `Break: em progresso ${fmtHM(restSec)} / 00:30`;
   }
 
-  // Break completed (must be resting to count)
-  if (isResting && (state.breakDrivingSinceLastBreakSec ?? 0) === 0 && restSec >= BREAK_DURATION_SEC) {
-    return { text: 'OK ✅', urgent: false };
+  if (isResting && restSec >= BREAK_DURATION_SEC && (state.breakDrivingSinceLastBreakSec ?? 0) === 0) {
+    return "Break: OK ✅";
   }
 
-  // Countdown to when break will be required
   const remaining = Math.max(0, BREAK_REQUIRED_AFTER_SEC - (state.breakDrivingSinceLastBreakSec ?? 0));
-  return { text: `em ${fmtHM(remaining)}`, urgent: remaining <= WARN_THRESHOLD_SEC };
+  return `Break: em ${fmtHM(remaining)}`;
+}
+
+// === Alert policy ===
+
+function shouldShowWarning(ui: SupportUiState, warning: { warn: boolean }, violation: ViolationType): boolean {
+  if (!warning.warn) return false;
+  if (violation !== "none") return false;
+  const now = Date.now();
+  if (ui.quietUntilTs > now) return false;
+
+  if (ui.mode === "quiet") return (now - ui.lastWarnAtTs) > 60 * 60 * 1000;
+  if (ui.mode === "normal") return (now - ui.lastWarnAtTs) > 20 * 60 * 1000;
+  return (now - ui.lastWarnAtTs) > 10 * 60 * 1000;
+}
+
+function shouldShowViolation(ui: SupportUiState, violation: ViolationType): boolean {
+  if (violation === "none") return false;
+  const now = Date.now();
+  if (ui.quietUntilTs > now) return false;
+
+  if (ui.ackedViolation !== violation) return true;
+
+  if (ui.mode === "quiet") return false;
+  if (ui.mode === "normal") return (now - ui.lastViolateAtTs) > 45 * 60 * 1000;
+  return (now - ui.lastViolateAtTs) > 20 * 60 * 1000;
 }
 
 // === Component ===
 const DotHud = memo(function DotHud({ onStopNow }: { onStopNow?: () => void }) {
   const dotHos = useDotHosSafe();
-
-  const [override, setOverride] = useState<OverrideState>(loadOverride);
-  const [showClock, setShowClock] = useState(false);
-  const [showActions, setShowActions] = useState(false);
-  const [showAlert, setShowAlert] = useState(false);
-  const [showResetMenu, setShowResetMenu] = useState(false);
-  const [lastViolation, setLastViolation] = useState<ViolationType>('none');
-
-  // Long-press refs
-  const pressTimer = useRef<number | null>(null);
-  const longPressFired = useRef(false);
-
-  // Blink state
-  const [blinkOn, setBlinkOn] = useState(true);
-
-  // Airbag 2: force re-render every second during violation so overtimeText stays live
-  const [, forceTick] = useState(0);
-
   const state = dotHos?.state;
 
-  // Compute violation
-  const violation: ViolationType = useMemo(() => {
-    if (!state) return 'none';
-    if (state.dutyRemainingSec <= 0) return 'shift_exceeded';
-    if (state.drivingRemainingSec <= 0) return 'drive_exceeded';
-    if (state.needsBreak) return 'break_due';
-    return 'none';
-  }, [state]);
+  const [ui, setUi] = useState<SupportUiState>(loadUiState);
+  const [showClock, setShowClock] = useState(true);
+  const [showAlert, setShowAlert] = useState(false);
+  const [alertKind, setAlertKind] = useState<"warning" | "violation">("warning");
 
-  useEffect(() => {
-    if (violation === 'none' || !override.overtimeStartTs) return;
-    const t = setInterval(() => forceTick(v => (v + 1) % 1_000_000), 1000);
-    return () => clearInterval(t);
-  }, [violation, override.overtimeStartTs]);
+  const pressTimer = useRef<number | null>(null);
+  const longPressFired = useRef(false);
+  const [blinkOn, setBlinkOn] = useState(true);
 
+  const violation = useMemo(() => computeViolation(state), [state]);
   const warning = useMemo(() => computeWarning(state), [state]);
-
-  // Bar visual state
-  const barVisual: BarVisual = useMemo(() => {
-    if (override.overrideActive && violation !== 'none') return 'red_fixed';
-    if (violation !== 'none') return 'red_blink';
-    if (warning.warn) return 'yellow';
-    return 'green';
-  }, [override.overrideActive, violation, warning.warn]);
-
-  // Bar fill (fix #5 — clamped)
   const barFill = useMemo(() => computeBarFill(state), [state]);
 
-  // Break clock text (fix #4)
-  const breakInfo = useMemo(() => getBreakClockText(state), [state]);
+  const barVisual: BarVisual = useMemo(() => {
+    if (ui.overrideActive && violation !== "none") return "red_fixed";
+    if (violation !== "none") return "red_blink";
+    if (warning.warn) return "yellow";
+    return "green";
+  }, [ui.overrideActive, violation, warning.warn]);
 
-  // Blink animation for red_blink
+  // Blink animation
   useEffect(() => {
-    if (barVisual !== 'red_blink') {
-      setBlinkOn(true);
-      return;
-    }
-    const timer = setInterval(() => setBlinkOn(v => !v), 500);
-    return () => clearInterval(timer);
+    if (barVisual !== "red_blink") { setBlinkOn(true); return; }
+    const t = window.setInterval(() => setBlinkOn(v => !v), 600);
+    return () => window.clearInterval(t);
   }, [barVisual]);
 
-  // Override persistence
-  const updateOverride = useCallback((updater: (prev: OverrideState) => OverrideState) => {
-    setOverride(prev => {
+  // Persist UI state
+  const updateUi = useCallback((updater: (prev: SupportUiState) => SupportUiState) => {
+    setUi(prev => {
       const next = updater(prev);
-      saveOverride(next);
+      saveUiState(next);
       return next;
     });
   }, []);
 
-  // Overtime tracking
+  // Alert decision logic (minimal nagging)
   useEffect(() => {
-    if (violation !== 'none') {
-      updateOverride(prev => ({
-        ...prev,
-        overtimeStartTs: prev.overtimeStartTs ?? Date.now(),
-      }));
-    } else {
-      updateOverride(prev => {
-        if (!prev.overtimeStartTs) return prev;
-        return { ...prev, overtimeStartTs: null };
-      });
+    if (!state) return;
+
+    const showV = shouldShowViolation(ui, violation);
+    const showW = shouldShowWarning(ui, warning, violation);
+
+    if (showV) {
+      setAlertKind("violation");
+      setShowAlert(true);
+      updateUi(prev => ({ ...prev, lastViolateAtTs: Date.now() }));
+      return;
     }
-  }, [violation, updateOverride]);
 
-  // Fix C: alert effect using functional setLastViolation to avoid dep loop
+    if (showW) {
+      setAlertKind("warning");
+      setShowAlert(true);
+      updateUi(prev => ({ ...prev, lastWarnAtTs: Date.now() }));
+      return;
+    }
+
+    if (violation === "none" && !warning.warn) setShowAlert(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state, violation, warning.warn, ui.quietUntilTs, ui.ackedViolation, ui.mode]);
+
+  // Clear override when compliant again
   useEffect(() => {
-    const inQuiet = override.quietUntilTs > 0 && Date.now() < override.quietUntilTs;
+    if (violation === "none" && ui.overrideActive) {
+      updateUi(prev => ({ ...prev, overrideActive: false, ackedViolation: "none" }));
+    }
+  }, [violation, ui.overrideActive, updateUi]);
 
-    setLastViolation(prev => {
-      if (
-        violation !== 'none' &&
-        !inQuiet &&
-        violation !== prev &&
-        !override.overrideActive
-      ) {
-        setShowAlert(true);
-      }
-
-      if (violation === 'none') {
-        setShowAlert(false);
-      }
-
-      return violation;
-    });
-  }, [violation, override.quietUntilTs, override.overrideActive]);
-
-  // Overtime text
-  const overtimeText = useMemo(() => {
-    if (violation === 'none' || !override.overtimeStartTs) return null;
-    const sec = Math.max(0, Math.floor((Date.now() - override.overtimeStartTs) / 1000));
-    return `Overtime: +${fmtHM(sec)}`;
-  }, [violation, override.overtimeStartTs]);
-
-  // Handlers
-  const closeAll = useCallback(() => {
-    setShowActions(false);
+  // === Handlers ===
+  const dismissX = useCallback(() => {
+    const minutes = ui.mode === "quiet" ? DISMISS_QUIET_MINUTES_DEFAULT : 20;
+    updateUi(prev => ({ ...prev, quietUntilTs: Date.now() + minutes * 60 * 1000 }));
     setShowAlert(false);
-    setShowResetMenu(false);
-  }, []);
+  }, [ui.mode, updateUi]);
 
-  // Fix #6: separate dismiss (X) vs ignore
-  const dismissAlert = useCallback(() => {
-    const quietUntil = Date.now() + DISMISS_QUIET_MINUTES * 60 * 1000;
-    updateOverride(prev => ({ ...prev, quietUntilTs: quietUntil })); // NO overrideActive
+  const ignore = useCallback(() => {
+    const minutes = ui.mode === "quiet" ? QUIET_SNOOZE_MINUTES_DEFAULT : 15;
+    updateUi(prev => ({
+      ...prev,
+      overrideActive: true,
+      ackedViolation: violation !== "none" ? violation : prev.ackedViolation,
+      quietUntilTs: Date.now() + minutes * 60 * 1000,
+      lastViolateAtTs: Date.now(),
+    }));
     setShowAlert(false);
-  }, [updateOverride]);
+  }, [ui.mode, updateUi, violation]);
 
-  const ignoreAlert = useCallback(() => {
-    const quietUntil = Date.now() + QUIET_MINUTES * 60 * 1000;
-    updateOverride(prev => ({ ...prev, overrideActive: true, quietUntilTs: quietUntil }));
+  const ackSeen = useCallback(() => {
+    updateUi(prev => ({
+      ...prev,
+      ackedViolation: violation !== "none" ? violation : prev.ackedViolation,
+      quietUntilTs: Date.now() + 30 * 60 * 1000,
+    }));
     setShowAlert(false);
-  }, [updateOverride]);
+  }, [updateUi, violation]);
 
-  // Fix #7: Stop Now integration
-  const handleStopNow = useCallback(() => {
+  const stopNow = useCallback(() => {
     setShowAlert(false);
-    closeAll();
+    updateUi(prev => ({
+      ...prev,
+      ackedViolation: violation !== "none" ? violation : prev.ackedViolation,
+      quietUntilTs: Date.now() + 20 * 60 * 1000,
+    }));
     onStopNow?.();
-  }, [onStopNow, closeAll]);
+  }, [onStopNow, updateUi, violation]);
 
-  const handleReset = useCallback((choice: 'break' | 'new_shift' | 'manual') => {
-    if (!dotHos) return;
-
-    if (choice === 'break') {
-      dotHos.setStatus('OFF_DUTY');
-      updateOverride(prev => ({ ...prev, overrideActive: false }));
-    } else if (choice === 'new_shift') {
-      dotHos.performFullReset();
-      updateOverride(() => ({ overrideActive: false, quietUntilTs: 0, overtimeStartTs: null }));
-    } else {
-      // Manual non-compliant: override stays true
-      updateOverride(prev => ({ ...prev, overrideActive: true }));
-    }
-    closeAll();
-  }, [dotHos, updateOverride, closeAll]);
-
-  // Touch handlers for tap/long-press
+  // Long-press: cycle mode (Quiet → Normal → Hardcore)
   const onPressStart = useCallback(() => {
     longPressFired.current = false;
     if (pressTimer.current) window.clearTimeout(pressTimer.current);
     pressTimer.current = window.setTimeout(() => {
       longPressFired.current = true;
-      setShowActions(true);
-      setShowResetMenu(false);
-    }, 600);
-  }, []);
+      updateUi(prev => ({
+        ...prev,
+        mode: prev.mode === "quiet" ? "normal" : prev.mode === "normal" ? "hardcore" : "quiet",
+      }));
+    }, 650);
+  }, [updateUi]);
 
   const onPressEnd = useCallback(() => {
     if (pressTimer.current) window.clearTimeout(pressTimer.current);
-    if (!longPressFired.current) {
-      setShowClock(v => !v);
-    }
+    if (!longPressFired.current) setShowClock(v => !v);
   }, []);
 
   if (!dotHos || !state) return null;
 
-  // Color classes
-  const barBgClass = barVisual === 'green' ? 'bg-green-900/40'
-    : barVisual === 'yellow' ? 'bg-yellow-900/40'
-    : 'bg-red-900/40';
+  // === Visual classes ===
+  const barBgClass = barVisual === "green" ? "bg-green-900/40"
+    : barVisual === "yellow" ? "bg-yellow-900/40"
+    : "bg-red-900/40";
 
-  const barFillClass = barVisual === 'green' ? 'bg-green-500'
-    : barVisual === 'yellow' ? 'bg-yellow-500'
-    : barVisual === 'red_fixed' ? 'bg-red-600'
-    : blinkOn ? 'bg-red-500' : 'bg-red-300';
+  const barFillClass = barVisual === "green" ? "bg-green-500"
+    : barVisual === "yellow" ? "bg-yellow-500"
+    : ui.overrideActive ? "bg-red-600"
+    : blinkOn ? "bg-red-500" : "bg-red-300";
 
-  const ringClass = barVisual === 'red_blink' && !blinkOn ? 'ring-2 ring-red-400/75' : '';
+  const ringClass = barVisual === "red_blink" && !blinkOn ? "ring-2 ring-red-400/70" : "";
+
+  const modeLabel = ui.mode === "quiet" ? "Quiet" : ui.mode === "normal" ? "Normal" : "Hardcore";
+
+  const driveLine = `Drive: ${fmtHM(state.drivingTodaySec ?? 0)} / ${fmtHM(DRIVE_LIMIT_SEC)}`;
+  const shiftConsumed = state.dutyWindowSec != null
+    ? state.dutyWindowSec
+    : SHIFT_LIMIT_SEC - (state.dutyRemainingSec ?? SHIFT_LIMIT_SEC);
+  const shiftLine = `Shift: ${fmtHM(shiftConsumed)} / ${fmtHM(SHIFT_LIMIT_SEC)}`;
+  const breakLine = getBreakText(state);
 
   return (
     <div className="pointer-events-auto flex flex-col items-end gap-1.5" style={{ minWidth: 140 }}>
@@ -341,6 +328,7 @@ const DotHud = memo(function DotHud({ onStopNow }: { onStopNow?: () => void }) {
         className="flex items-center gap-2 cursor-pointer select-none"
         role="button"
         aria-label="DOT Hours of Service"
+        title="Tap: show/hide clock • Long press: cycle Quiet/Normal/Hardcore"
       >
         <div className={cn(
           "relative w-28 h-3 rounded-full overflow-hidden shadow-lg backdrop-blur-sm border border-white/20",
@@ -348,160 +336,101 @@ const DotHud = memo(function DotHud({ onStopNow }: { onStopNow?: () => void }) {
         )}>
           <div
             className={cn("absolute top-0 left-0 h-full rounded-full transition-all duration-1000", barFillClass)}
-            style={{ width: `${Math.max(6, Math.floor(barFill * 100))}%` }}
+            style={{ width: `${Math.max(6, Math.round(barFill * 100))}%` }}
           />
           <div className="absolute inset-0 bg-gradient-to-b from-white/20 to-transparent pointer-events-none" />
         </div>
         <span className="text-[10px] font-bold uppercase tracking-wide text-white/80 drop-shadow-md">DOT</span>
       </div>
 
-      {/* === DOT CLOCK (mini panel) === */}
+      {/* === CLOCK (support mode: compact) === */}
       {showClock && (
         <div className="bg-gray-900/92 backdrop-blur-md text-white rounded-xl px-3 py-2.5 shadow-2xl border border-white/10 w-56">
           <div className="flex items-center justify-between mb-1.5">
             <span className="text-xs font-extrabold tracking-wide flex items-center gap-1">
-              <Clock className="w-3 h-3" /> DOT
+              <Clock className="w-3 h-3" /> DOT (Support)
             </span>
-            {override.overrideActive && (
-              <span className="text-[9px] font-bold text-red-400 flex items-center gap-0.5">
-                <Shield className="w-2.5 h-2.5" /> Override
-              </span>
-            )}
+            <span className="text-[9px] font-medium text-white/60">
+              {modeLabel}
+              {ui.overrideActive && violation !== "none" && (
+                <span className="text-red-400 ml-1 flex items-center gap-0.5 inline-flex">
+                  <Shield className="w-2.5 h-2.5" /> Override
+                </span>
+              )}
+            </span>
           </div>
 
           <div className="space-y-0.5 text-[11px] font-medium text-white/90">
-            <div className="flex justify-between">
-              <span>Drive:</span>
-              <span className={cn(state.drivingRemainingSec <= WARN_THRESHOLD_SEC && 'text-yellow-400 font-bold')}>
-                {fmtHM(state.drivingTodaySec)} / {fmtHM(DRIVE_LIMIT_SEC)}
-              </span>
-            </div>
-
-            <div className="flex justify-between">
-              <span>Break:</span>
-              <span className={cn(breakInfo.urgent && 'text-red-400 font-bold')}>
-                {breakInfo.text}
-              </span>
-            </div>
-
-            <div className="flex justify-between">
-              <span>Shift:</span>
-              <span className={cn(state.dutyRemainingSec <= WARN_THRESHOLD_SEC && 'text-yellow-400 font-bold')}>
-                {fmtHM(state.dutyWindowSec)} / {fmtHM(SHIFT_LIMIT_SEC)}
-              </span>
-            </div>
-
-            {overtimeText && (
-              <div className="text-red-400 font-extrabold pt-0.5">
-                {overtimeText}
-              </div>
-            )}
+            <div>{driveLine}</div>
+            <div>{breakLine}</div>
+            <div>{shiftLine}</div>
           </div>
 
-          {/* Warning banner inside clock */}
-          {warning.warn && violation === 'none' && (
+          {warning.warn && violation === "none" && (
             <div className="mt-1.5 text-[10px] text-yellow-400 font-bold bg-yellow-500/10 rounded px-1.5 py-0.5">
               ⚠ {fmtHM(warning.remainingSec)} para {warning.label}
+            </div>
+          )}
+
+          {violation !== "none" && (
+            <div className="mt-1.5 text-[10px] text-red-400 font-extrabold">
+              {violation === "break_due" ? "Break necessário"
+                : violation === "drive_exceeded" ? "Limite de direção excedido"
+                : "Limite de shift excedido"}
             </div>
           )}
         </div>
       )}
 
-      {/* === VIOLATION ALERT === */}
-      {showAlert && violation !== 'none' && (
-        <div className="bg-gray-900/95 backdrop-blur-md text-white rounded-xl px-3 py-3 shadow-2xl border border-red-500/30 w-56 animate-in slide-in-from-top-2">
+      {/* === DISCREET ALERT (rare, minimal) === */}
+      {showAlert && (
+        <div className="bg-gray-900/95 backdrop-blur-md text-white rounded-xl px-3 py-3 shadow-2xl border border-white/10 w-56 animate-in slide-in-from-top-2">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-extrabold text-red-400 flex items-center gap-1">
-              <AlertTriangle className="w-3.5 h-3.5" /> Tempo DOT estourado
+            <span className="text-xs font-extrabold flex items-center gap-1">
+              <AlertTriangle className="w-3.5 h-3.5 text-red-400" />
+              {alertKind === "warning" ? "Atenção DOT" : "DOT estourou"}
             </span>
-            {/* Fix #6: X = dismiss (short quiet, no override) */}
-            <button onClick={dismissAlert} className="p-0.5 hover:bg-white/10 rounded" aria-label="Dispensar">
+            <button onClick={dismissX} className="p-0.5 hover:bg-white/10 rounded" aria-label="Dispensar">
               <X className="w-3.5 h-3.5 text-white/60" />
             </button>
           </div>
+
           <p className="text-[11px] text-white/80 mb-3">
-            {violation === 'break_due' ? 'Break de 30 min necessário'
-              : violation === 'drive_exceeded' ? 'Limite de 11h de direção excedido'
-              : 'Limite de 14h de shift excedido'}
+            {alertKind === "warning"
+              ? `Faltam ${fmtHM(warning.remainingSec)} para ${warning.label}.`
+              : violation === "break_due" ? "Break de 30 min necessário."
+              : violation === "drive_exceeded" ? "Limite de 11h excedido."
+              : "Limite de 14h excedido."}
           </p>
+
           <div className="flex gap-2">
             <button
-              onClick={handleStopNow}
-              className="flex-1 text-[11px] font-bold py-2 rounded-lg bg-green-500/20 border border-green-500/30 text-green-400 hover:bg-green-500/30 transition-colors"
+              onClick={stopNow}
+              className="flex-1 text-[11px] font-bold py-2 rounded-lg bg-green-500/15 border border-green-500/25 text-green-400 hover:bg-green-500/25 transition-colors"
             >
               Parar agora
             </button>
-            {/* Fix #6: Ignorar = override + 30min quiet */}
-            <button
-              onClick={ignoreAlert}
-              className="flex-1 text-[11px] font-bold py-2 rounded-lg bg-red-500/15 border border-red-500/25 text-red-400 hover:bg-red-500/25 transition-colors"
-            >
-              Ignorar
-            </button>
-          </div>
-        </div>
-      )}
 
-      {/* === ACTIONS MENU (long press) === */}
-      {showActions && (
-        <div className="bg-gray-900/95 backdrop-blur-md text-white rounded-xl px-3 py-3 shadow-2xl border border-white/10 w-60 animate-in slide-in-from-top-2">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-xs font-extrabold flex items-center gap-1">
-              <Truck className="w-3.5 h-3.5" /> Ações DOT
-            </span>
-            <button onClick={closeAll} className="p-0.5 hover:bg-white/10 rounded">
-              <X className="w-3.5 h-3.5 text-white/60" />
-            </button>
-          </div>
-
-          <div className="space-y-2">
-            <button onClick={handleStopNow} className="w-full text-left text-[11px] font-semibold py-2 px-2.5 rounded-lg bg-green-500/15 border border-green-500/25 text-green-400 hover:bg-green-500/25 transition-colors flex items-center gap-2">
-              <Square className="w-3 h-3" /> Parar agora
-            </button>
-
-            <button onClick={ignoreAlert} className="w-full text-left text-[11px] font-semibold py-2 px-2.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 transition-colors flex items-center gap-2">
-              <AlertTriangle className="w-3 h-3" /> Ignorar alerta (silenciar {QUIET_MINUTES}min)
-            </button>
-
-            <button onClick={() => { setShowResetMenu(true); setShowActions(false); }} className="w-full text-left text-[11px] font-semibold py-2 px-2.5 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 transition-colors flex items-center gap-2">
-              <RotateCcw className="w-3 h-3" /> Reiniciar contagem...
-            </button>
-          </div>
-
-          <p className="text-[9px] text-white/40 mt-2">Toque longo na barra abre este menu</p>
-        </div>
-      )}
-
-      {/* === RESET MENU === */}
-      {showResetMenu && (
-        <div className="bg-gray-900/95 backdrop-blur-md text-white rounded-xl px-3 py-3 shadow-2xl border border-white/10 w-60 animate-in slide-in-from-top-2">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-xs font-extrabold flex items-center gap-1">
-              <RotateCcw className="w-3.5 h-3.5" /> Reiniciar
-            </span>
-            <button onClick={closeAll} className="p-0.5 hover:bg-white/10 rounded">
-              <X className="w-3.5 h-3.5 text-white/60" />
-            </button>
-          </div>
-
-          <div className="space-y-2">
-            <button onClick={() => handleReset('break')} className="w-full text-left text-[11px] font-semibold py-2 px-2.5 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 transition-colors flex items-center gap-2">
-              <Coffee className="w-3 h-3 text-amber-400" /> Fiz o break de 30 min
-            </button>
-
-            <button onClick={() => handleReset('new_shift')} className="w-full text-left text-[11px] font-semibold py-2 px-2.5 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 transition-colors flex items-center gap-2">
-              <Truck className="w-3 h-3 text-blue-400" /> Iniciei novo turno
-            </button>
-
-            <div className="border-t border-white/10 pt-2 mt-1">
-              <button onClick={() => handleReset('manual')} className="w-full text-left text-[11px] font-semibold py-2 px-2.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 transition-colors flex items-center gap-2">
-                <AlertTriangle className="w-3 h-3" /> Reset manual (não conforme DOT)
+            {alertKind === "violation" ? (
+              <button
+                onClick={ignore}
+                className="flex-1 text-[11px] font-bold py-2 rounded-lg bg-red-500/15 border border-red-500/25 text-red-400 hover:bg-red-500/25 transition-colors"
+              >
+                Ignorar
               </button>
-              <p className="text-[9px] text-white/40 mt-1 px-1">
-                Reset visual permitido. Overtime continuará sendo registrado.
-              </p>
-            </div>
+            ) : (
+              <button
+                onClick={ackSeen}
+                className="flex-1 text-[11px] font-bold py-2 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 transition-colors"
+              >
+                Entendi
+              </button>
+            )}
           </div>
+
+          <p className="text-[9px] text-white/40 mt-2">
+            Suporte visual apenas. Não altera seu logbook oficial.
+          </p>
         </div>
       )}
     </div>
