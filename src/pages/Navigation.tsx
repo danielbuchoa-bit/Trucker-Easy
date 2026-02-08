@@ -13,6 +13,7 @@ import {
   MapPin,
   Play,
   Settings,
+  Fuel,
 } from 'lucide-react';
 import { useLanguage } from '@/i18n/LanguageContext';
 import PoiRatingPreview from '@/components/poi/PoiRatingPreview';
@@ -44,6 +45,11 @@ import ActiveNavigationView from '@/components/navigation/ActiveNavigationView';
 import BottomNav from '@/components/navigation/BottomNav';
 import { useToast } from '@/hooks/use-toast';
 import { useActiveNavigation } from '@/contexts/ActiveNavigationContext';
+import { useFuelOptimization } from '@/hooks/useFuelOptimization';
+import FuelOptimizationCard from '@/components/fuel/FuelOptimizationCard';
+import FuelStopsSheet from '@/components/fuel/FuelStopsSheet';
+import { decodePolyline } from '@/lib/polylineDecoder';
+
 
 interface NavigationLocationState {
   destination?: {
@@ -87,6 +93,10 @@ const NavigationScreen = () => {
   const [weatherAlerts, setWeatherAlerts] = useState<WeatherAlertsResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [alertsLoading, setAlertsLoading] = useState(false);
+  const [fuelStopsOpen, setFuelStopsOpen] = useState(false);
+
+  // Fuel optimization
+  const fuelOpt = useFuelOptimization({ truckMpg: 6.5, currentFuelGallons: 75, tankCapacityGallons: 150 });
 
   // Reverse geocode to get address from coordinates (using NextBillion)
   const reverseGeocode = async (lat: number, lng: number): Promise<string> => {
@@ -260,6 +270,12 @@ const NavigationScreen = () => {
       });
 
       setRoute(routeResult);
+
+      // Auto-optimize fuel if truck mode
+      if (transportMode === 'truck' && routeResult.polyline) {
+        const coords = decodePolyline(routeResult.polyline);
+        if (coords.length > 1) fuelOpt.optimize(coords);
+      }
 
       toast({
         title: t.navigation?.routeCalculated || 'Route calculated!',
@@ -630,6 +646,48 @@ const NavigationScreen = () => {
               </span>
             </div>
           </div>
+        )}
+
+        {/* Fuel Optimization */}
+        {fuelOpt.result && route && (
+          <FuelOptimizationCard
+            result={fuelOpt.result}
+            onViewStops={() => setFuelStopsOpen(true)}
+            onNavigateToStop={(stop) => {
+              setDestination({
+                id: stop.place_id,
+                title: stop.name,
+                address: `${stop.lat.toFixed(4)}, ${stop.lng.toFixed(4)}`,
+                lat: stop.lat,
+                lng: stop.lng,
+              });
+            }}
+          />
+        )}
+        {fuelOpt.loading && route && (
+          <div className="flex items-center gap-2 p-4 bg-card border border-border rounded-xl">
+            <Fuel className="w-5 h-5 text-muted-foreground animate-pulse" />
+            <span className="text-sm text-muted-foreground">Optimizing fuel plan...</span>
+          </div>
+        )}
+
+        {/* Fuel Stops Sheet */}
+        {fuelOpt.result && (
+          <FuelStopsSheet
+            open={fuelStopsOpen}
+            onOpenChange={setFuelStopsOpen}
+            result={fuelOpt.result}
+            onNavigateToStop={(stop) => {
+              setFuelStopsOpen(false);
+              setDestination({
+                id: stop.place_id,
+                title: stop.name,
+                address: `${stop.lat.toFixed(4)}, ${stop.lng.toFixed(4)}`,
+                lat: stop.lat,
+                lng: stop.lng,
+              });
+            }}
+          />
         )}
 
         {/* Weather Alerts */}

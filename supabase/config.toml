@@ -86,3 +86,6 @@ verify_jwt = false
 
 [functions.list_referrals]
 verify_jwt = false
+
+[functions.fuel_optimize]
+verify_jwt = false
