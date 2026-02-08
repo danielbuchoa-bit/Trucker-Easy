@@ -150,6 +150,7 @@ export function useDwellDetection() {
         startedAt: now, anchorLat: lat, anchorLng: lng,
         lastLat: lat, lastLng: lng, lastTs: now,
       };
+      console.log('[Dwell] 📍 Anchor set:', lat.toFixed(5), lng.toFixed(5));
       return false;
     }
 
@@ -166,8 +167,12 @@ export function useDwellDetection() {
       s.lastTs = now;
     }
 
+    const movedFromAnchor = calculateDistance(lat, lng, s.anchorLat, s.anchorLng);
+    const elapsedMin = (now - s.startedAt) / 60000;
+
     // If clearly moving, reset dwell
     if (estimatedSpeedMps > STOP_SPEED_THRESHOLD_MPS) {
+      console.log(`[Dwell] 🚗 Moving (${estimatedSpeedMps.toFixed(1)} m/s) — reset`);
       dwellState.current = {
         startedAt: now, anchorLat: lat, anchorLng: lng,
         lastLat: lat, lastLng: lng, lastTs: now,
@@ -176,8 +181,8 @@ export function useDwellDetection() {
     }
 
     // If drifted too far from anchor, reset
-    const movedFromAnchor = calculateDistance(lat, lng, s.anchorLat, s.anchorLng);
     if (movedFromAnchor > MOVEMENT_SAMPLE_RESET_M) {
+      console.log(`[Dwell] 📍 Drifted ${Math.round(movedFromAnchor)}m from anchor — reset`);
       dwellState.current = {
         startedAt: now, anchorLat: lat, anchorLng: lng,
         lastLat: lat, lastLng: lng, lastTs: now,
@@ -187,11 +192,16 @@ export function useDwellDetection() {
 
     // Within dwell radius — check time
     if (movedFromAnchor <= STOP_DWELL_METERS) {
-      const minutes = (now - s.startedAt) / 60000;
-      return minutes >= STOP_DWELL_MINUTES;
+      console.log(`[Dwell] ⏱️ Dwelling: ${elapsedMin.toFixed(1)}min / ${STOP_DWELL_MINUTES}min | drift=${Math.round(movedFromAnchor)}m | speed≈${estimatedSpeedMps.toFixed(1)}m/s`);
+      if (elapsedMin >= STOP_DWELL_MINUTES) {
+        console.log('[Dwell] ✅ DWELL TRIGGERED!');
+        return true;
+      }
+      return false;
     }
 
     // Between STOP_DWELL_METERS and MOVEMENT_SAMPLE_RESET_M: keep state, not dwelling yet
+    console.log(`[Dwell] 🔄 Between zones: drift=${Math.round(movedFromAnchor)}m (${STOP_DWELL_METERS}-${MOVEMENT_SAMPLE_RESET_M}m) | ${elapsedMin.toFixed(1)}min`);
     return false;
   }, []);
 
