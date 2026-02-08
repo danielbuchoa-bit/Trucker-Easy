@@ -62,6 +62,8 @@ const FoodSuggestionPrompt: React.FC<FoodSuggestionPromptProps> = ({ stop, onDis
   const [nearbyRestaurants, setNearbyRestaurants] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<ActiveTab>('restaurant');
+  const [selectedRestaurant, setSelectedRestaurant] = useState<string | null>(null);
+  const [loadingRestaurant, setLoadingRestaurant] = useState(false);
 
   const hasPersonalizedFood = canAccess('personalizedFoodSuggestions');
 
@@ -202,6 +204,26 @@ const FoodSuggestionPrompt: React.FC<FoodSuggestionPromptProps> = ({ stop, onDis
     load();
   }, [stop.id, hasPersonalizedFood]);
 
+  // Handle clicking a specific restaurant badge
+  const handleRestaurantClick = useCallback(async (restaurantName: string) => {
+    if (selectedRestaurant === restaurantName) {
+      // Deselect → go back to "all restaurants" recommendation
+      setSelectedRestaurant(null);
+      // Re-fetch with all restaurants
+      setLoadingRestaurant(true);
+      const rec = await fetchSingleRecommendation(nearbyRestaurants, userProfile, false);
+      setRestaurantRec(rec);
+      setLoadingRestaurant(false);
+      return;
+    }
+    setSelectedRestaurant(restaurantName);
+    setLoadingRestaurant(true);
+    setExpanded(true);
+    const rec = await fetchSingleRecommendation([restaurantName], userProfile, false);
+    setRestaurantRec(rec);
+    setLoadingRestaurant(false);
+  }, [selectedRestaurant, nearbyRestaurants, userProfile, stop, language]);
+
   // Tab labels
   const restaurantLabel = language === 'pt' ? 'Restaurantes' : language === 'es' ? 'Restaurantes' : 'Restaurants';
   const convenienceLabel = language === 'pt' ? 'Conveniência' : language === 'es' ? 'Conveniencia' : 'Convenience';
@@ -341,11 +363,16 @@ const FoodSuggestionPrompt: React.FC<FoodSuggestionPromptProps> = ({ stop, onDis
                 </div>
               )}
 
-              {/* Restaurant names when on restaurant tab */}
+              {/* Restaurant names when on restaurant tab — clickable */}
               {!isConvenienceActive && nearbyRestaurants.length > 0 && (
                 <div className="flex flex-wrap gap-1">
-                  {nearbyRestaurants.slice(0, 5).map((name, idx) => (
-                    <Badge key={idx} variant="outline" className="text-xs bg-primary/5">
+                  {nearbyRestaurants.slice(0, 6).map((name, idx) => (
+                    <Badge 
+                      key={idx} 
+                      variant={selectedRestaurant === name ? 'default' : 'outline'} 
+                      className={`text-xs cursor-pointer transition-colors ${selectedRestaurant === name ? 'bg-primary text-primary-foreground' : 'bg-primary/5 hover:bg-primary/15'}`}
+                      onClick={() => handleRestaurantClick(name)}
+                    >
                       <Utensils className="w-2.5 h-2.5 mr-1" />
                       {name}
                     </Badge>
@@ -353,84 +380,100 @@ const FoodSuggestionPrompt: React.FC<FoodSuggestionPromptProps> = ({ stop, onDis
                 </div>
               )}
 
-              {/* Best Choice */}
-              <div className="p-2.5 rounded-lg bg-green-500/10 border border-green-500/20">
-                <div className="flex items-center gap-2 mb-1">
-                  <ThumbsUp className="w-3.5 h-3.5 text-green-600" />
-                  <span className="text-xs font-medium text-green-700 dark:text-green-400">{t.food.bestOption}</span>
-                  <Sparkles className="w-3 h-3 text-primary ml-auto" />
+              {/* Loading indicator when switching restaurant */}
+              {loadingRestaurant && (
+                <div className="flex items-center gap-2 py-2">
+                  <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                  <span className="text-sm text-muted-foreground">
+                    {selectedRestaurant 
+                      ? (language === 'pt' ? `Buscando sugestões para ${selectedRestaurant}...` : `Getting suggestions for ${selectedRestaurant}...`)
+                      : t.food.analyzingOptions}
+                  </span>
                 </div>
-                <p className="font-semibold text-sm">{activeRecommendation.best_choice.item}</p>
-                <p className="text-xs text-muted-foreground">{activeRecommendation.best_choice.reason}</p>
-                {activeRecommendation.best_choice.what_to_pick && activeRecommendation.best_choice.what_to_pick.length > 0 && (
-                  <div className="mt-1.5 flex flex-wrap gap-1">
-                    {activeRecommendation.best_choice.what_to_pick.map((item, idx) => (
-                      <Badge key={idx} variant="secondary" className="text-xs">{item}</Badge>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Expanded content */}
-              {expanded && (
-                <>
-                  {/* Alternative */}
-                  <div className="p-2.5 rounded-lg bg-blue-500/10 border border-blue-500/20">
-                    <Badge variant="secondary" className="bg-blue-500/20 text-blue-700 dark:text-blue-400 text-xs mb-1">
-                      {t.food.alternative}
-                    </Badge>
-                    <p className="font-medium text-sm">{activeRecommendation.alternative.item}</p>
-                    <p className="text-xs text-muted-foreground">{activeRecommendation.alternative.reason}</p>
-                    {activeRecommendation.alternative.what_to_pick && activeRecommendation.alternative.what_to_pick.length > 0 && (
-                      <div className="mt-1.5 flex flex-wrap gap-1">
-                        {activeRecommendation.alternative.what_to_pick.map((item, idx) => (
-                          <Badge key={idx} variant="outline" className="text-xs">{item}</Badge>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Emergency */}
-                  <div className="p-2.5 rounded-lg bg-yellow-500/10 border border-yellow-500/20">
-                    <div className="flex items-center gap-1 mb-1">
-                      <AlertTriangle className="w-3.5 h-3.5 text-yellow-600" />
-                      <span className="text-xs font-medium text-yellow-700 dark:text-yellow-400">{t.food.ifNothingElse}</span>
-                    </div>
-                    <p className="font-medium text-sm">{activeRecommendation.emergency_option.item}</p>
-                    <p className="text-xs text-muted-foreground">{activeRecommendation.emergency_option.reason}</p>
-                    {activeRecommendation.emergency_option.what_to_pick && activeRecommendation.emergency_option.what_to_pick.length > 0 && (
-                      <div className="mt-1.5 flex flex-wrap gap-1">
-                        {activeRecommendation.emergency_option.what_to_pick.map((item, idx) => (
-                          <Badge key={idx} variant="outline" className="text-xs">{item}</Badge>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Avoid */}
-                  {activeRecommendation.avoid && activeRecommendation.avoid.length > 0 && (
-                    <div className="p-2.5 rounded-lg bg-red-500/10 border border-red-500/20">
-                      <div className="flex items-center gap-1 mb-1.5">
-                        <Ban className="w-3.5 h-3.5 text-red-600" />
-                        <span className="text-xs font-medium text-red-700 dark:text-red-400">{t.food.avoid}</span>
-                      </div>
-                      <div className="space-y-1">
-                        {activeRecommendation.avoid.slice(0, 3).map((item, idx) => (
-                          <div key={idx} className="text-xs">
-                            <span className="font-medium">{item.item}</span>
-                            <span className="text-muted-foreground"> - {item.reason}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </>
               )}
 
-              {!expanded && (
-                <p className="text-xs text-muted-foreground text-center">
-                  {t.food.tapToSeeMore}
-                </p>
+              {!loadingRestaurant && (
+                <>
+                  {/* Best Choice */}
+                  <div className="p-2.5 rounded-lg bg-green-500/10 border border-green-500/20">
+                    <div className="flex items-center gap-2 mb-1">
+                      <ThumbsUp className="w-3.5 h-3.5 text-green-600" />
+                      <span className="text-xs font-medium text-green-700 dark:text-green-400">{t.food.bestOption}</span>
+                      <Sparkles className="w-3 h-3 text-primary ml-auto" />
+                    </div>
+                    <p className="font-semibold text-sm">{activeRecommendation.best_choice.item}</p>
+                    <p className="text-xs text-muted-foreground">{activeRecommendation.best_choice.reason}</p>
+                    {activeRecommendation.best_choice.what_to_pick && activeRecommendation.best_choice.what_to_pick.length > 0 && (
+                      <div className="mt-1.5 flex flex-wrap gap-1">
+                        {activeRecommendation.best_choice.what_to_pick.map((item, idx) => (
+                          <Badge key={idx} variant="secondary" className="text-xs">{item}</Badge>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Expanded content */}
+                  {expanded && (
+                    <>
+                      {/* Alternative */}
+                      <div className="p-2.5 rounded-lg bg-blue-500/10 border border-blue-500/20">
+                        <Badge variant="secondary" className="bg-blue-500/20 text-blue-700 dark:text-blue-400 text-xs mb-1">
+                          {t.food.alternative}
+                        </Badge>
+                        <p className="font-medium text-sm">{activeRecommendation.alternative.item}</p>
+                        <p className="text-xs text-muted-foreground">{activeRecommendation.alternative.reason}</p>
+                        {activeRecommendation.alternative.what_to_pick && activeRecommendation.alternative.what_to_pick.length > 0 && (
+                          <div className="mt-1.5 flex flex-wrap gap-1">
+                            {activeRecommendation.alternative.what_to_pick.map((item, idx) => (
+                              <Badge key={idx} variant="outline" className="text-xs">{item}</Badge>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Emergency */}
+                      <div className="p-2.5 rounded-lg bg-yellow-500/10 border border-yellow-500/20">
+                        <div className="flex items-center gap-1 mb-1">
+                          <AlertTriangle className="w-3.5 h-3.5 text-yellow-600" />
+                          <span className="text-xs font-medium text-yellow-700 dark:text-yellow-400">{t.food.ifNothingElse}</span>
+                        </div>
+                        <p className="font-medium text-sm">{activeRecommendation.emergency_option.item}</p>
+                        <p className="text-xs text-muted-foreground">{activeRecommendation.emergency_option.reason}</p>
+                        {activeRecommendation.emergency_option.what_to_pick && activeRecommendation.emergency_option.what_to_pick.length > 0 && (
+                          <div className="mt-1.5 flex flex-wrap gap-1">
+                            {activeRecommendation.emergency_option.what_to_pick.map((item, idx) => (
+                              <Badge key={idx} variant="outline" className="text-xs">{item}</Badge>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Avoid */}
+                      {activeRecommendation.avoid && activeRecommendation.avoid.length > 0 && (
+                        <div className="p-2.5 rounded-lg bg-red-500/10 border border-red-500/20">
+                          <div className="flex items-center gap-1 mb-1.5">
+                            <Ban className="w-3.5 h-3.5 text-red-600" />
+                            <span className="text-xs font-medium text-red-700 dark:text-red-400">{t.food.avoid}</span>
+                          </div>
+                          <div className="space-y-1">
+                            {activeRecommendation.avoid.slice(0, 3).map((item, idx) => (
+                              <div key={idx} className="text-xs">
+                                <span className="font-medium">{item.item}</span>
+                                <span className="text-muted-foreground"> - {item.reason}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
+
+                  {!expanded && (
+                    <p className="text-xs text-muted-foreground text-center">
+                      {t.food.tapToSeeMore}
+                    </p>
+                  )}
+                </>
               )}
             </div>
           ) : (
