@@ -612,6 +612,45 @@ export type Database = {
         }
         Relationships: []
       }
+      fuel_prices: {
+        Row: {
+          created_at: string
+          diesel_price_cents: number
+          id: string
+          lat: number
+          lng: number
+          place_id: string
+          place_name: string
+          reported_by: string | null
+          source: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          diesel_price_cents: number
+          id?: string
+          lat: number
+          lng: number
+          place_id: string
+          place_name: string
+          reported_by?: string | null
+          source?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          diesel_price_cents?: number
+          id?: string
+          lat?: number
+          lng?: number
+          place_id?: string
+          place_name?: string
+          reported_by?: string | null
+          source?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       medication_logs: {
         Row: {
           action: string
@@ -1146,6 +1185,42 @@ export type Database = {
         }
         Relationships: []
       }
+      truck_profiles: {
+        Row: {
+          created_at: string
+          current_fuel_gallons: number | null
+          fuel_preference: string
+          id: string
+          mpg: number
+          tank_capacity_gallons: number
+          truck_name: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          current_fuel_gallons?: number | null
+          fuel_preference?: string
+          id?: string
+          mpg?: number
+          tank_capacity_gallons?: number
+          truck_name?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          current_fuel_gallons?: number | null
+          fuel_preference?: string
+          id?: string
+          mpg?: number
+          tank_capacity_gallons?: number
+          truck_name?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       trucking_news: {
         Row: {
           category: string
@@ -1234,6 +1309,51 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      user_fuel_logs: {
+        Row: {
+          created_at: string
+          gallons: number
+          id: string
+          lat: number | null
+          lng: number | null
+          logged_at: string
+          odometer: number | null
+          place_id: string | null
+          place_name: string
+          price_per_gallon_cents: number
+          total_cost_cents: number
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          gallons: number
+          id?: string
+          lat?: number | null
+          lng?: number | null
+          logged_at?: string
+          odometer?: number | null
+          place_id?: string | null
+          place_name: string
+          price_per_gallon_cents: number
+          total_cost_cents: number
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          gallons?: number
+          id?: string
+          lat?: number | null
+          lng?: number | null
+          logged_at?: string
+          odometer?: number | null
+          place_id?: string | null
+          place_name?: string
+          price_per_gallon_cents?: number
+          total_cost_cents?: number
+          user_id?: string
+        }
+        Relationships: []
       }
       user_roles: {
         Row: {
