@@ -117,7 +117,7 @@ const CommunityScreen = () => {
               </TabsTrigger>
               <TabsTrigger value="facilities" className="flex flex-col items-center gap-0.5 py-2 px-1 text-xs">
                 <Building2 className="w-4 h-4" />
-                <span>{t.community.tabs.facilities}</span>
+                <span>Ratings</span>
               </TabsTrigger>
               <TabsTrigger value="chat" className="flex flex-col items-center gap-0.5 py-2 px-1 text-xs">
                 <MessageCircle className="w-4 h-4" />
