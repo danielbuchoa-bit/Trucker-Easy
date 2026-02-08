@@ -11,7 +11,7 @@ export type StopOfferings = {
   drinks: string[];
 };
 
-interface TruckStopNetwork {
+export interface TruckStopNetwork {
   categories: string[];
   hotItems: string[];
   quickItems: string[];
@@ -19,7 +19,7 @@ interface TruckStopNetwork {
   warningFlags: string[];
 }
 
-interface RestaurantChain {
+export interface RestaurantChain {
   cuisine: string;
   typicalItems: string[];
 }
@@ -100,6 +100,7 @@ export function detectTruckStopBrand(nameRaw?: string): TruckStopBrand | null {
 
   if (name.includes("love's") || name.includes('loves')) return 'loves';
   if (name.includes('pilot') || name.includes('flying j') || name.includes('flyingj')) return 'pilot';
+
   if (
     name === 'ta' ||
     name.includes('travelcenters of america') ||
@@ -107,9 +108,15 @@ export function detectTruckStopBrand(nameRaw?: string): TruckStopBrand | null {
     name.includes('ta travel') ||
     name.includes('t/a')
   ) return 'ta';
+
   if (name.includes('petro')) return 'petro';
-  if (name.includes('kwik trip') || name.includes('kwik star') || name.includes('kwiktrip') || name.includes('kwikstar'))
-    return 'kwiktrip';
+
+  if (
+    name.includes('kwik trip') ||
+    name.includes('kwik star') ||
+    name.includes('kwiktrip') ||
+    name.includes('kwikstar')
+  ) return 'kwiktrip';
 
   return null;
 }
@@ -146,12 +153,16 @@ export function resolveFoodOfferings(params: {
     };
   }
 
-  if (restaurantChainKey && RESTAURANT_CHAINS[restaurantChainKey]) {
-    return {
-      offerings: GENERIC_OFFERINGS,
-      typicalItems: RESTAURANT_CHAINS[restaurantChainKey].typicalItems,
-      disclaimer: FOOD_DISCLAIMER,
-    };
+  if (restaurantChainKey) {
+    const key = restaurantChainKey.toLowerCase().trim();
+    const chain = RESTAURANT_CHAINS[key];
+    if (chain) {
+      return {
+        offerings: GENERIC_OFFERINGS,
+        typicalItems: chain.typicalItems,
+        disclaimer: FOOD_DISCLAIMER,
+      };
+    }
   }
 
   return {

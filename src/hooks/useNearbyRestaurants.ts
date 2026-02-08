@@ -6,8 +6,10 @@ import {
 } from '@/lib/truckFriendlyFilter';
 import {
   type StopOfferings,
+  type TruckStopBrand,
   detectTruckStopBrand,
   networkToOfferings,
+  resolveFoodOfferings,
   TRUCK_STOP_NETWORKS,
   GENERIC_OFFERINGS,
   FOOD_DISCLAIMER,
