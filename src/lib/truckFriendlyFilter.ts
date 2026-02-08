@@ -28,6 +28,8 @@ export const TRUCK_STOP_ATTACHED_RESTAURANTS = [
   "dunkin", "starbucks", "tim horton",
   // Pizza
   "pizza hut", "domino", "papa john", "little caesar", "hunt brothers",
+  // Mediterranean / Other chains found inside truck stops
+  "naf naf", "chipotle",
 ];
 
 // Highway/Interstate restaurant brands known to have truck parking
