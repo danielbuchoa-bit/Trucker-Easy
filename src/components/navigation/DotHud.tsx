@@ -127,8 +127,8 @@ function getBreakClockText(state: any): { text: string; urgent: boolean } {
     return { text: `em progresso ${fmtHM(restSec)} / 00:30`, urgent: false };
   }
 
-  // Break completed
-  if ((state.breakDrivingSinceLastBreakSec ?? 0) === 0 && restSec >= BREAK_DURATION_SEC) {
+  // Break completed (must be resting to count)
+  if (isResting && (state.breakDrivingSinceLastBreakSec ?? 0) === 0 && restSec >= BREAK_DURATION_SEC) {
     return { text: 'OK ✅', urgent: false };
   }
 
@@ -170,10 +170,10 @@ const DotHud = memo(function DotHud({ onStopNow }: { onStopNow?: () => void }) {
   }, [state]);
 
   useEffect(() => {
-    if (violation === 'none') return;
-    const t = setInterval(() => forceTick(v => (v + 1) % 1000000), 1000);
+    if (violation === 'none' || !override.overtimeStartTs) return;
+    const t = setInterval(() => forceTick(v => (v + 1) % 1_000_000), 1000);
     return () => clearInterval(t);
-  }, [violation]);
+  }, [violation, override.overtimeStartTs]);
 
   const warning = useMemo(() => computeWarning(state), [state]);
 
