@@ -40,18 +40,13 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
       
       if (!user) {
         setState({
-          tier: 'none',
-          provider: null,
-          status: null,
-          currentPeriodEnd: null,
-          cancelAtPeriodEnd: false,
-          isLoading: false,
-          isSubscribed: false,
+          tier: 'none', provider: null, status: null,
+          currentPeriodEnd: null, cancelAtPeriodEnd: false,
+          isLoading: false, isSubscribed: false,
         });
         return;
       }
 
-      // Query subscriptions table directly - single source of truth
       const { data: subscription, error } = await supabase
         .from('subscriptions')
         .select('*')
@@ -65,27 +60,19 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
       }
 
       if (!subscription) {
-        // No subscription record - user has no active subscription
         setState({
-          tier: 'none',
-          provider: null,
-          status: null,
-          currentPeriodEnd: null,
-          cancelAtPeriodEnd: false,
-          isLoading: false,
-          isSubscribed: false,
+          tier: 'none', provider: null, status: null,
+          currentPeriodEnd: null, cancelAtPeriodEnd: false,
+          isLoading: false, isSubscribed: false,
         });
         return;
       }
 
-      // Check if subscription is active or trialing
       const isActive = subscription.status === 'active' || subscription.status === 'trialing';
       
-      // Validate tier and map to SubscriptionTier
-      const validTiers: SubscriptionTier[] = ['silver', 'gold', 'diamond'];
-      const tier: SubscriptionTier = validTiers.includes(subscription.plan_tier as SubscriptionTier) 
-        ? (subscription.plan_tier as SubscriptionTier)
-        : 'none';
+      // Map any plan_tier value to 'pro' (covers legacy silver/gold/diamond too)
+      const tier: SubscriptionTier = (subscription.plan_tier && subscription.plan_tier !== 'none') 
+        ? 'pro' : 'none';
 
       setState({
         tier: isActive ? tier : 'none',
@@ -102,7 +89,6 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
     }
   }, []);
 
-  // Check subscription on mount and auth changes
   useEffect(() => {
     checkSubscription();
 
@@ -110,24 +96,13 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
       checkSubscription();
     });
 
-    // Auto-refresh every 60 seconds
     const interval = setInterval(checkSubscription, 60000);
 
-    // Subscribe to realtime updates on subscriptions table
     const channel = supabase
       .channel('subscription-changes')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'subscriptions',
-        },
-        () => {
-          // Refresh when subscription changes
-          checkSubscription();
-        }
-      )
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'subscriptions' }, () => {
+        checkSubscription();
+      })
       .subscribe();
 
     return () => {
@@ -146,12 +121,7 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
   }, [state.tier]);
 
   return (
-    <SubscriptionContext.Provider value={{
-      ...state,
-      checkSubscription,
-      hasAccess,
-      needsUpgrade,
-    }}>
+    <SubscriptionContext.Provider value={{ ...state, checkSubscription, hasAccess, needsUpgrade }}>
       {children}
     </SubscriptionContext.Provider>
   );

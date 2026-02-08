@@ -1,65 +1,33 @@
 /**
- * Hook to check feature access based on subscription tier
- * 
- * Features by tier:
- * 
- * SILVER ($8.99/mo):
- * - Truck-aware GPS navigation (height, weight, length)
- * - Safe routes for semi-trucks
- * - Truck-only POIs (truck stops, rest areas, weigh stations)
- * - Community ratings & reviews
- * - Near Me with truck-relevant locations
- * - Basic route alerts (closures & detours)
- * 
- * GOLD ($18.99/mo) - Everything in Silver, plus:
- * - Offline maps (full coverage)
- * - Real-time traffic updates
- * - Weather alerts for trucks (wind, snow, ice, rain)
- * - Smart stop suggestions (drive time & rest)
- * - Personalized food suggestions
- * - Convenience store fallback recommendations
- * - Complete route history
- * 
- * DIAMOND ($28.90/mo) - Everything in Gold, plus:
- * - Advanced map matching (stable cursor)
- * - Smart rerouting with minimal fluctuation
- * - Route comparison (shortest, safest, fewer stops)
- * - Trip reports (time, stops, usage patterns)
- * - Advanced POI ratings (photos & detailed reviews)
- * - Premium community access (exclusive rooms)
- * - Priority support
+ * Hook to check feature access based on subscription
+ * All features require PRO plan ($19.99/mo or $179.99/yr)
  */
 
 import { useSubscription } from '@/contexts/SubscriptionContext';
 import { SubscriptionTier } from '@/lib/subscriptionTiers';
 
-// Feature definitions with required tier
+// All features require PRO
 export const FEATURES = {
-  // Silver features (included in all plans)
-  truckGpsNavigation: 'silver',
-  safeRoutes: 'silver',
-  truckPois: 'silver',
-  communityRatings: 'silver',
-  nearMe: 'silver',
-  basicRouteAlerts: 'silver',
-  
-  // Gold features
-  offlineMaps: 'gold',
-  realTimeTraffic: 'gold',
-  weatherAlerts: 'gold',
-  smartStopSuggestions: 'gold',
-  personalizedFoodSuggestions: 'gold',
-  convenienceFallback: 'gold',
-  routeHistory: 'gold',
-  
-  // Diamond features
-  advancedMapMatching: 'diamond',
-  smartRerouting: 'diamond',
-  routeComparison: 'diamond',
-  tripReports: 'diamond',
-  advancedPoiRatings: 'diamond',
-  premiumCommunity: 'diamond',
-  prioritySupport: 'diamond',
+  truckGpsNavigation: 'pro',
+  safeRoutes: 'pro',
+  truckPois: 'pro',
+  communityRatings: 'pro',
+  nearMe: 'pro',
+  basicRouteAlerts: 'pro',
+  offlineMaps: 'pro',
+  realTimeTraffic: 'pro',
+  weatherAlerts: 'pro',
+  smartStopSuggestions: 'pro',
+  personalizedFoodSuggestions: 'pro',
+  convenienceFallback: 'pro',
+  routeHistory: 'pro',
+  advancedMapMatching: 'pro',
+  smartRerouting: 'pro',
+  routeComparison: 'pro',
+  tripReports: 'pro',
+  advancedPoiRatings: 'pro',
+  premiumCommunity: 'pro',
+  prioritySupport: 'pro',
 } as const;
 
 export type FeatureKey = keyof typeof FEATURES;
@@ -67,24 +35,14 @@ export type FeatureKey = keyof typeof FEATURES;
 export function useFeatureAccess() {
   const { tier, hasAccess, isLoading, isSubscribed } = useSubscription();
   
-  /**
-   * Check if user has access to a specific feature
-   */
   const canAccess = (feature: FeatureKey): boolean => {
-    const requiredTier = FEATURES[feature] as SubscriptionTier;
-    return hasAccess(requiredTier);
+    return hasAccess('pro');
   };
   
-  /**
-   * Get the required tier for a feature
-   */
-  const getRequiredTier = (feature: FeatureKey): Exclude<SubscriptionTier, 'none'> => {
-    return FEATURES[feature] as Exclude<SubscriptionTier, 'none'>;
+  const getRequiredTier = (_feature: FeatureKey): Exclude<SubscriptionTier, 'none'> => {
+    return 'pro';
   };
   
-  /**
-   * Check if user needs to upgrade for a feature
-   */
   const needsUpgradeFor = (feature: FeatureKey): boolean => {
     return !canAccess(feature);
   };
@@ -96,9 +54,10 @@ export function useFeatureAccess() {
     canAccess,
     getRequiredTier,
     needsUpgradeFor,
-    // Convenience accessors for common feature groups
-    hasGoldFeatures: hasAccess('gold'),
-    hasDiamondFeatures: hasAccess('diamond'),
+    hasProAccess: hasAccess('pro'),
+    // Legacy compat
+    hasGoldFeatures: hasAccess('pro'),
+    hasDiamondFeatures: hasAccess('pro'),
   };
 }
 
