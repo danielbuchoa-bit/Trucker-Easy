@@ -1,9 +1,8 @@
 /**
- * DOT HUD "Support Mode" — Visual support inside GPS, NOT a full logbook.
- * - Default QUIET mode: minimal alerts (15min before + at violation once)
- * - No operational "reset DOT" (only UI/ack/snooze)
- * - "Stop Now" = primary value (opens POIs/parking suggestions)
- * - Future-ready: truth (external logbook) separate from UI state
+ * DOT HUD (Support Mode) – NOT a logbook.
+ * - Minimal alerts (Quiet default)
+ * - Visual-only override (does not change official logbook)
+ * - "Stop now" is the primary value hook (onStopNow)
  */
 
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -11,13 +10,14 @@ import { useDotHosSafe } from "@/contexts/DotHosContext";
 import { cn } from "@/lib/utils";
 import { Clock, AlertTriangle, X, Shield } from "lucide-react";
 
-// === Constants ===
+// === Config ===
 const DRIVE_LIMIT_SEC = 11 * 3600;
 const SHIFT_LIMIT_SEC = 14 * 3600;
 const BREAK_REQUIRED_AFTER_SEC = 8 * 3600;
 const BREAK_DURATION_SEC = 30 * 60;
 const WARN_THRESHOLD_SEC = 15 * 60;
 
+const UI_STORAGE_KEY = "dotHud_support_ui_v1";
 const QUIET_SNOOZE_MINUTES_DEFAULT = 30;
 const DISMISS_QUIET_MINUTES_DEFAULT = 60;
 
@@ -34,8 +34,6 @@ interface SupportUiState {
   lastWarnAtTs: number;
   lastViolateAtTs: number;
 }
-
-const UI_STORAGE_KEY = "dotHud_support_ui_v1";
 
 // === Helpers ===
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
@@ -102,15 +100,25 @@ function computeWarning(state: any): { warn: boolean; label: string; remainingSe
   return { warn, label, remainingSec: Math.max(0, minRem === Infinity ? 0 : minRem) };
 }
 
+function computeDutyElapsed(state: any): { seconds: number; hasSignal: boolean } {
+  if (!state) return { seconds: 0, hasSignal: false };
+
+  const hasWindow = state.dutyWindowSec != null && state.dutyWindowSec > 0;
+  const hasRemaining = state.dutyRemainingSec != null;
+
+  const fallback = Math.max(0, SHIFT_LIMIT_SEC - (state.dutyRemainingSec ?? SHIFT_LIMIT_SEC));
+  const dutyElapsed = hasWindow ? state.dutyWindowSec : fallback;
+
+  return { seconds: dutyElapsed, hasSignal: hasWindow || hasRemaining };
+}
+
 function computeBarFill(state: any): number {
   if (!state) return 0;
 
   const driveFrac = clamp01((state.drivingTodaySec ?? 0) / DRIVE_LIMIT_SEC);
 
-  const dutyElapsed = (state.dutyWindowSec != null && state.dutyWindowSec > 0)
-    ? state.dutyWindowSec
-    : (SHIFT_LIMIT_SEC - (state.dutyRemainingSec ?? SHIFT_LIMIT_SEC));
-  const shiftFrac = clamp01(dutyElapsed / SHIFT_LIMIT_SEC);
+  const duty = computeDutyElapsed(state);
+  const shiftFrac = clamp01(duty.seconds / SHIFT_LIMIT_SEC);
 
   const breakFrac = state.needsBreak
     ? 1
@@ -142,8 +150,7 @@ function getBreakText(state: any): string {
 // === Alert policy ===
 
 function shouldShowWarning(ui: SupportUiState, warning: { warn: boolean }, violation: ViolationType): boolean {
-  if (!warning.warn) return false;
-  if (violation !== "none") return false;
+  if (!warning.warn || violation !== "none") return false;
   const now = Date.now();
   if (ui.quietUntilTs > now) return false;
 
@@ -275,7 +282,7 @@ const DotHud = memo(function DotHud({ onStopNow }: { onStopNow?: () => void }) {
     onStopNow?.();
   }, [onStopNow, updateUi, violation]);
 
-  // Long-press: cycle mode (Quiet → Normal → Hardcore)
+  // Tap toggles clock; long press cycles modes
   const onPressStart = useCallback(() => {
     longPressFired.current = false;
     if (pressTimer.current) window.clearTimeout(pressTimer.current);
@@ -310,10 +317,12 @@ const DotHud = memo(function DotHud({ onStopNow }: { onStopNow?: () => void }) {
   const modeLabel = ui.mode === "quiet" ? "Quiet" : ui.mode === "normal" ? "Normal" : "Hardcore";
 
   const driveLine = `Drive: ${fmtHM(state.drivingTodaySec ?? 0)} / ${fmtHM(DRIVE_LIMIT_SEC)}`;
-  const shiftElapsed = (state.dutyWindowSec != null && state.dutyWindowSec > 0)
-    ? state.dutyWindowSec
-    : (SHIFT_LIMIT_SEC - (state.dutyRemainingSec ?? SHIFT_LIMIT_SEC));
-  const shiftLine = `Shift: ${fmtHM(shiftElapsed)} / ${fmtHM(SHIFT_LIMIT_SEC)}`;
+
+  const duty = computeDutyElapsed(state);
+  const shiftLine = duty.hasSignal
+    ? `Shift: ${fmtHM(duty.seconds)} / ${fmtHM(SHIFT_LIMIT_SEC)}`
+    : `Shift: — / ${fmtHM(SHIFT_LIMIT_SEC)}`;
+
   const breakLine = getBreakText(state);
 
   return (
@@ -328,7 +337,7 @@ const DotHud = memo(function DotHud({ onStopNow }: { onStopNow?: () => void }) {
         className="flex items-center gap-2 cursor-pointer select-none"
         role="button"
         aria-label="DOT Hours of Service"
-        title="Tap: show/hide clock • Long press: cycle Quiet/Normal/Hardcore"
+        title="Tap: show/hide clock • Long press: Quiet → Normal → Hardcore"
       >
         <div className={cn(
           "relative w-28 h-3 rounded-full overflow-hidden shadow-lg backdrop-blur-sm border border-white/20",
@@ -343,7 +352,7 @@ const DotHud = memo(function DotHud({ onStopNow }: { onStopNow?: () => void }) {
         <span className="text-[10px] font-bold uppercase tracking-wide text-white/80 drop-shadow-md">DOT</span>
       </div>
 
-      {/* === CLOCK (support mode: compact) === */}
+      {/* === CLOCK (compact support) === */}
       {showClock && (
         <div className="bg-gray-900/92 backdrop-blur-md text-white rounded-xl px-3 py-2.5 shadow-2xl border border-white/10 w-56">
           <div className="flex items-center justify-between mb-1.5">
@@ -353,7 +362,7 @@ const DotHud = memo(function DotHud({ onStopNow }: { onStopNow?: () => void }) {
             <span className="text-[9px] font-medium text-white/60">
               {modeLabel}
               {ui.overrideActive && violation !== "none" && (
-                <span className="text-red-400 ml-1 flex items-center gap-0.5 inline-flex">
+                <span className="text-red-400 ml-1 inline-flex items-center gap-0.5">
                   <Shield className="w-2.5 h-2.5" /> Override
                 </span>
               )}
@@ -390,7 +399,8 @@ const DotHud = memo(function DotHud({ onStopNow }: { onStopNow?: () => void }) {
               <AlertTriangle className="w-3.5 h-3.5 text-red-400" />
               {alertKind === "warning" ? "Atenção DOT" : "DOT estourou"}
             </span>
-            <button onClick={dismissX} className="p-0.5 hover:bg-white/10 rounded" aria-label="Dispensar">
+            <button onClick={dismissX} className="p-0.5 hover:bg-white/10 rounded" aria-label="Dispensar"
+              title="Fechar e silenciar (não ativa override)">
               <X className="w-3.5 h-3.5 text-white/60" />
             </button>
           </div>
@@ -415,6 +425,7 @@ const DotHud = memo(function DotHud({ onStopNow }: { onStopNow?: () => void }) {
               <button
                 onClick={ignore}
                 className="flex-1 text-[11px] font-bold py-2 rounded-lg bg-red-500/15 border border-red-500/25 text-red-400 hover:bg-red-500/25 transition-colors"
+                title="Override visual + silenciar"
               >
                 Ignorar
               </button>
@@ -422,6 +433,7 @@ const DotHud = memo(function DotHud({ onStopNow }: { onStopNow?: () => void }) {
               <button
                 onClick={ackSeen}
                 className="flex-1 text-[11px] font-bold py-2 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 transition-colors"
+                title="Marcar como visto"
               >
                 Entendi
               </button>
