@@ -1461,10 +1461,9 @@ export type Database = {
         Args: { p_facility_id: string; p_user_id: string }
         Returns: boolean
       }
-      can_submit_poi_feedback: {
-        Args: { p_poi_id: string; p_user_id: string }
-        Returns: boolean
-      }
+      can_submit_poi_feedback:
+        | { Args: { p_poi_id: string; p_user_id: string }; Returns: boolean }
+        | { Args: { p_poi_id: string; p_user_id: string }; Returns: boolean }
       get_available_credits: { Args: { p_user_id: string }; Returns: number }
       has_role: {
         Args: {
