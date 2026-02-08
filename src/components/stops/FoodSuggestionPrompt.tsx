@@ -100,35 +100,33 @@ const FoodSuggestionPrompt: React.FC<FoodSuggestionPromptProps> = ({ stop, onDis
         body: {
           lat: stop.lat,
           lng: stop.lng,
-          radiusMeters: 500,
+          radiusMeters: 800,
           filterType: 'food',
-          limit: 25,
+          limit: 30,
         },
       });
       if (fnError) {
         console.error('[FoodSuggestion] Restaurant search error:', fnError);
         return [];
       }
-      if (data?.pois) {
-        console.log('[FoodSuggestion] All food POIs returned:', data.pois.length, data.pois.map((p: any) => p.name));
-        const truckFriendlyRestaurants = data.pois.filter((p: any) => {
+      // API returns 'items' array — fallback to 'pois' for backwards compat
+      const pois = data?.items || data?.pois || [];
+      console.log('[FoodSuggestion] All food POIs returned:', pois.length, pois.map((p: any) => p.name));
+      if (pois.length > 0) {
+        const truckFriendlyRestaurants = pois.filter((p: any) => {
           const name = (p.name || '').toLowerCase();
           const chainName = (p.chainName || '').toLowerCase();
           const searchText = `${name} ${chainName}`;
-          const match = TRUCK_STOP_ATTACHED_RESTAURANTS.some(brand =>
+          return TRUCK_STOP_ATTACHED_RESTAURANTS.some(brand =>
             searchText.includes(brand.toLowerCase())
           );
-          if (!match) {
-            console.log('[FoodSuggestion] POI not matched:', p.name, '| chainName:', p.chainName);
-          }
-          return match;
         });
         const names = truckFriendlyRestaurants.map((p: any) => p.name).filter(Boolean);
-        console.log('[FoodSuggestion] Truck-friendly restaurants found:', names.length, names);
+        console.log('[FoodSuggestion] Truck-friendly restaurants matched:', names.length, names);
         setNearbyRestaurants(names);
         return names;
       }
-      console.log('[FoodSuggestion] No pois in response:', data);
+      console.log('[FoodSuggestion] No POIs in response:', JSON.stringify(Object.keys(data || {})));
       return [];
     } catch (err) {
       console.error('[FoodSuggestion] Error fetching restaurants:', err);
