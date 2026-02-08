@@ -285,10 +285,10 @@ export const PoiFeedbackProvider: React.FC<{ children: React.ReactNode }> = ({ c
       }
     }
 
-    // ---- DWELL FALLBACK: stopped for 2.5min near a truck stop ----
+    // ---- DWELL FALLBACK: stopped for 2.5min near a truck stop (high/medium confidence only) ----
     if (!currentVisitedPoi && !dwellTriggeredRef.current && canTrigger()) {
       const isDwelling = checkDwell(latitude, longitude);
-      if (isDwelling && top && top.score > 0) {
+      if (isDwelling && top && (top.confidence === 'high' || top.confidence === 'medium')) {
         console.log(`[PoiFeedback] 🛑 Dwell detected near: ${top.poi.title} (dist=${Math.round(top.distanceMeters)}m, score=${top.score})`);
         const poiType = mapPoiType(top.poi.categories?.[0]?.id || 'fuel');
         const dwellPoi: VisitedPoi = {
