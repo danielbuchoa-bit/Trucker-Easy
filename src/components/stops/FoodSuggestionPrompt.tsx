@@ -100,7 +100,7 @@ const FoodSuggestionPrompt: React.FC<FoodSuggestionPromptProps> = ({ stop, onDis
         body: {
           lat: stop.lat,
           lng: stop.lng,
-          radiusMeters: 800,
+          radiusMeters: 500,
           filterType: 'food',
           limit: 30,
         },
