@@ -1,140 +1,71 @@
-// Subscription tier definitions for Trucker Easy
+// Subscription tier definitions for Trucker Easy - Single PRO Plan
 
-export type SubscriptionTier = 'none' | 'silver' | 'gold' | 'diamond';
+export type SubscriptionTier = 'none' | 'pro';
 
-export interface TierPrice {
-  monthly: {
-    price_id: string;
-    amount: number; // in cents
-  };
-  annual: {
-    price_id: string;
-    amount: number; // in cents
-  };
+export interface PlanPrice {
+  price_id: string;
+  amount: number; // in cents
 }
 
-export interface TierFeature {
-  text: string;
-  included: boolean;
-}
-
-export interface TierDefinition {
-  id: SubscriptionTier;
+export interface PlanDefinition {
   name: string;
   description: string;
-  prices: TierPrice;
+  monthly: PlanPrice;
+  annual: PlanPrice;
   product_ids: string[];
-  color: string;
-  icon: 'shield' | 'crown' | 'gem';
+  trial_days: number;
   features: string[];
-  highlight?: boolean;
 }
 
-// Stripe product and price IDs
-export const SUBSCRIPTION_TIERS: Record<Exclude<SubscriptionTier, 'none'>, TierDefinition> = {
-  silver: {
-    id: 'silver',
-    name: 'Silver',
-    description: 'Essential truck-aware GPS navigation',
-    prices: {
-      monthly: {
-        price_id: 'price_1Ssvqk2MEO38NbGnrwicv0nZ',
-        amount: 899,
-      },
-      annual: {
-        price_id: 'price_1Ssvr02MEO38NbGnHCesYJTW',
-        amount: 8999,
-      },
-    },
-    product_ids: ['prod_Tqd6KgfSHZl70M', 'prod_Tqd7gxOqCVfQfZ'],
-    color: 'from-slate-400 to-slate-500',
-    icon: 'shield',
-    features: [
-      'Truck-aware GPS navigation (height, weight, length)',
-      'Safe routes for semi-trucks',
-      'Truck-only POIs (truck stops, rest areas, weigh stations)',
-      'Community ratings & reviews',
-      'Near Me with truck-relevant locations',
-      'Basic route alerts (closures & detours)',
-    ],
+// Stripe product and price IDs - PRO Plan
+export const PRO_PLAN: PlanDefinition = {
+  name: 'PRO',
+  description: 'Full access to all features',
+  monthly: {
+    price_id: 'price_1SyR2S2MEO38NbGnf4yYBL5b',
+    amount: 1999,
   },
-  gold: {
-    id: 'gold',
-    name: 'Gold',
-    description: 'Advanced features for professional drivers',
-    prices: {
-      monthly: {
-        price_id: 'price_1SsvrH2MEO38NbGnotCQ0O6t',
-        amount: 1899,
-      },
-      annual: {
-        price_id: 'price_1Ssvra2MEO38NbGnQlRov7sI',
-        amount: 18999,
-      },
-    },
-    product_ids: ['prod_Tqd7XjlDhI502Y', 'prod_Tqd7fgQhIoNao2'],
-    color: 'from-yellow-500 to-amber-600',
-    icon: 'crown',
-    highlight: true,
-    features: [
-      'Everything in Silver, plus:',
-      'Offline maps (full coverage)',
-      'Real-time traffic updates',
-      'Weather alerts for trucks (wind, snow, ice, rain)',
-      'Smart stop suggestions (drive time & rest)',
-      'Personalized food suggestions',
-      'Convenience store fallback recommendations',
-      'Complete route history',
-    ],
+  annual: {
+    price_id: 'price_1SyR2d2MEO38NbGnIOso9kgl',
+    amount: 17999,
   },
-  diamond: {
-    id: 'diamond',
-    name: 'Diamond',
-    description: 'Premium experience for elite drivers',
-    prices: {
-      monthly: {
-        price_id: 'price_1SsvsT2MEO38NbGnVvDveuJ4',
-        amount: 2890,
-      },
-      annual: {
-        price_id: 'price_1Ssvsd2MEO38NbGnsBl3ne5X',
-        amount: 28900,
-      },
-    },
-    product_ids: ['prod_Tqd8Zl3fQQuQ4Z', 'prod_Tqd8hhSX3tN1xF'],
-    color: 'from-cyan-400 to-blue-600',
-    icon: 'gem',
-    features: [
-      'Everything in Gold, plus:',
-      'Advanced map matching (stable cursor)',
-      'Smart rerouting with minimal fluctuation',
-      'Route comparison (shortest, safest, fewer stops)',
-      'Trip reports (time, stops, usage patterns)',
-      'Advanced POI ratings (photos & detailed reviews)',
-      'Premium community access (exclusive rooms)',
-      'Priority support',
-    ],
-  },
+  product_ids: ['prod_TwJfOGBBNJ6Myz', 'prod_TwJfW7sH7eyHrC'],
+  trial_days: 5,
+  features: [
+    'Truck-aware GPS navigation (height, weight, length)',
+    'Safe routes for semi-trucks',
+    'Truck-only POIs (truck stops, rest areas, weigh stations)',
+    'Community ratings & reviews',
+    'Near Me with truck-relevant locations',
+    'Real-time traffic & weather alerts',
+    'Offline maps (full coverage)',
+    'Smart stop & food suggestions',
+    'Advanced map matching & rerouting',
+    'Route comparison & trip reports',
+    'Premium community access',
+    'Priority support',
+  ],
 };
 
-// Helper to get tier from Stripe product ID
-export function getTierFromProductId(productId: string | null): SubscriptionTier {
-  if (!productId) return 'none';
-  
-  for (const [tier, definition] of Object.entries(SUBSCRIPTION_TIERS)) {
-    if (definition.product_ids.includes(productId)) {
-      return tier as SubscriptionTier;
-    }
-  }
-  return 'none';
+// Referral coupon ID
+export const REFERRAL_COUPON_ID = '1Obg7UIY';
+
+// All price IDs mapped to PRO
+export const PRICE_IDS = [
+  PRO_PLAN.monthly.price_id,
+  PRO_PLAN.annual.price_id,
+];
+
+// Helper to check if a product ID belongs to PRO
+export function isProProduct(productId: string | null): boolean {
+  if (!productId) return false;
+  return PRO_PLAN.product_ids.includes(productId);
 }
 
-// Check if a tier has access to a feature tier level
+// Check if user has PRO access
 export function hasTierAccess(userTier: SubscriptionTier, requiredTier: SubscriptionTier): boolean {
-  const tierOrder: SubscriptionTier[] = ['none', 'silver', 'gold', 'diamond'];
-  const userIndex = tierOrder.indexOf(userTier);
-  const requiredIndex = tierOrder.indexOf(requiredTier);
-  return userIndex >= requiredIndex;
+  if (requiredTier === 'none') return true;
+  return userTier === 'pro';
 }
 
 // Format price for display
@@ -143,8 +74,29 @@ export function formatPrice(amountCents: number): string {
 }
 
 // Calculate annual savings
-export function calculateAnnualSavings(tier: TierDefinition): number {
-  const monthlyTotal = tier.prices.monthly.amount * 12;
-  const annualPrice = tier.prices.annual.amount;
-  return monthlyTotal - annualPrice;
+export function calculateAnnualSavings(): number {
+  return (PRO_PLAN.monthly.amount * 12) - PRO_PLAN.annual.amount;
 }
+
+// Legacy compatibility - map old tiers to pro
+export function getTierFromProductId(productId: string | null): SubscriptionTier {
+  if (!productId) return 'none';
+  if (PRO_PLAN.product_ids.includes(productId)) return 'pro';
+  // Legacy product IDs also map to pro for backward compat
+  return 'pro';
+}
+
+// Keep old types available for SubscriptionContext backward compat
+export type { PlanDefinition as TierDefinition };
+
+// Legacy export for components that reference SUBSCRIPTION_TIERS
+export const SUBSCRIPTION_TIERS = {
+  pro: {
+    id: 'pro' as const,
+    name: 'PRO',
+    description: PRO_PLAN.description,
+    color: 'from-blue-500 to-indigo-600',
+    icon: 'crown' as const,
+    features: PRO_PLAN.features,
+  },
+};

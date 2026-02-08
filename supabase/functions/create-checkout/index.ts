@@ -12,8 +12,11 @@ const logStep = (step: string, details?: any) => {
   console.log(`[CREATE-CHECKOUT] ${step}${detailsStr}`);
 };
 
-// Default to Silver monthly if no priceId provided
-const DEFAULT_PRICE_ID = "price_1Ssvqk2MEO38NbGnrwicv0nZ";
+// PRO Plan prices
+const MONTHLY_PRICE_ID = "price_1SyR2S2MEO38NbGnf4yYBL5b";
+const ANNUAL_PRICE_ID = "price_1SyR2d2MEO38NbGnIOso9kgl";
+const REFERRAL_COUPON_ID = "1Obg7UIY";
+const TRIAL_DAYS = 5;
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -28,17 +31,21 @@ serve(async (req) => {
   try {
     logStep("Function started");
 
-    // Parse request body for priceId
-    let priceId = DEFAULT_PRICE_ID;
+    let priceId = MONTHLY_PRICE_ID;
+    let referralCode: string | undefined;
+    
     try {
       const body = await req.json();
       if (body.priceId) {
         priceId = body.priceId;
       }
+      if (body.referralCode) {
+        referralCode = body.referralCode;
+      }
     } catch {
-      // No body or invalid JSON, use default
+      // No body or invalid JSON, use defaults
     }
-    logStep("Using price", { priceId });
+    logStep("Using price", { priceId, referralCode: referralCode || 'none' });
 
     const authHeader = req.headers.get("Authorization")!;
     const token = authHeader.replace("Bearer ", "");
@@ -58,21 +65,17 @@ serve(async (req) => {
       logStep("Existing customer found", { customerId });
     }
 
-    const session = await stripe.checkout.sessions.create({
+    // Build checkout session config
+    const sessionConfig: any = {
       customer: customerId,
       customer_email: customerId ? undefined : user.email,
-      line_items: [
-        {
-          price: priceId,
-          quantity: 1,
-        },
-      ],
+      line_items: [{ price: priceId, quantity: 1 }],
       mode: "subscription",
       success_url: `${req.headers.get("origin")}/subscription/success`,
       cancel_url: `${req.headers.get("origin")}/choose-plan?canceled=true`,
-      allow_promotion_codes: true,
+      allow_promotion_codes: !referralCode, // Disable promo codes if referral applied
       subscription_data: {
-        trial_period_days: 3,
+        trial_period_days: TRIAL_DAYS,
         metadata: {
           user_id: user.id,
           user_email: user.email,
@@ -82,8 +85,16 @@ serve(async (req) => {
         user_id: user.id,
         requested_price_id: priceId,
       },
-    });
+    };
 
+    // Apply referral coupon if valid code provided
+    if (referralCode) {
+      logStep("Applying referral coupon", { referralCode });
+      sessionConfig.discounts = [{ coupon: REFERRAL_COUPON_ID }];
+      sessionConfig.metadata.referral_code = referralCode;
+    }
+
+    const session = await stripe.checkout.sessions.create(sessionConfig);
     logStep("Checkout session created", { sessionId: session.id });
 
     return new Response(JSON.stringify({ url: session.url }), {

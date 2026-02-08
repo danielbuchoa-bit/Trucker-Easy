@@ -15,59 +15,22 @@ const endpointSecret = Deno.env.get("STRIPE_WEBHOOK_SECRET");
 const telegramBotToken = Deno.env.get("TELEGRAM_BOT_TOKEN");
 const telegramChatId = Deno.env.get("TELEGRAM_CHAT_ID");
 
-// Send Telegram notification
-async function sendTelegramAlert(message: string) {
-  if (!telegramBotToken || !telegramChatId) {
-    console.log('[stripe_webhook] Telegram not configured, skipping notification');
-    return;
-  }
+const REFERRAL_COUPON_ID = "1Obg7UIY";
 
+async function sendTelegramAlert(message: string) {
+  if (!telegramBotToken || !telegramChatId) return;
   try {
-    const url = `https://api.telegram.org/bot${telegramBotToken}/sendMessage`;
-    const response = await fetch(url, {
+    await fetch(`https://api.telegram.org/bot${telegramBotToken}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: telegramChatId,
-        text: message,
-        parse_mode: 'HTML',
-      }),
+      body: JSON.stringify({ chat_id: telegramChatId, text: message, parse_mode: 'HTML' }),
     });
-
-    if (!response.ok) {
-      console.error('[stripe_webhook] Telegram error:', await response.text());
-    } else {
-      console.log('[stripe_webhook] Telegram notification sent successfully');
-    }
   } catch (err) {
-    console.error('[stripe_webhook] Failed to send Telegram notification:', err);
+    console.error('[stripe_webhook] Telegram error:', err);
   }
 }
 
-// Map Stripe price IDs to plan tiers
-const PRICE_TO_TIER: Record<string, 'silver' | 'gold' | 'diamond'> = {
-  // Silver prices
-  'price_1Ssvqk2MEO38NbGnrwicv0nZ': 'silver', // monthly
-  'price_1Ssvr02MEO38NbGnHCesYJTW': 'silver', // annual
-  // Gold prices
-  'price_1SsvrH2MEO38NbGnotCQ0O6t': 'gold', // monthly
-  'price_1Ssvra2MEO38NbGnQlRov7sI': 'gold', // annual
-  // Diamond prices
-  'price_1SsvsT2MEO38NbGnVvDveuJ4': 'diamond', // monthly
-  'price_1Ssvsd2MEO38NbGnsBl3ne5X': 'diamond', // annual
-};
-
-// Map Stripe product IDs to plan tiers (fallback)
-const PRODUCT_TO_TIER: Record<string, 'silver' | 'gold' | 'diamond'> = {
-  'prod_Tqd6KgfSHZl70M': 'silver',
-  'prod_Tqd7gxOqCVfQfZ': 'silver',
-  'prod_Tqd7XjlDhI502Y': 'gold',
-  'prod_Tqd7fgQhIoNao2': 'gold',
-  'prod_Tqd8Zl3fQQuQ4Z': 'diamond',
-  'prod_Tqd8hhSX3tN1xF': 'diamond',
-};
-
-// Referral status cycle map
+// Referral cycle progression
 const CYCLE_PROGRESSION: Record<string, string> = {
   'subscribed': 'cycle1',
   'cycle1': 'cycle2',
@@ -88,93 +51,43 @@ function mapStatusToDb(stripeStatus: string): string {
 }
 
 async function getUserIdByEmail(email: string): Promise<string | null> {
-  const { data } = await supabase
-    .from('profiles')
-    .select('id')
-    .eq('email', email)
-    .single();
+  const { data } = await supabase.from('profiles').select('id').eq('email', email).single();
   return data?.id || null;
 }
 
-async function upsertSubscription(
-  userId: string,
-  subscription: Stripe.Subscription
-) {
-  const priceId = subscription.items.data[0]?.price?.id;
-  const productId = subscription.items.data[0]?.price?.product as string;
-  
-  const planTier = PRICE_TO_TIER[priceId] || PRODUCT_TO_TIER[productId] || 'silver';
+async function upsertSubscription(userId: string, subscription: Stripe.Subscription) {
   const status = mapStatusToDb(subscription.status);
   const currentPeriodEnd = subscription.current_period_end 
-    ? new Date(subscription.current_period_end * 1000).toISOString()
-    : null;
+    ? new Date(subscription.current_period_end * 1000).toISOString() : null;
 
-  console.log(`[stripe_webhook] Upserting subscription: user=${userId}, tier=${planTier}, status=${status}, period_end=${currentPeriodEnd}`);
+  console.log(`[stripe_webhook] Upserting: user=${userId}, tier=pro, status=${status}`);
 
-  const { error } = await supabase
-    .from('subscriptions')
-    .upsert({
-      user_id: userId,
-      provider: 'stripe',
-      status,
-      plan_tier: planTier,
-      current_period_end: currentPeriodEnd,
-      cancel_at_period_end: subscription.cancel_at_period_end || false,
-      source_id: subscription.id,
-      updated_at: new Date().toISOString(),
-    }, {
-      onConflict: 'user_id',
-    });
+  const { error } = await supabase.from('subscriptions').upsert({
+    user_id: userId, provider: 'stripe', status, plan_tier: 'pro',
+    current_period_end: currentPeriodEnd,
+    cancel_at_period_end: subscription.cancel_at_period_end || false,
+    source_id: subscription.id, updated_at: new Date().toISOString(),
+  }, { onConflict: 'user_id' });
 
   if (error) {
     console.error('[stripe_webhook] Upsert error:', error);
     throw error;
   }
-
-  console.log(`[stripe_webhook] Subscription updated successfully: user=${userId}, tier=${planTier}, status=${status}`);
 }
 
 async function deleteSubscription(userId: string) {
-  console.log(`[stripe_webhook] Deleting subscription for user: ${userId}`);
-  
-  const { error } = await supabase
-    .from('subscriptions')
-    .delete()
-    .eq('user_id', userId);
-
-  if (error) {
-    console.error('[stripe_webhook] Delete error:', error);
-    throw error;
-  }
-
-  console.log(`[stripe_webhook] Subscription deleted for user: ${userId}`);
+  await supabase.from('subscriptions').delete().eq('user_id', userId);
 }
 
 async function getUserIdFromSubscription(subscription: Stripe.Subscription): Promise<string | null> {
-  // First try: Get user_id from subscription metadata (most reliable)
   const metadataUserId = subscription.metadata?.user_id;
-  if (metadataUserId) {
-    console.log(`[stripe_webhook] Found user_id in subscription metadata: ${metadataUserId}`);
-    return metadataUserId;
-  }
+  if (metadataUserId) return metadataUserId;
 
-  // Second try: Get customer email and lookup user
   try {
     const customer = await stripe.customers.retrieve(subscription.customer as string);
-    if (!customer || customer.deleted || !('email' in customer) || !customer.email) {
-      console.error('[stripe_webhook] Customer not found or no email');
-      return null;
-    }
-
-    const userId = await getUserIdByEmail(customer.email);
-    if (userId) {
-      console.log(`[stripe_webhook] Found user by email lookup: ${userId} (${customer.email})`);
-    } else {
-      console.error(`[stripe_webhook] No user found for email: ${customer.email}`);
-    }
-    return userId;
-  } catch (err) {
-    console.error('[stripe_webhook] Error looking up customer:', err);
+    if (!customer || customer.deleted || !('email' in customer) || !customer.email) return null;
+    return await getUserIdByEmail(customer.email);
+  } catch {
     return null;
   }
 }
@@ -185,10 +98,7 @@ async function handleSubscriptionEvent(subscription: Stripe.Subscription) {
     console.error('[stripe_webhook] Could not determine user_id for subscription:', subscription.id);
     return;
   }
-
   await upsertSubscription(userId, subscription);
-
-  // Handle referral status update when user subscribes
   if (subscription.status === 'active' || subscription.status === 'trialing') {
     await updateReferralOnSubscribe(userId);
   }
@@ -196,38 +106,27 @@ async function handleSubscriptionEvent(subscription: Stripe.Subscription) {
 
 async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
   const userId = await getUserIdFromSubscription(subscription);
-  if (!userId) {
-    console.error('[stripe_webhook] Could not determine user_id for deleted subscription:', subscription.id);
-    return;
-  }
-
-  // Delete the subscription record entirely
+  if (!userId) return;
   await deleteSubscription(userId);
+
+  // Expire pending referrals
+  await supabase.from('referrals').update({ status: 'invalid' })
+    .eq('referred_user_id', userId)
+    .in('status', ['subscribed', 'cycle1', 'cycle2']);
 }
 
 async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
-  console.log(`[stripe_webhook] Processing checkout.session.completed: ${session.id}`);
-
-  // Get user_id from session metadata
+  console.log(`[stripe_webhook] Checkout completed: ${session.id}`);
   const userId = session.metadata?.user_id;
-  if (!userId) {
-    console.error('[stripe_webhook] No user_id in checkout session metadata');
-    return;
-  }
+  if (!userId) return;
 
   const subscriptionId = session.subscription as string | null;
-  if (!subscriptionId) {
-    console.log('[stripe_webhook] No subscription in checkout session (might be one-time payment)');
-    return;
-  }
+  if (!subscriptionId) return;
 
-  // Retrieve the subscription and update it with user_id in metadata
   try {
     const subscription = await stripe.subscriptions.retrieve(subscriptionId);
     
-    // Update subscription metadata with user_id if not already set
     if (!subscription.metadata?.user_id) {
-      console.log(`[stripe_webhook] Adding user_id to subscription metadata: ${userId}`);
       await stripe.subscriptions.update(subscriptionId, {
         metadata: {
           user_id: userId,
@@ -236,73 +135,73 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
       });
     }
 
-    // Immediately upsert the subscription to our database
     await upsertSubscription(userId, subscription);
-
-    // Handle referral status
+    
     if (subscription.status === 'active' || subscription.status === 'trialing') {
       await updateReferralOnSubscribe(userId);
     }
 
-    // Get tier for notification
-    const priceId = subscription.items.data[0]?.price?.id;
-    const productId = subscription.items.data[0]?.price?.product as string;
-    const planTier = PRICE_TO_TIER[priceId] || PRODUCT_TO_TIER[productId] || 'silver';
-    
-    // Send Telegram alert for new subscription
-    const tierEmoji = planTier === 'diamond' ? '💎' : planTier === 'gold' ? '🥇' : '🥈';
-    const alertMessage = `${tierEmoji} <b>Nova Assinatura!</b>\n\n` +
-      `📧 <b>Email:</b> ${session.customer_email || 'N/A'}\n` +
-      `📦 <b>Plano:</b> ${planTier.toUpperCase()}\n` +
-      `🆔 <b>User ID:</b> ${userId}\n` +
-      `📅 <b>Data:</b> ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}`;
-    
-    await sendTelegramAlert(alertMessage);
+    // Handle referral code from checkout metadata
+    const referralCode = session.metadata?.referral_code;
+    if (referralCode) {
+      await linkReferralFromCheckout(userId, referralCode);
+    }
 
-    console.log(`[stripe_webhook] Checkout completed and subscription activated for user: ${userId}`);
+    await sendTelegramAlert(
+      `🚀 <b>Nova Assinatura PRO!</b>\n\n` +
+      `📧 <b>Email:</b> ${session.customer_email || 'N/A'}\n` +
+      `🆔 <b>User ID:</b> ${userId}\n` +
+      `📅 <b>Data:</b> ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}`
+    );
   } catch (err) {
-    console.error('[stripe_webhook] Error processing checkout completion:', err);
+    console.error('[stripe_webhook] Error processing checkout:', err);
+  }
+}
+
+async function linkReferralFromCheckout(userId: string, referralCode: string) {
+  // Find the referral invite by code and link the referred user
+  const { data: referral } = await supabase
+    .from('referrals')
+    .select('*')
+    .eq('invite_code', referralCode)
+    .eq('status', 'invited')
+    .is('referred_user_id', null)
+    .maybeSingle();
+
+  if (referral && referral.referrer_user_id !== userId) {
+    await supabase.from('referrals').update({
+      referred_user_id: userId,
+      status: 'subscribed',
+    }).eq('id', referral.id);
+    console.log(`[stripe_webhook] Linked referral ${referral.id} to user ${userId}`);
   }
 }
 
 async function updateReferralOnSubscribe(userId: string) {
-  // Check if this user was referred
   const { data: referral } = await supabase
-    .from('referrals')
-    .select('*')
+    .from('referrals').select('*')
     .eq('referred_user_id', userId)
     .eq('status', 'installed')
     .maybeSingle();
 
   if (referral) {
-    // Update status to subscribed
-    await supabase
-      .from('referrals')
-      .update({ status: 'subscribed' })
-      .eq('id', referral.id);
-    
-    console.log(`[stripe_webhook] Referral ${referral.id} status updated to subscribed`);
+    await supabase.from('referrals').update({ status: 'subscribed' }).eq('id', referral.id);
   }
 }
 
 async function handleInvoicePaid(invoice: Stripe.Invoice) {
   if (!invoice.subscription) return;
-  
   const subscription = await stripe.subscriptions.retrieve(invoice.subscription as string);
   await handleSubscriptionEvent(subscription);
 
-  // Handle referral cycle counting
   const userId = await getUserIdFromSubscription(subscription);
   if (!userId) return;
-
   await processReferralCycle(userId);
 }
 
 async function processReferralCycle(userId: string) {
-  // Check if this user was referred and is in a cycle-counting status
   const { data: referral } = await supabase
-    .from('referrals')
-    .select('*')
+    .from('referrals').select('*')
     .eq('referred_user_id', userId)
     .in('status', ['subscribed', 'cycle1', 'cycle2'])
     .maybeSingle();
@@ -312,81 +211,79 @@ async function processReferralCycle(userId: string) {
   const nextStatus = CYCLE_PROGRESSION[referral.status];
   if (!nextStatus) return;
 
-  // Update to next cycle
-  const { error: updateError } = await supabase
-    .from('referrals')
-    .update({ status: nextStatus })
-    .eq('id', referral.id);
+  await supabase.from('referrals').update({ status: nextStatus }).eq('id', referral.id);
+  console.log(`[stripe_webhook] Referral ${referral.id}: ${referral.status} -> ${nextStatus}`);
 
-  if (updateError) {
-    console.error('[stripe_webhook] Failed to update referral cycle:', updateError);
-    return;
-  }
-
-  console.log(`[stripe_webhook] Referral ${referral.id} cycle updated: ${referral.status} -> ${nextStatus}`);
-
-  // If reached cycle3, grant reward to referrer
+  // After 3rd payment, grant 50% discount coupon to referrer
   if (nextStatus === 'cycle3') {
     await grantReferralReward(referral);
   }
 }
 
 async function grantReferralReward(referral: any) {
-  console.log(`[stripe_webhook] Granting reward for referral ${referral.id}`);
+  console.log(`[stripe_webhook] Granting 50% discount to referrer ${referral.referrer_user_id}`);
 
-  // Check if referrer can earn more rewards this month (max 2)
-  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
-  const { count } = await supabase
-    .from('user_credits')
-    .select('*', { count: 'exact', head: true })
-    .eq('user_id', referral.referrer_user_id)
-    .eq('source', 'referral')
-    .gte('created_at', thirtyDaysAgo);
-
-  if (count && count >= 2) {
-    console.log(`[stripe_webhook] Referrer ${referral.referrer_user_id} has reached monthly reward limit`);
-    await supabase
-      .from('referrals')
-      .update({ 
-        status: 'reward_earned',
-        notes: 'Reward not granted - monthly limit reached'
-      })
-      .eq('id', referral.id);
+  // Find referrer's Stripe customer
+  const { data: profile } = await supabase
+    .from('profiles').select('email').eq('id', referral.referrer_user_id).single();
+  
+  if (!profile?.email) {
+    console.error('[stripe_webhook] Referrer profile not found');
     return;
   }
 
-  // Create credit for referrer
-  const { error: creditError } = await supabase
-    .from('user_credits')
-    .insert({
-      user_id: referral.referrer_user_id,
-      amount_cents: referral.reward_amount_cents,
-      currency: referral.reward_currency,
-      source: 'referral',
-      referral_id: referral.id,
-      status: 'available',
+  try {
+    const customers = await stripe.customers.list({ email: profile.email, limit: 1 });
+    if (customers.data.length === 0) {
+      console.error('[stripe_webhook] Referrer has no Stripe customer');
+      return;
+    }
+
+    const customerId = customers.data[0].id;
+
+    // Find referrer's active subscription
+    const subs = await stripe.subscriptions.list({ customer: customerId, status: 'active', limit: 1 });
+    if (subs.data.length === 0) {
+      console.error('[stripe_webhook] Referrer has no active subscription');
+      return;
+    }
+
+    // Apply 50% coupon to referrer's subscription
+    await stripe.subscriptions.update(subs.data[0].id, {
+      coupon: REFERRAL_COUPON_ID,
     });
 
-  if (creditError) {
-    console.error('[stripe_webhook] Failed to create credit:', creditError);
-    return;
-  }
-
-  // Update referral status
-  await supabase
-    .from('referrals')
-    .update({ 
+    // Update referral status
+    await supabase.from('referrals').update({ 
       status: 'reward_earned',
-      reward_reason: '3 successful payment cycles completed'
-    })
-    .eq('id', referral.id);
+      reward_reason: '50% discount applied after 3rd payment by referred user',
+    }).eq('id', referral.id);
 
-  console.log(`[stripe_webhook] Credit of ${referral.reward_amount_cents} cents granted to ${referral.referrer_user_id}`);
+    // Also create a credit record for tracking
+    await supabase.from('user_credits').insert({
+      user_id: referral.referrer_user_id,
+      amount_cents: referral.reward_amount_cents || 0,
+      currency: 'usd',
+      source: 'referral',
+      referral_id: referral.id,
+      status: 'applied',
+    });
+
+    await sendTelegramAlert(
+      `🎉 <b>Referral Reward!</b>\n\n` +
+      `📧 <b>Referrer:</b> ${profile.email}\n` +
+      `🎁 <b>Reward:</b> 50% off next month\n` +
+      `📅 <b>Data:</b> ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}`
+    );
+
+    console.log(`[stripe_webhook] 50% coupon applied to referrer's subscription`);
+  } catch (err) {
+    console.error('[stripe_webhook] Error applying referral reward:', err);
+  }
 }
 
 async function handlePaymentFailed(invoice: Stripe.Invoice) {
   if (!invoice.subscription) return;
-  
   const subscription = await stripe.subscriptions.retrieve(invoice.subscription as string);
   await handleSubscriptionEvent(subscription);
 }
@@ -394,66 +291,48 @@ async function handlePaymentFailed(invoice: Stripe.Invoice) {
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, {
-      headers: {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Headers': 'stripe-signature, content-type',
-      },
+      headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'stripe-signature, content-type' },
     });
   }
 
   const signature = req.headers.get('stripe-signature');
-  if (!signature) {
-    return new Response(JSON.stringify({ error: 'Missing signature' }), { status: 400 });
-  }
-
-  if (!endpointSecret) {
-    console.error('[stripe_webhook] STRIPE_WEBHOOK_SECRET not configured');
-    return new Response(JSON.stringify({ error: 'Webhook secret not configured' }), { status: 500 });
-  }
+  if (!signature) return new Response(JSON.stringify({ error: 'Missing signature' }), { status: 400 });
+  if (!endpointSecret) return new Response(JSON.stringify({ error: 'Webhook secret not configured' }), { status: 500 });
 
   try {
     const body = await req.text();
     const event = stripe.webhooks.constructEvent(body, signature, endpointSecret);
-    
-    console.log(`[stripe_webhook] Received event: ${event.type}`);
+    console.log(`[stripe_webhook] Event: ${event.type}`);
 
     switch (event.type) {
-      // Handle checkout completion FIRST - this is where we get user_id from metadata
       case 'checkout.session.completed':
         await handleCheckoutCompleted(event.data.object as Stripe.Checkout.Session);
         break;
-
       case 'customer.subscription.created':
       case 'customer.subscription.updated':
         await handleSubscriptionEvent(event.data.object as Stripe.Subscription);
         break;
-      
       case 'customer.subscription.deleted':
         await handleSubscriptionDeleted(event.data.object as Stripe.Subscription);
         break;
-      
       case 'invoice.paid':
         await handleInvoicePaid(event.data.object as Stripe.Invoice);
         break;
-      
       case 'invoice.payment_failed':
         await handlePaymentFailed(event.data.object as Stripe.Invoice);
         break;
-      
       default:
-        console.log(`[stripe_webhook] Unhandled event type: ${event.type}`);
+        console.log(`[stripe_webhook] Unhandled: ${event.type}`);
     }
 
     return new Response(JSON.stringify({ received: true }), {
-      headers: { 'Content-Type': 'application/json' },
-      status: 200,
+      headers: { 'Content-Type': 'application/json' }, status: 200,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     console.error('[stripe_webhook] Error:', message);
     return new Response(JSON.stringify({ error: message }), {
-      headers: { 'Content-Type': 'application/json' },
-      status: 400,
+      headers: { 'Content-Type': 'application/json' }, status: 400,
     });
   }
 });

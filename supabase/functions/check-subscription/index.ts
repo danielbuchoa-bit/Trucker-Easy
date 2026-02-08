@@ -12,41 +12,15 @@ const logStep = (step: string, details?: any) => {
   console.log(`[CHECK-SUBSCRIPTION] ${step}${detailsStr}`);
 };
 
-// Map Stripe price IDs to plan tiers
-const PRICE_TO_TIER: Record<string, 'silver' | 'gold' | 'diamond'> = {
-  // Silver prices
-  'price_1Ssvqk2MEO38NbGnrwicv0nZ': 'silver', // monthly
-  'price_1Ssvr02MEO38NbGnHCesYJTW': 'silver', // annual
-  // Gold prices
-  'price_1SsvrH2MEO38NbGnotCQ0O6t': 'gold', // monthly
-  'price_1Ssvra2MEO38NbGnQlRov7sI': 'gold', // annual
-  // Diamond prices
-  'price_1SsvsT2MEO38NbGnVvDveuJ4': 'diamond', // monthly
-  'price_1Ssvsd2MEO38NbGnsBl3ne5X': 'diamond', // annual
-};
-
-// Map Stripe product IDs to plan tiers (fallback)
-const PRODUCT_TO_TIER: Record<string, 'silver' | 'gold' | 'diamond'> = {
-  'prod_Tqd6KgfSHZl70M': 'silver',
-  'prod_Tqd7gxOqCVfQfZ': 'silver',
-  'prod_Tqd7XjlDhI502Y': 'gold',
-  'prod_Tqd7fgQhIoNao2': 'gold',
-  'prod_Tqd8Zl3fQQuQ4Z': 'diamond',
-  'prod_Tqd8hhSX3tN1xF': 'diamond',
-};
-
-function getTierFromSubscription(subscription: Stripe.Subscription): 'silver' | 'gold' | 'diamond' {
-  const priceId = subscription.items.data[0]?.price?.id;
-  const productId = subscription.items.data[0]?.price?.product as string;
-  
-  if (priceId && PRICE_TO_TIER[priceId]) {
-    return PRICE_TO_TIER[priceId];
-  }
-  if (productId && PRODUCT_TO_TIER[productId]) {
-    return PRODUCT_TO_TIER[productId];
-  }
-  return 'silver';
-}
+// All PRO product IDs (current + legacy)
+const PRO_PRODUCT_IDS = new Set([
+  'prod_TwJfOGBBNJ6Myz', // PRO Monthly
+  'prod_TwJfW7sH7eyHrC', // PRO Annual
+  // Legacy products also map to pro
+  'prod_Tqd6KgfSHZl70M', 'prod_Tqd7gxOqCVfQfZ',
+  'prod_Tqd7XjlDhI502Y', 'prod_Tqd7fgQhIoNao2',
+  'prod_Tqd8Zl3fQQuQ4Z', 'prod_Tqd8hhSX3tN1xF',
+]);
 
 function mapStatusToDb(stripeStatus: string): string {
   switch (stripeStatus) {
@@ -92,14 +66,8 @@ serve(async (req) => {
     const customers = await stripe.customers.list({ email: user.email, limit: 1 });
 
     if (customers.data.length === 0) {
-      logStep("No Stripe customer found - clearing any local subscription");
-      
-      // Remove any existing subscription for this user
-      await supabaseClient
-        .from('subscriptions')
-        .delete()
-        .eq('user_id', user.id);
-      
+      logStep("No Stripe customer found");
+      await supabaseClient.from('subscriptions').delete().eq('user_id', user.id);
       return new Response(JSON.stringify({ subscribed: false }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
         status: 200,
@@ -109,44 +77,26 @@ serve(async (req) => {
     const customerId = customers.data[0].id;
     logStep("Found Stripe customer", { customerId });
 
-    // Check for active or trialing subscriptions
     const subscriptions = await stripe.subscriptions.list({
-      customer: customerId,
-      status: "all",
-      limit: 10,
+      customer: customerId, status: "all", limit: 10,
     });
 
-    // Find the first active or trialing subscription
     const activeSubscription = subscriptions.data.find(
       (sub: Stripe.Subscription) => sub.status === "active" || sub.status === "trialing"
     );
 
     if (!activeSubscription) {
-      logStep("No active subscription found - clearing local subscription");
-      
-      // Check for canceled/expired subscriptions
-      const canceledSub = subscriptions.data.find(
-        (sub: Stripe.Subscription) => sub.status === "canceled"
-      );
+      logStep("No active subscription found");
+      const canceledSub = subscriptions.data.find((sub: Stripe.Subscription) => sub.status === "canceled");
       
       if (canceledSub) {
-        // Update local subscription to canceled status
-        await supabaseClient
-          .from('subscriptions')
-          .upsert({
-            user_id: user.id,
-            provider: 'stripe',
-            status: 'canceled',
-            plan_tier: getTierFromSubscription(canceledSub),
-            source_id: canceledSub.id,
-            updated_at: new Date().toISOString(),
-          }, { onConflict: 'user_id' });
+        await supabaseClient.from('subscriptions').upsert({
+          user_id: user.id, provider: 'stripe', status: 'canceled',
+          plan_tier: 'pro', source_id: canceledSub.id,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'user_id' });
       } else {
-        // No subscription at all - remove local record
-        await supabaseClient
-          .from('subscriptions')
-          .delete()
-          .eq('user_id', user.id);
+        await supabaseClient.from('subscriptions').delete().eq('user_id', user.id);
       }
       
       return new Response(JSON.stringify({ subscribed: false }), {
@@ -155,11 +105,8 @@ serve(async (req) => {
       });
     }
 
-    // We have an active subscription - sync it to database
-    const planTier = getTierFromSubscription(activeSubscription);
     const status = mapStatusToDb(activeSubscription.status);
     
-    // Safely handle the period end date
     let subscriptionEnd: string | null = null;
     const periodEnd = activeSubscription.current_period_end;
     if (periodEnd && typeof periodEnd === 'number') {
@@ -168,32 +115,16 @@ serve(async (req) => {
       subscriptionEnd = new Date(activeSubscription.trial_end * 1000).toISOString();
     }
 
-    logStep("Syncing active subscription to database", { 
-      tier: planTier, 
-      status, 
-      subscriptionId: activeSubscription.id,
-      endDate: subscriptionEnd 
-    });
+    logStep("Syncing active subscription", { status, endDate: subscriptionEnd });
 
-    // ALWAYS sync the subscription to our database
-    const { error: upsertError } = await supabaseClient
-      .from('subscriptions')
-      .upsert({
-        user_id: user.id,
-        provider: 'stripe',
-        status,
-        plan_tier: planTier,
-        current_period_end: subscriptionEnd,
-        cancel_at_period_end: activeSubscription.cancel_at_period_end || false,
-        source_id: activeSubscription.id,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: 'user_id' });
-
-    if (upsertError) {
-      logStep("ERROR syncing subscription to database", { error: upsertError.message });
-    } else {
-      logStep("Successfully synced subscription to database");
-    }
+    await supabaseClient.from('subscriptions').upsert({
+      user_id: user.id, provider: 'stripe', status,
+      plan_tier: 'pro',
+      current_period_end: subscriptionEnd,
+      cancel_at_period_end: activeSubscription.cancel_at_period_end || false,
+      source_id: activeSubscription.id,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'user_id' });
 
     const priceProduct = activeSubscription.items.data[0]?.price?.product;
     const productId = typeof priceProduct === 'string' ? priceProduct : priceProduct?.id;
@@ -201,8 +132,8 @@ serve(async (req) => {
     return new Response(JSON.stringify({
       subscribed: true,
       product_id: productId,
-      plan_tier: planTier,
-      subscription_end: subscriptionEnd
+      plan_tier: 'pro',
+      subscription_end: subscriptionEnd,
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
       status: 200,

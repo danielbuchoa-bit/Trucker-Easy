@@ -2,9 +2,9 @@ import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Lock, Crown, Gem, ArrowRight } from 'lucide-react';
+import { Lock, Crown, ArrowRight } from 'lucide-react';
 import { useSubscription } from '@/contexts/SubscriptionContext';
-import { SubscriptionTier, SUBSCRIPTION_TIERS } from '@/lib/subscriptionTiers';
+import { SubscriptionTier } from '@/lib/subscriptionTiers';
 
 interface UpgradePromptProps {
   requiredTier: Exclude<SubscriptionTier, 'none'>;
@@ -15,9 +15,6 @@ interface UpgradePromptProps {
 export function UpgradePrompt({ requiredTier, featureName, compact = false }: UpgradePromptProps) {
   const navigate = useNavigate();
   const { tier: currentTier } = useSubscription();
-  const targetTier = SUBSCRIPTION_TIERS[requiredTier];
-
-  const Icon = requiredTier === 'diamond' ? Gem : Crown;
 
   if (compact) {
     return (
@@ -25,7 +22,7 @@ export function UpgradePrompt({ requiredTier, featureName, compact = false }: Up
         <div className="flex items-center gap-2">
           <Lock className="h-4 w-4 text-muted-foreground" />
           <span className="text-sm text-muted-foreground">
-            {featureName} requires {targetTier.name}
+            {featureName} requires PRO
           </span>
         </div>
         <Button size="sm" variant="outline" onClick={() => navigate('/choose-plan')}>
@@ -38,20 +35,20 @@ export function UpgradePrompt({ requiredTier, featureName, compact = false }: Up
   return (
     <Card className="border-dashed">
       <CardHeader className="text-center pb-2">
-        <div className={`w-12 h-12 rounded-full bg-gradient-to-br ${targetTier.color} flex items-center justify-center mx-auto mb-2`}>
-          <Icon className="h-6 w-6 text-white" />
+        <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center mx-auto mb-2">
+          <Crown className="h-6 w-6 text-white" />
         </div>
-        <CardTitle className="text-lg">Upgrade to {targetTier.name}</CardTitle>
+        <CardTitle className="text-lg">Upgrade to PRO</CardTitle>
         <CardDescription>
-          {featureName} is available on {targetTier.name} plan
+          {featureName} is available on PRO plan
         </CardDescription>
       </CardHeader>
       <CardContent className="text-center space-y-4">
         <Badge variant="secondary" className="text-xs">
-          Currently on {currentTier === 'none' ? 'Free' : SUBSCRIPTION_TIERS[currentTier as Exclude<SubscriptionTier, 'none'>]?.name || 'Free'}
+          {currentTier === 'none' ? 'Free plan' : 'PRO'}
         </Badge>
         <Button onClick={() => navigate('/choose-plan')} className="w-full">
-          View Plans <ArrowRight className="ml-2 h-4 w-4" />
+          Get PRO <ArrowRight className="ml-2 h-4 w-4" />
         </Button>
       </CardContent>
     </Card>
