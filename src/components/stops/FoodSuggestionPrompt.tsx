@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { X, Utensils, Sparkles, Loader2, ThumbsUp, AlertTriangle, Ban, ChevronDown, ChevronUp, MapPin, Store, Crown } from 'lucide-react';
+import { X, Utensils, Sparkles, Loader2, ThumbsUp, AlertTriangle, Ban, ChevronDown, ChevronUp, MapPin, Store } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -228,55 +228,7 @@ const FoodSuggestionPrompt: React.FC<FoodSuggestionPromptProps> = ({ stop, onDis
   const restaurantLabel = language === 'pt' ? 'Restaurantes' : language === 'es' ? 'Restaurantes' : 'Restaurants';
   const convenienceLabel = language === 'pt' ? 'Conveniência' : language === 'es' ? 'Conveniencia' : 'Convenience';
 
-  // If user doesn't have Gold+, show upgrade prompt
-  if (!hasPersonalizedFood) {
-    return (
-      <div className="fixed bottom-20 left-2 right-2 z-50 animate-in slide-in-from-bottom-4 duration-300">
-        <Card className="border-amber-500/30 bg-background/95 backdrop-blur-md shadow-xl">
-          <CardHeader className="pb-2 pt-3 px-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="p-1.5 rounded-full bg-amber-500/20">
-                  <Crown className="w-4 h-4 text-amber-500" />
-                </div>
-                <div>
-                  <CardTitle className="text-sm font-medium">
-                    {language === 'pt' ? 'Sugestões Personalizadas' : 
-                     language === 'es' ? 'Sugerencias Personalizadas' : 
-                     'Personalized Suggestions'}
-                  </CardTitle>
-                  <p className="text-xs text-muted-foreground">
-                    {language === 'pt' ? 'Recurso Gold' : 
-                     language === 'es' ? 'Función Gold' : 
-                     'Gold Feature'}
-                  </p>
-                </div>
-              </div>
-              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onDismiss}>
-                <X className="w-4 h-4" />
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent className="px-4 pb-3">
-            <p className="text-sm text-muted-foreground mb-3">
-              {language === 'pt' ? 'Atualize para Gold para receber sugestões de alimentação personalizadas com IA.' : 
-               language === 'es' ? 'Actualiza a Gold para recibir sugerencias de comida personalizadas con IA.' : 
-               'Upgrade to Gold to get AI-powered personalized food suggestions.'}
-            </p>
-            <Button 
-              className="w-full bg-gradient-to-r from-amber-500 to-amber-600" 
-              onClick={() => navigate('/choose-plan')}
-            >
-              <Crown className="w-4 h-4 mr-2" />
-              {language === 'pt' ? 'Atualizar para Gold' : 
-               language === 'es' ? 'Actualizar a Gold' : 
-               'Upgrade to Gold'}
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
+  
 
   const isConvenienceActive = activeTab === 'convenience';
   const titleText = isConvenienceActive ? t.food.convenienceSuggestions : t.food.foodSuggestions;

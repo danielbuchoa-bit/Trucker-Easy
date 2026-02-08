@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useLanguage } from '@/i18n/LanguageContext';
-import { Users, Plus, MessageCircle, ChevronRight, AlertTriangle, Building2, Loader2, Newspaper, BookOpen, Gem } from 'lucide-react';
+import { Users, Plus, MessageCircle, ChevronRight, AlertTriangle, Building2, Loader2, Newspaper, BookOpen } from 'lucide-react';
 import BottomNav from '@/components/navigation/BottomNav';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -14,7 +14,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { formatDistanceToNow } from 'date-fns';
 import { pt, es, enUS } from 'date-fns/locale';
 import { useChatContext } from '@/contexts/ChatContext';
-import { useFeatureAccess } from '@/hooks/useFeatureAccess';
+
 import { Badge } from '@/components/ui/badge';
 
 interface ChatRoom {
@@ -37,10 +37,7 @@ const CommunityScreen = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { myRooms, currentUserId } = useChatContext();
-  const { canAccess } = useFeatureAccess();
   
-  // Diamond feature check
-  const hasPremiumCommunity = canAccess('premiumCommunity');
   
   const initialTab = searchParams.get('tab') || 'reports';
   const [activeTab, setActiveTab] = useState(initialTab);
@@ -148,42 +145,7 @@ const CommunityScreen = () => {
         
         {activeTab === 'chat' && (
           <div className="space-y-3">
-            {/* Premium Community Banner for non-Diamond users */}
-            {!hasPremiumCommunity && (
-              <div className="p-4 bg-gradient-to-r from-cyan-500/10 to-blue-500/10 border border-cyan-500/30 rounded-2xl">
-                <div className="flex items-center gap-3 mb-2">
-                  <div className="w-10 h-10 bg-gradient-to-br from-cyan-400 to-blue-600 rounded-full flex items-center justify-center">
-                    <Gem className="w-5 h-5 text-white" />
-                  </div>
-                  <div>
-                    <h3 className="font-semibold text-foreground">
-                      {language === 'pt' ? 'Comunidade Premium' : 
-                       language === 'es' ? 'Comunidad Premium' : 
-                       'Premium Community'}
-                    </h3>
-                    <p className="text-xs text-muted-foreground">
-                      {language === 'pt' ? 'Salas exclusivas Diamond' : 
-                       language === 'es' ? 'Salas exclusivas Diamond' : 
-                       'Diamond Exclusive Rooms'}
-                    </p>
-                  </div>
-                </div>
-                <p className="text-sm text-muted-foreground mb-3">
-                  {language === 'pt' ? 'Atualize para Diamond para acessar salas exclusivas e suporte prioritário.' : 
-                   language === 'es' ? 'Actualiza a Diamond para acceder a salas exclusivas y soporte prioritario.' : 
-                   'Upgrade to Diamond for exclusive rooms and priority support.'}
-                </p>
-                <button
-                  onClick={() => navigate('/choose-plan')}
-                  className="w-full p-2 bg-gradient-to-r from-cyan-500 to-blue-600 text-white rounded-lg font-medium text-sm"
-                >
-                  <Gem className="w-4 h-4 inline mr-2" />
-                  {language === 'pt' ? 'Atualizar para Diamond' : 
-                   language === 'es' ? 'Actualizar a Diamond' : 
-                   'Upgrade to Diamond'}
-                </button>
-              </div>
-            )}
+            
 
             {/* Create Room Button - More Prominent */}
             <button
