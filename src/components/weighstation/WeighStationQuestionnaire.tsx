@@ -115,8 +115,9 @@ const WeighStationQuestionnaire = ({
         lat: userLat,
         lng: userLng,
         route_id_hash: routeHash,
-        device_anon_id_hash: comment.trim() || null,
-      });
+        device_anon_id_hash: null,
+        comment: comment.trim() || null,
+      } as any);
 
       if (error) throw error;
 
