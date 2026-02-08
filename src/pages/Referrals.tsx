@@ -151,12 +151,8 @@ const ReferralsScreen = () => {
           <CardContent className="space-y-3 text-sm text-muted-foreground">
             <p>
               Invite a driver friend. When they subscribe and complete <strong className="text-foreground">3 paid monthly cycles</strong>, 
-              you get a <strong className="text-primary">$3.50 discount</strong> on your next payment!
+              both of you get a <strong className="text-primary">50% discount</strong> on your next payment!
             </p>
-            <div className="flex items-center gap-2 text-xs">
-              <Clock className="w-4 h-4" />
-              <span>Max 2 rewards per month</span>
-            </div>
           </CardContent>
         </Card>
 
