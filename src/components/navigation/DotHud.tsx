@@ -73,8 +73,9 @@ function computeWarning(state: any): { warn: boolean; label: string; remainingSe
   const driveRem = state.drivingRemainingSec;
   const shiftRem = state.dutyRemainingSec;
 
-  // Fix A: check if break was actually satisfied via rest duration
-  const breakSatisfied = (state.restContinuousSec ?? 0) >= BREAK_DURATION_SEC;
+  // Airbag 1: only count break as satisfied when actually resting
+  const isResting = state.currentStatus === 'OFF_DUTY' || state.currentStatus === 'SLEEPER';
+  const breakSatisfied = isResting && (state.restContinuousSec ?? 0) >= BREAK_DURATION_SEC;
 
   const breakRem = state.needsBreak
     ? 0
@@ -154,6 +155,9 @@ const DotHud = memo(function DotHud({ onStopNow }: { onStopNow?: () => void }) {
   // Blink state
   const [blinkOn, setBlinkOn] = useState(true);
 
+  // Airbag 2: force re-render every second during violation so overtimeText stays live
+  const [, forceTick] = useState(0);
+
   const state = dotHos?.state;
 
   // Compute violation
@@ -165,7 +169,12 @@ const DotHud = memo(function DotHud({ onStopNow }: { onStopNow?: () => void }) {
     return 'none';
   }, [state]);
 
-  // Warning detection
+  useEffect(() => {
+    if (violation === 'none') return;
+    const t = setInterval(() => forceTick(v => (v + 1) % 1000000), 1000);
+    return () => clearInterval(t);
+  }, [violation]);
+
   const warning = useMemo(() => computeWarning(state), [state]);
 
   // Bar visual state
