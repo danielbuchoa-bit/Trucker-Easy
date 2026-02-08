@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Scale, X, CheckCircle, ChevronLeft, ChevronRight } from 'lucide-react';
+import { X, CheckCircle, ChevronLeft, MessageSquare } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { StationOnRoute, StationStatus, ReportOutcome } from '@/hooks/useWeighStationAlerts';
 import { useToast } from '@/hooks/use-toast';
@@ -13,13 +13,9 @@ interface WeighStationQuestionnaireProps {
   onSkip: () => void;
 }
 
-// Extended status to match Trucker Path style
 type ExtendedStatus = 'OPEN' | 'ACTIVELY_MONITORED' | 'CLOSED';
-
-// Outcome options for second step
-type TrafficLevel = 'NOBODY' | 'SOMEBODY' | 'WAITING';
-
-type Step = 'status' | 'traffic' | 'submitting' | 'done';
+type OutcomeOption = 'BYPASS' | 'ROLLING_ACROSS' | 'INSPECTION';
+type Step = 'status' | 'outcome' | 'submitting' | 'done';
 
 const WeighStationQuestionnaire = ({
   station,
@@ -32,11 +28,11 @@ const WeighStationQuestionnaire = ({
   const [visible, setVisible] = useState(false);
   const [step, setStep] = useState<Step>('status');
   const [selectedStatus, setSelectedStatus] = useState<ExtendedStatus | null>(null);
-  const [selectedTraffic, setSelectedTraffic] = useState<TrafficLevel | null>(null);
+  const [selectedOutcome, setSelectedOutcome] = useState<OutcomeOption | null>(null);
+  const [comment, setComment] = useState('');
   const [timeLeft, setTimeLeft] = useState(45);
   const { toast } = useToast();
 
-  // Determine direction from station name or route
   const direction = station.station.name.toLowerCase().includes('west') || 
                     station.station.name.toLowerCase().includes('wb') ? 'West Bound' :
                     station.station.name.toLowerCase().includes('east') || 
@@ -50,7 +46,6 @@ const WeighStationQuestionnaire = ({
     requestAnimationFrame(() => setVisible(true));
   }, []);
 
-  // Auto-skip timer
   useEffect(() => {
     if (step === 'submitting' || step === 'done') return;
 
@@ -75,66 +70,58 @@ const WeighStationQuestionnaire = ({
 
   const handleStatusSelect = (status: ExtendedStatus) => {
     setSelectedStatus(status);
-    // If closed, we can skip traffic step since nobody is there
     if (status === 'CLOSED') {
       handleSubmit(status, null);
     } else {
-      setStep('traffic');
+      setStep('outcome');
     }
   };
 
-  const handleTrafficSelect = (traffic: TrafficLevel) => {
-    setSelectedTraffic(traffic);
-    handleSubmit(selectedStatus!, traffic);
+  const handleOutcomeSelect = (outcome: OutcomeOption) => {
+    setSelectedOutcome(outcome);
+    handleSubmit(selectedStatus!, outcome);
   };
 
-  const handleSubmit = async (status: ExtendedStatus, traffic: TrafficLevel | null) => {
+  const handleSubmit = async (status: ExtendedStatus, outcome: OutcomeOption | null) => {
     setStep('submitting');
 
     try {
       const { data: { user } } = await supabase.auth.getUser();
       
       if (!user) {
-        toast({
-          title: 'Please sign in',
-          description: 'You need to be signed in to submit reports',
-          variant: 'destructive',
-        });
+        toast({ title: 'Please sign in', description: 'You need to be signed in to submit reports', variant: 'destructive' });
         handleSkip();
         return;
       }
 
-      // Map extended status to database status
       const dbStatus: StationStatus = status === 'CLOSED' ? 'CLOSED' : 'OPEN';
       
-      // Map traffic level to outcome
-      let outcome: ReportOutcome = 'UNKNOWN';
+      let dbOutcome: ReportOutcome = 'UNKNOWN';
       if (status === 'CLOSED') {
-        outcome = 'BYPASS';
-      } else if (traffic === 'NOBODY') {
-        outcome = 'BYPASS';
-      } else if (traffic === 'SOMEBODY' || traffic === 'WAITING') {
-        outcome = 'WEIGHED';
+        dbOutcome = 'BYPASS';
+      } else if (outcome === 'BYPASS') {
+        dbOutcome = 'BYPASS';
+      } else if (outcome === 'ROLLING_ACROSS') {
+        dbOutcome = 'WEIGHED';
+      } else if (outcome === 'INSPECTION') {
+        dbOutcome = 'INSPECTED';
       }
 
       const { error } = await supabase.from('weigh_station_reports').insert({
         station_id: station.station.id,
         user_id: user.id,
         status_reported: dbStatus,
-        outcome,
+        outcome: dbOutcome,
         lat: userLat,
         lng: userLng,
         route_id_hash: routeHash,
-        device_anon_id_hash: null,
+        device_anon_id_hash: comment.trim() || null,
       });
 
       if (error) throw error;
 
       setStep('done');
-      toast({
-        title: 'Thank you!',
-        description: 'Your report helps other drivers.',
-      });
+      toast({ title: 'Thank you!', description: 'Your report helps other drivers.' });
 
       setTimeout(() => {
         setVisible(false);
@@ -142,11 +129,7 @@ const WeighStationQuestionnaire = ({
       }, 1500);
     } catch (error) {
       console.error('[WEIGH_Q] Submit error:', error);
-      toast({
-        title: 'Failed to submit',
-        description: 'Please try again later',
-        variant: 'destructive',
-      });
+      toast({ title: 'Failed to submit', description: 'Please try again later', variant: 'destructive' });
       handleSkip();
     }
   };
@@ -154,11 +137,12 @@ const WeighStationQuestionnaire = ({
   const handleBack = () => {
     setStep('status');
     setSelectedStatus(null);
+    setSelectedOutcome(null);
+    setComment('');
   };
 
   const renderStatusStep = () => (
     <div className="space-y-4">
-      {/* Direction tabs */}
       {direction && (
         <div className="flex border-b border-border">
           <button className="flex-1 py-2 text-sm font-medium text-primary border-b-2 border-primary">
@@ -173,11 +157,10 @@ const WeighStationQuestionnaire = ({
       )}
 
       <h2 className="text-xl font-bold text-foreground">
-        What's the weigh Station like?
+        What's the Weigh Station like?
       </h2>
 
       <div className="flex gap-2">
-        {/* Open - Green */}
         <button
           onClick={() => handleStatusSelect('OPEN')}
           className="flex-1 py-4 px-3 bg-green-500 hover:bg-green-600 rounded-xl transition-all active:scale-[0.98]"
@@ -185,7 +168,6 @@ const WeighStationQuestionnaire = ({
           <span className="text-lg font-bold text-white">Open</span>
         </button>
 
-        {/* Actively Monitored - Yellow/Amber */}
         <button
           onClick={() => handleStatusSelect('ACTIVELY_MONITORED')}
           className="flex-1 py-4 px-3 bg-amber-500 hover:bg-amber-600 rounded-xl transition-all active:scale-[0.98]"
@@ -193,7 +175,6 @@ const WeighStationQuestionnaire = ({
           <span className="text-lg font-bold text-white leading-tight">Actively<br/>Monitored</span>
         </button>
 
-        {/* Closed - Red */}
         <button
           onClick={() => handleStatusSelect('CLOSED')}
           className="flex-1 py-4 px-3 bg-red-500 hover:bg-red-600 rounded-xl transition-all active:scale-[0.98]"
@@ -202,7 +183,6 @@ const WeighStationQuestionnaire = ({
         </button>
       </div>
 
-      {/* Station info */}
       <div className="text-sm text-muted-foreground pt-2">
         <p className="font-medium text-foreground">{station.station.name}</p>
         {station.station.state && <p>{station.station.state}</p>}
@@ -210,9 +190,8 @@ const WeighStationQuestionnaire = ({
     </div>
   );
 
-  const renderTrafficStep = () => (
+  const renderOutcomeStep = () => (
     <div className="space-y-4">
-      {/* Back button */}
       <button
         onClick={handleBack}
         className="flex items-center gap-1 text-muted-foreground text-sm"
@@ -221,7 +200,6 @@ const WeighStationQuestionnaire = ({
         Back
       </button>
 
-      {/* Status indicator */}
       <div className="flex items-center gap-2">
         <div className={`w-3 h-3 rounded-full ${
           selectedStatus === 'OPEN' ? 'bg-green-500' : 
@@ -234,33 +212,52 @@ const WeighStationQuestionnaire = ({
       </div>
 
       <h2 className="text-xl font-bold text-foreground">
-        What's happening there?
+        What happened?
       </h2>
 
       <div className="flex gap-2">
-        {/* Nobody */}
+        {/* Bypass - Green */}
         <button
-          onClick={() => handleTrafficSelect('NOBODY')}
-          className="flex-1 py-4 px-3 bg-card border-2 border-primary/50 hover:border-primary hover:bg-card/80 rounded-xl transition-all active:scale-[0.98]"
+          onClick={() => handleOutcomeSelect('BYPASS')}
+          className="flex-1 py-4 px-3 bg-green-500 hover:bg-green-600 rounded-xl transition-all active:scale-[0.98]"
         >
-          <span className="text-lg font-bold text-primary">Nobody</span>
+          <span className="text-lg font-bold text-white leading-tight">Bypass</span>
+          <span className="block text-xs text-white/80 mt-1">Drove past</span>
         </button>
 
-        {/* Somebody */}
+        {/* Rolling Across - Amber */}
         <button
-          onClick={() => handleTrafficSelect('SOMEBODY')}
-          className="flex-1 py-4 px-3 bg-card border-2 border-primary/50 hover:border-primary hover:bg-card/80 rounded-xl transition-all active:scale-[0.98]"
+          onClick={() => handleOutcomeSelect('ROLLING_ACROSS')}
+          className="flex-1 py-4 px-3 bg-amber-500 hover:bg-amber-600 rounded-xl transition-all active:scale-[0.98]"
         >
-          <span className="text-lg font-bold text-primary">Somebody</span>
+          <span className="text-lg font-bold text-white leading-tight">Rolling<br/>Across</span>
+          <span className="block text-xs text-white/80 mt-1">No stop</span>
         </button>
 
-        {/* Somebody is waiting */}
+        {/* Inspection - Red */}
         <button
-          onClick={() => handleTrafficSelect('WAITING')}
-          className="flex-1 py-4 px-3 bg-card border-2 border-primary/50 hover:border-primary hover:bg-card/80 rounded-xl transition-all active:scale-[0.98]"
+          onClick={() => handleOutcomeSelect('INSPECTION')}
+          className="flex-1 py-4 px-3 bg-red-500 hover:bg-red-600 rounded-xl transition-all active:scale-[0.98]"
         >
-          <span className="text-lg font-bold text-primary leading-tight">Somebody<br/>is waiting</span>
+          <span className="text-lg font-bold text-white leading-tight">Inspection</span>
+          <span className="block text-xs text-white/80 mt-1">Pulled in</span>
         </button>
+      </div>
+
+      {/* Comment field */}
+      <div className="space-y-2">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <MessageSquare className="w-4 h-4" />
+          <span>Add a comment (optional)</span>
+        </div>
+        <textarea
+          value={comment}
+          onChange={(e) => setComment(e.target.value)}
+          placeholder="e.g. Long line, DOT checking logs..."
+          maxLength={200}
+          className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary resize-none"
+          rows={2}
+        />
       </div>
     </div>
   );
@@ -282,7 +279,6 @@ const WeighStationQuestionnaire = ({
 
   return (
     <>
-      {/* Backdrop */}
       <div 
         className={`
           fixed inset-0 bg-black/70 z-[80]
@@ -292,7 +288,6 @@ const WeighStationQuestionnaire = ({
         onClick={handleSkip}
       />
 
-      {/* Sheet */}
       <div 
         className={`
           fixed inset-x-0 bottom-0 z-[81]
@@ -301,12 +296,10 @@ const WeighStationQuestionnaire = ({
           ${visible ? 'translate-y-0' : 'translate-y-full'}
         `}
       >
-        {/* Handle */}
         <div className="flex justify-center pt-3 pb-2">
           <div className="w-12 h-1.5 rounded-full bg-muted" />
         </div>
 
-        {/* Close button - top right */}
         <button
           onClick={handleSkip}
           className="absolute top-4 right-4 w-8 h-8 rounded-full bg-muted/50 flex items-center justify-center"
@@ -314,8 +307,7 @@ const WeighStationQuestionnaire = ({
           <X className="w-4 h-4" />
         </button>
 
-        {/* Timer bar */}
-        {(step === 'status' || step === 'traffic') && (
+        {(step === 'status' || step === 'outcome') && (
           <div className="h-1 bg-muted mx-4 rounded-full overflow-hidden mb-4">
             <div
               className="h-full bg-primary transition-all duration-1000 ease-linear"
@@ -324,15 +316,13 @@ const WeighStationQuestionnaire = ({
           </div>
         )}
 
-        {/* Content */}
         <div className="px-4 py-4 pb-10">
           {step === 'status' && renderStatusStep()}
-          {step === 'traffic' && renderTrafficStep()}
+          {step === 'outcome' && renderOutcomeStep()}
           {step === 'submitting' && renderSubmitting()}
           {step === 'done' && renderDone()}
 
-          {/* Skip button */}
-          {(step === 'status' || step === 'traffic') && (
+          {(step === 'status' || step === 'outcome') && (
             <button
               onClick={handleSkip}
               className="w-full mt-4 py-2 text-muted-foreground text-sm"
