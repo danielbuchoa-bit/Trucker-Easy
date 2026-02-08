@@ -16,6 +16,7 @@ import { MedicationReminderProvider } from "./contexts/MedicationReminderContext
 import { SubscriptionProvider } from "./contexts/SubscriptionContext";
 import { AuthProvider } from "./contexts/AuthContext";
 import { DotHosProvider } from "./contexts/DotHosContext";
+import DotSpeedFeeder from "./components/navigation/DotSpeedFeeder";
 import DiagnosticsPanel from "./components/diagnostics/DiagnosticsPanel";
 import RoadTestDiagnosticsPanel from "./components/diagnostics/RoadTestDiagnosticsPanel";
 import LocationPermissionRequest from "./components/location/LocationPermissionRequest";
@@ -77,6 +78,7 @@ const App = () => (
                   <ChatProvider>
                     <ActiveNavigationProvider>
                       <DotHosProvider>
+                        <DotSpeedFeeder />
                         <EmotionalCheckInProvider>
                           <MedicationReminderProvider>
                           <PoiFeedbackProvider>
