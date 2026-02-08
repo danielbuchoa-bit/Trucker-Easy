@@ -9,7 +9,7 @@ import { useArrivalDetection, type DetectedPoi } from '@/hooks/useArrivalDetecti
 import { useAdvancedMapMatching, type MatchedPosition } from '@/hooks/useAdvancedMapMatching';
 import { useSmoothCursor, type CursorPosition } from '@/hooks/useSmoothCursor';
 import { useMapPerformance } from '@/hooks/useMapPerformance';
-import { useWeighStationAlerts } from '@/hooks/useWeighStationAlerts';
+import { useWeighStationAlerts, type StationOnRoute } from '@/hooks/useWeighStationAlerts';
 import { useSpeedAlerts } from '@/hooks/useSpeedAlerts';
 import { useSpeedLimit } from '@/hooks/useSpeedLimit';
 import { useSpeedingAlertSound } from '@/hooks/useSpeedingAlertSound';
@@ -42,6 +42,8 @@ import WeighStationOverlay from '@/components/weighstation/WeighStationOverlay';
 import WeighStationAlert from '@/components/weighstation/WeighStationAlert';
 import WeighStationBottomSheet from '@/components/weighstation/WeighStationBottomSheet';
 import WeighStationQuestionnaire from '@/components/weighstation/WeighStationQuestionnaire';
+import WeighStationReportsSheet from '@/components/weighstation/WeighStationReportsSheet';
+import WeighStationBadges from '@/components/navigation/WeighStationBadges';
 import { useGeofence } from '@/contexts/GeofenceContext';
 import { usePoiFeedback } from '@/contexts/PoiFeedbackContext';
 import { useRoadTestSafe } from '@/contexts/RoadTestContext';
@@ -260,6 +262,9 @@ const ActiveNavigationView = () => {
   
   // Voice settings sheet state
   const [voiceSettingsOpen, setVoiceSettingsOpen] = useState(false);
+  
+  // Weigh station reports sheet
+  const [reportsStation, setReportsStation] = useState<StationOnRoute | null>(null);
   
   // Heading interpolation refs
   const currentBearingRef = useRef<number>(0);
@@ -1129,11 +1134,13 @@ const ActiveNavigationView = () => {
         />
       )}
 
-      {/* Weigh Station Overlay - shows next station on route (top-right fixed position) */}
+      {/* Weigh Station Badges - right side, showing all stations on route */}
       <div className="absolute top-4 right-4 z-30 safe-top">
-        <WeighStationOverlay
-          nextStation={weighStationAlerts.nextStation}
-          onPress={() => weighStationAlerts.openStationDetails(weighStationAlerts.nextStation)}
+        <WeighStationBadges
+          stationsOnRoute={weighStationAlerts.stationsOnRoute}
+          maxVisible={3}
+          onOpenReports={(station) => setReportsStation(station)}
+          onRefresh={(stationId) => weighStationAlerts.refreshStationReports(stationId)}
         />
       </div>
       
@@ -1447,12 +1454,11 @@ const ActiveNavigationView = () => {
         />
       )}
 
-      {/* Weigh Station Bottom Sheet */}
-      {weighStationAlerts.selectedStation && (
-        <WeighStationBottomSheet
-          station={weighStationAlerts.selectedStation}
-          onClose={weighStationAlerts.closeStationDetails}
-          onRefresh={() => weighStationAlerts.refreshStationReports(weighStationAlerts.selectedStation!.station.id)}
+      {/* Weigh Station Reports Sheet */}
+      {reportsStation && (
+        <WeighStationReportsSheet
+          station={reportsStation}
+          onClose={() => setReportsStation(null)}
         />
       )}
 
