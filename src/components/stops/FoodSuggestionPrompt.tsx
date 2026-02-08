@@ -8,10 +8,7 @@ import { useLanguage } from '@/i18n/LanguageContext';
 import { useFeatureAccess } from '@/hooks/useFeatureAccess';
 import { useNavigate } from 'react-router-dom';
 import type { DriverFoodProfile } from '@/types/stops';
-import { 
-  TRUCK_STOP_ATTACHED_RESTAURANTS,
-  getTruckFriendlyFallbackMessage 
-} from '@/lib/truckFriendlyFilter';
+import { getRestaurantsForBrand } from '@/lib/truckStopRestaurants';
 
 interface VisitedStop {
   id: string;
@@ -92,47 +89,13 @@ const FoodSuggestionPrompt: React.FC<FoodSuggestionPromptProps> = ({ stop, onDis
     }
   }, []);
 
-  // Fetch nearby restaurants
-  const fetchNearbyRestaurants = useCallback(async (): Promise<string[]> => {
-    try {
-      console.log('[FoodSuggestion] Searching truck-friendly restaurants for:', stop.name, 'at', stop.lat, stop.lng);
-      const { data, error: fnError } = await supabase.functions.invoke('nb_browse_pois', {
-        body: {
-          lat: stop.lat,
-          lng: stop.lng,
-          radiusMeters: 500,
-          filterType: 'food',
-          limit: 30,
-        },
-      });
-      if (fnError) {
-        console.error('[FoodSuggestion] Restaurant search error:', fnError);
-        return [];
-      }
-      // API returns 'items' array — fallback to 'pois' for backwards compat
-      const pois = data?.items || data?.pois || [];
-      console.log('[FoodSuggestion] All food POIs returned:', pois.length, pois.map((p: any) => p.name));
-      if (pois.length > 0) {
-        const truckFriendlyRestaurants = pois.filter((p: any) => {
-          const name = (p.name || '').toLowerCase();
-          const chainName = (p.chainName || '').toLowerCase();
-          const searchText = `${name} ${chainName}`;
-          return TRUCK_STOP_ATTACHED_RESTAURANTS.some(brand =>
-            searchText.includes(brand.toLowerCase())
-          );
-        });
-        const names = truckFriendlyRestaurants.map((p: any) => p.name).filter(Boolean);
-        console.log('[FoodSuggestion] Truck-friendly restaurants matched:', names.length, names);
-        setNearbyRestaurants(names);
-        return names;
-      }
-      console.log('[FoodSuggestion] No POIs in response:', JSON.stringify(Object.keys(data || {})));
-      return [];
-    } catch (err) {
-      console.error('[FoodSuggestion] Error fetching restaurants:', err);
-      return [];
-    }
-  }, [stop.lat, stop.lng, stop.name]);
+  // Get known restaurants for this truck stop brand (no API call needed)
+  const getKnownRestaurants = useCallback((): string[] => {
+    const restaurants = getRestaurantsForBrand(stop.name, stop.brand);
+    console.log('[FoodSuggestion] Known restaurants for', stop.name, '(brand:', stop.brand, '):', restaurants);
+    setNearbyRestaurants(restaurants);
+    return restaurants;
+  }, [stop.name, stop.brand]);
 
   // Build profile payload
   const buildProfilePayload = (profile: DriverFoodProfile | null) => {
@@ -195,7 +158,7 @@ const FoodSuggestionPrompt: React.FC<FoodSuggestionPromptProps> = ({ stop, onDis
       setError(null);
 
       const profile = await fetchUserProfile();
-      const restaurants = await fetchNearbyRestaurants();
+      const restaurants = getKnownRestaurants();
 
       console.log('[FoodSuggestion] Fetching recommendations. Restaurants:', restaurants.length);
 
