@@ -14,6 +14,7 @@ export const TRUCK_STOP_BRANDS = [
   "petro", "sapp bros", "ambest", "buc-ee", "bucee", "town pump",
   "kwik trip", "casey's general", "kum & go", "qt ", "quiktrip",
   "wawa", "sheetz", "racetrac", "speedway",
+  "boss truck", "boss shop",
 ];
 
 // Restaurant chains commonly INSIDE truck stops (attached restaurants)
