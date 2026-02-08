@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { Navigation, MapPin, Star, Phone, Car, ParkingCircle, AlertTriangle, X, Utensils, Loader2 } from 'lucide-react';
+import { Navigation, MapPin, Star, Phone, Car, ParkingCircle, AlertTriangle, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import {
@@ -25,7 +25,6 @@ import { usePoiRatings } from '@/hooks/usePoiRatings';
 import PoiRatingBadge from '@/components/poi/PoiRatingBadge';
 import PoiRatingDetails from '@/components/poi/PoiRatingDetails';
 import { useAuth } from '@/contexts/AuthContext';
-import NearbyRestaurantsSection from '@/components/navigation/NearbyRestaurantsSection';
 
 interface Poi {
   id: string;
@@ -585,8 +584,6 @@ const NearbyPoisOverlay: React.FC<NearbyPoisOverlayProps> = ({
                   </a>
                 )}
 
-                {/* Nearby Restaurants */}
-                <NearbyRestaurantsSection lat={selectedPoi.lat} lng={selectedPoi.lng} poiId={selectedPoi.id} />
 
                 <div className="text-sm text-muted-foreground">
                   {selectedPoi.address}
