@@ -9,7 +9,6 @@ import { useFeatureAccess } from '@/hooks/useFeatureAccess';
 import { useNavigate } from 'react-router-dom';
 import type { DriverFoodProfile } from '@/types/stops';
 import { 
-  TRUCK_STOP_BRANDS, 
   TRUCK_STOP_ATTACHED_RESTAURANTS,
   getTruckFriendlyFallbackMessage 
 } from '@/lib/truckFriendlyFilter';
@@ -95,24 +94,14 @@ const FoodSuggestionPrompt: React.FC<FoodSuggestionPromptProps> = ({ stop, onDis
     try {
       console.log('[FoodSuggestion] Searching truck-friendly restaurants for:', stop.name);
       
-      // Check if we're at a verified truck stop
-      const stopNameLower = stop.name.toLowerCase();
-      const isAtTruckStop = TRUCK_STOP_BRANDS.some(brand => 
-        stopNameLower.includes(brand.replace("'", '').toLowerCase())
-      );
-      
-      if (!isAtTruckStop) {
-        console.log('[FoodSuggestion] Not at a verified truck stop - using fallback only');
-        return [];
-      }
-      
+      // Search for nearby food POIs at any truck stop location
       const { data, error: fnError } = await supabase.functions.invoke('nb_browse_pois', {
         body: {
           lat: stop.lat,
           lng: stop.lng,
-          radiusMeters: 150, // STRICT: Only search within truck stop complex
+          radiusMeters: 200, // Search within truck stop complex
           filterType: 'food',
-          limit: 10,
+          limit: 15,
         },
       });
 
@@ -122,13 +111,13 @@ const FoodSuggestionPrompt: React.FC<FoodSuggestionPromptProps> = ({ stop, onDis
       }
 
       if (data?.pois) {
-        // STRICT FILTER: Only allow known truck stop attached restaurants
+        // Filter: allow known truck stop attached restaurants AND known chains from RESTAURANT_CHAINS
         const truckFriendlyRestaurants = data.pois.filter((p: any) => {
           const name = (p.name || '').toLowerCase();
           const chainName = (p.chainName || '').toLowerCase();
           const searchText = `${name} ${chainName}`;
           
-          // Only allow known truck stop restaurant chains
+          // Allow known truck stop restaurant chains
           const isAttached = TRUCK_STOP_ATTACHED_RESTAURANTS.some(brand =>
             searchText.includes(brand.toLowerCase())
           );
@@ -143,7 +132,7 @@ const FoodSuggestionPrompt: React.FC<FoodSuggestionPromptProps> = ({ stop, onDis
         });
         
         const names = truckFriendlyRestaurants.map((p: any) => p.name).filter(Boolean);
-        console.log('[FoodSuggestion] Truck-friendly restaurants found:', names.length);
+        console.log('[FoodSuggestion] Truck-friendly restaurants found:', names.length, names);
         setNearbyRestaurants(names);
         return names;
       }
