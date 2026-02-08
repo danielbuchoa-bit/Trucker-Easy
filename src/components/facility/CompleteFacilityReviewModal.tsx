@@ -163,16 +163,75 @@ const CompleteFacilityReviewModal: React.FC<CompleteFacilityReviewModalProps> = 
         return;
       }
 
+      // Step 1: Create or find facility in the facilities table
+      const facilityTypeForDb = locationType === 'gas_station' ? 'both' : facilityType;
+      
+      // Check if facility already exists nearby (within ~200m)
+      let facilityId: string | null = null;
+      
+      if (userLocation) {
+        const { data: nearbyFacilities } = await supabase
+          .from('facilities')
+          .select('id, name')
+          .ilike('name', `%${facilityName.trim().substring(0, 10)}%`)
+          .limit(5);
+        
+        if (nearbyFacilities && nearbyFacilities.length > 0) {
+          // Use existing facility
+          facilityId = nearbyFacilities[0].id;
+        }
+      }
+
+      if (!facilityId) {
+        // Create new facility
+        const { data: newFacility, error: facilityError } = await supabase
+          .from('facilities')
+          .insert({
+            name: facilityName.trim(),
+            address: facilityAddress.trim(),
+            lat: userLocation?.lat || 0,
+            lng: userLocation?.lng || 0,
+            facility_type: facilityTypeForDb,
+            created_by: user.id,
+          })
+          .select('id')
+          .single();
+        
+        if (facilityError) throw facilityError;
+        facilityId = newFacility.id;
+      }
+
+      // Step 2: Create review in facility_reviews table
       if (locationType === 'facility') {
-        // Save to facility_ratings table
-        const avgWaitMinutesMap: Record<string, number> = {
-          '0-30': 15,
-          '30-60': 45,
-          '60-120': 90,
-          '120+': 150,
+        const timeSpentMap: Record<string, string> = {
+          '0-30': 'less_30',
+          '30-60': '30_60',
+          '60-120': '1_2h',
+          '120+': '2_4h',
         };
 
-        const reviewData = {
+        const { error: reviewError } = await supabase.from('facility_reviews').insert({
+          facility_id: facilityId,
+          user_id: user.id,
+          overall_rating: Math.round(finalRating),
+          treatment_rating: friendlyStaff || null,
+          speed_rating: loadingTime || null,
+          staff_help_rating: driverFacilities || null,
+          parking_rating: easyAccess || null,
+          exit_ease_rating: bathroomAvailable || null,
+          visit_type: facilityType === 'shipper' ? 'pickup' : facilityType === 'receiver' ? 'delivery' : 'both',
+          time_spent: waitTimeMinutes ? timeSpentMap[waitTimeMinutes] || null : null,
+          restroom_available: bathroomAvailable > 3 ? 'yes' : bathroomAvailable > 0 ? 'no' : 'unknown',
+          tips: notes.trim() || null,
+        });
+
+        if (reviewError) throw reviewError;
+
+        // Also save to facility_ratings for backward compatibility
+        const avgWaitMinutesMap: Record<string, number> = {
+          '0-30': 15, '30-60': 45, '60-120': 90, '120+': 150,
+        };
+        await supabase.from('facility_ratings').insert({
           facility_name: facilityName.trim(),
           facility_type: facilityType,
           address: facilityAddress.trim(),
@@ -187,14 +246,27 @@ const CompleteFacilityReviewModal: React.FC<CompleteFacilityReviewModalProps> = 
           avg_wait_minutes: waitTimeMinutes ? avgWaitMinutesMap[waitTimeMinutes] : null,
           comment: notes.trim() || null,
           tags: [] as string[],
-        };
-
-        const { error } = await supabase.from('facility_ratings').insert(reviewData);
-        if (error) throw error;
+        });
       } else {
-        // Save to poi_feedback table (gas station)
-        const poiData = {
-          poi_id: `manual_${Date.now()}`, // Manual entry
+        // Gas station review - save to facility_reviews
+        const { error: reviewError } = await supabase.from('facility_reviews').insert({
+          facility_id: facilityId,
+          user_id: user.id,
+          overall_rating: Math.round(finalRating),
+          treatment_rating: gsFriendlinessRating || null,
+          speed_rating: null,
+          staff_help_rating: gsFriendlinessRating || null,
+          parking_rating: gsStructureRating || null,
+          exit_ease_rating: null,
+          visit_type: 'both',
+          tips: notes.trim() || null,
+        });
+
+        if (reviewError) throw reviewError;
+
+        // Also save to poi_feedback for backward compatibility
+        await supabase.from('poi_feedback').insert({
+          poi_id: `manual_${Date.now()}`,
           poi_name: facilityName.trim(),
           poi_type: 'fuel' as const,
           user_id: user.id,
@@ -203,10 +275,7 @@ const CompleteFacilityReviewModal: React.FC<CompleteFacilityReviewModalProps> = 
           structure_rating: gsStructureRating || null,
           recommendation_rating: gsOverallRating,
           would_return: gsWouldReturn,
-        };
-
-        const { error } = await supabase.from('poi_feedback').insert(poiData);
-        if (error) throw error;
+        });
       }
       
       toast({ 
