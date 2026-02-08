@@ -320,7 +320,7 @@ const FoodSuggestionPrompt: React.FC<FoodSuggestionPromptProps> = ({ stop, onDis
           )}
         </CardHeader>
 
-        <CardContent className={`px-4 pb-3 transition-all duration-200 ${expanded ? '' : 'max-h-32 overflow-hidden'}`}>
+        <CardContent className={`px-4 pb-3 transition-all duration-200 ${expanded ? 'max-h-[40vh] overflow-y-auto' : 'max-h-32 overflow-hidden'}`}>
           {loading ? (
             <div className="flex items-center gap-2 py-2">
               <Loader2 className="w-4 h-4 animate-spin text-primary" />
