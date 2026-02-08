@@ -69,17 +69,107 @@ export const TRUCK_STOP_NETWORKS: Record<string, TruckStopNetwork> = {
 
 // ---------- Restaurant Chains ----------
 export const RESTAURANT_CHAINS: Record<string, RestaurantChain> = {
+  // Mediterranean
   'naf naf grill': {
     cuisine: 'Mediterranean',
     typicalItems: ['Chicken shawarma bowl', 'Falafel bowl', 'Grilled chicken pita', 'Hummus with salad'],
   },
+  // Mexican
   chipotle: {
     cuisine: 'Mexican',
     typicalItems: ['Chicken burrito bowl', 'Steak bowl', 'Veggie bowl', 'Salad bowl'],
   },
+  'taco bell': {
+    cuisine: 'Mexican Fast Food',
+    typicalItems: ['Power Bowl', 'Bean burrito', 'Chicken quesadilla', 'Crunchy taco'],
+  },
+  // Sandwiches
   subway: {
     cuisine: 'Sandwiches',
     typicalItems: ['Turkey sandwich', 'Grilled chicken sandwich', 'Veggie sandwich'],
+  },
+  "arby's": {
+    cuisine: 'Sandwiches',
+    typicalItems: ['Roast beef classic', 'Turkey gyro', 'Chicken sandwich', 'Market Fresh wrap'],
+  },
+  // Truck Stop Diners
+  'iron skillet': {
+    cuisine: 'American Diner',
+    typicalItems: ['Grilled chicken dinner', 'Country fried steak', 'All-you-can-eat buffet', 'Breakfast platter', 'Meatloaf dinner'],
+  },
+  'country pride': {
+    cuisine: 'American Diner',
+    typicalItems: ['Grilled chicken', 'Mashed potatoes & gravy', 'Green beans', 'Breakfast combo', 'Pot roast'],
+  },
+  // Breakfast / Pancake Houses
+  "denny's": {
+    cuisine: 'American Diner',
+    typicalItems: ['Grand Slam breakfast', 'Fit Fare omelette', 'Turkey club sandwich', 'Grilled chicken salad'],
+  },
+  'huddle house': {
+    cuisine: 'American Diner',
+    typicalItems: ['Grilled chicken plate', 'Egg breakfast', 'Waffle plate', 'Country ham'],
+  },
+  'waffle house': {
+    cuisine: 'American Diner',
+    typicalItems: ['Waffle combo', 'Grilled chicken melt', 'Hash browns', 'Egg breakfast plate'],
+  },
+  ihop: {
+    cuisine: 'American Breakfast',
+    typicalItems: ['Omelette', 'Turkey bacon combo', 'Chicken & waffles', 'Garden salad'],
+  },
+  // Burgers / Fast Food
+  "wendy's": {
+    cuisine: 'Fast Food',
+    typicalItems: ['Grilled chicken sandwich', 'Jr. hamburger', 'Apple pecan salad', 'Baked potato'],
+  },
+  "mcdonald's": {
+    cuisine: 'Fast Food',
+    typicalItems: ['Egg McMuffin', 'Grilled chicken sandwich', 'Side salad', 'Fruit & yogurt parfait'],
+  },
+  'burger king': {
+    cuisine: 'Fast Food',
+    typicalItems: ['Whopper Jr.', 'Grilled chicken sandwich', 'Garden salad', 'Egg & cheese croissant'],
+  },
+  // Chicken
+  popeyes: {
+    cuisine: 'Fried Chicken',
+    typicalItems: ['Blackened chicken tenders', 'Cajun rice', 'Green beans', 'Chicken sandwich'],
+  },
+  "chester's": {
+    cuisine: 'Fried Chicken',
+    typicalItems: ['Fried chicken pieces', 'Chicken tenders', 'Potato wedges', 'Biscuit'],
+  },
+  // Pizza
+  'pizza hut': {
+    cuisine: 'Pizza',
+    typicalItems: ['Personal pan pizza', 'Veggie pizza', 'Breadsticks', 'Wing street wings'],
+  },
+  "godfather's pizza": {
+    cuisine: 'Pizza',
+    typicalItems: ['Buffet pizza slices', 'Pepperoni pizza', 'Veggie pizza', 'Breadsticks'],
+  },
+  'hunt brothers pizza': {
+    cuisine: 'Pizza',
+    typicalItems: ['Whole pizza', 'Pizza by the slice', 'Wings'],
+  },
+  // Coffee / Bakery
+  "dunkin'": {
+    cuisine: 'Coffee & Bakery',
+    typicalItems: ['Coffee', 'Egg & cheese wrap', 'Turkey sausage sandwich', 'Oatmeal'],
+  },
+  starbucks: {
+    cuisine: 'Coffee & Bakery',
+    typicalItems: ['Coffee', 'Egg bites', 'Protein box', 'Oatmeal'],
+  },
+  // Sit-down highway restaurants
+  'cracker barrel': {
+    cuisine: 'Southern Comfort',
+    typicalItems: ['Grilled chicken tenderloins', 'Rainbow trout', 'Turnip greens', 'Country ham breakfast'],
+  },
+  'golden corral': {
+    cuisine: 'American Buffet',
+    typicalItems: ['Buffet - grilled chicken', 'Buffet - steamed vegetables', 'Salad bar', 'Baked fish'],
   },
 };
 
