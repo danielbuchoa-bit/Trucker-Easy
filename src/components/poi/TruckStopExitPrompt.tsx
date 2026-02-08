@@ -78,7 +78,7 @@ const TruckStopExitPrompt: React.FC<TruckStopExitPromptProps> = ({
 
   const handleSubmit = async () => {
     if (overallRating === 0) {
-      toast({ title: 'Por favor, dê uma avaliação geral', variant: 'destructive' });
+      toast({ title: 'Please give an overall rating', variant: 'destructive' });
       return;
     }
 
@@ -87,7 +87,7 @@ const TruckStopExitPrompt: React.FC<TruckStopExitPromptProps> = ({
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
-        toast({ title: 'Por favor, faça login', variant: 'destructive' });
+        toast({ title: 'Please sign in', variant: 'destructive' });
         setSubmitting(false);
         return;
       }
@@ -102,8 +102,8 @@ const TruckStopExitPrompt: React.FC<TruckStopExitPromptProps> = ({
         console.error('Error checking feedback limit:', checkError);
       } else if (!canSubmit) {
         toast({ 
-          title: 'Limite de avaliação atingido', 
-          description: 'Você já avaliou este local recentemente.',
+          title: 'Rating limit reached', 
+          description: 'You already rated this location recently.',
           variant: 'destructive' 
         });
         setSubmitting(false);
@@ -127,11 +127,11 @@ const TruckStopExitPrompt: React.FC<TruckStopExitPromptProps> = ({
 
       if (error) throw error;
       
-      toast({ title: 'Avaliação enviada!', description: 'Obrigado por ajudar outros motoristas.' });
+      toast({ title: 'Review submitted!', description: 'Thanks for helping other drivers.' });
       onComplete();
     } catch (error) {
       console.error('Error submitting review:', error);
-      toast({ title: 'Falha ao enviar avaliação', variant: 'destructive' });
+      toast({ title: 'Failed to submit review', variant: 'destructive' });
     }
     
     setSubmitting(false);
@@ -144,7 +144,7 @@ const TruckStopExitPrompt: React.FC<TruckStopExitPromptProps> = ({
           <div className="flex items-center justify-between">
             <SheetTitle className="flex items-center gap-2 text-lg">
               <Fuel className="h-5 w-5 text-primary" />
-              Como foi sua experiência?
+              How was your experience?
             </SheetTitle>
             <Button variant="ghost" size="icon" onClick={onDismiss}>
               <X className="h-5 w-5" />
@@ -163,7 +163,7 @@ const TruckStopExitPrompt: React.FC<TruckStopExitPromptProps> = ({
 
           {/* Overall Rating */}
           <div className="space-y-2">
-            <label className="text-base font-medium">Avaliação Geral *</label>
+            <label className="text-base font-medium">Overall Rating *</label>
             <StarRating
               rating={overallRating}
               interactive
@@ -174,7 +174,7 @@ const TruckStopExitPrompt: React.FC<TruckStopExitPromptProps> = ({
 
           {/* Quick Ratings */}
           <div className="space-y-3">
-            <label className="text-muted-foreground">Detalhes (opcional)</label>
+            <label className="text-muted-foreground">Details (optional)</label>
             
             <div className="flex items-center gap-2">
               <ParkingCircle className="w-4 h-4 text-muted-foreground flex-shrink-0" />
@@ -183,7 +183,7 @@ const TruckStopExitPrompt: React.FC<TruckStopExitPromptProps> = ({
                   rating={structureRating}
                   interactive
                   onChange={setStructureRating}
-                  label="Estrutura (estacionamento)"
+                  label="Facilities (parking)"
                 />
               </div>
             </div>
@@ -195,7 +195,7 @@ const TruckStopExitPrompt: React.FC<TruckStopExitPromptProps> = ({
                   rating={cleanlinessRating}
                   interactive
                   onChange={setCleanlinessRating}
-                  label="Limpeza (banheiros)"
+                  label="Cleanliness (restrooms)"
                 />
               </div>
             </div>
@@ -207,7 +207,7 @@ const TruckStopExitPrompt: React.FC<TruckStopExitPromptProps> = ({
                   rating={friendlinessRating}
                   interactive
                   onChange={setFriendlinessRating}
-                  label="Atendimento"
+                  label="Service"
                 />
               </div>
             </div>
@@ -215,7 +215,7 @@ const TruckStopExitPrompt: React.FC<TruckStopExitPromptProps> = ({
 
           {/* Would Return */}
           <div className="space-y-2">
-            <label>Voltaria aqui?</label>
+            <label>Would you return?</label>
             <div className="flex gap-2">
               <Button
                 type="button"
@@ -225,7 +225,7 @@ const TruckStopExitPrompt: React.FC<TruckStopExitPromptProps> = ({
                 onClick={() => setWouldReturn(true)}
               >
                 <ThumbsUp className="w-4 h-4" />
-                Sim
+                Yes
               </Button>
               <Button
                 type="button"
@@ -235,7 +235,7 @@ const TruckStopExitPrompt: React.FC<TruckStopExitPromptProps> = ({
                 onClick={() => setWouldReturn(false)}
               >
                 <ThumbsDown className="w-4 h-4" />
-                Não
+                No
               </Button>
             </div>
           </div>
@@ -243,7 +243,7 @@ const TruckStopExitPrompt: React.FC<TruckStopExitPromptProps> = ({
           {/* Submit Buttons */}
           <div className="flex gap-3 pt-2">
             <Button variant="outline" onClick={onDismiss} className="flex-1">
-              Depois
+              Later
             </Button>
             <Button
               onClick={handleSubmit}
@@ -253,10 +253,10 @@ const TruckStopExitPrompt: React.FC<TruckStopExitPromptProps> = ({
               {submitting ? (
                 <>
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Enviando...
+                  Submitting...
                 </>
               ) : (
-                'Enviar Avaliação'
+                'Submit Review'
               )}
             </Button>
           </div>

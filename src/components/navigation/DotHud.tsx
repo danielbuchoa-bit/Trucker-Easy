@@ -353,17 +353,17 @@ const DotHud = memo(function DotHud({ onStopNow }: { onStopNow?: () => void }) {
 
             {warning.warn && violation === "none" && (
               <div className="mt-2 text-[11px] font-bold text-yellow-400">
-                ⚠ {fmtHM(warning.remainingSec)} para {warning.label}
+                ⚠ {fmtHM(warning.remainingSec)} until {warning.label}
               </div>
             )}
 
             {violation !== "none" && (
               <div className="mt-2 text-[11px] font-extrabold text-red-400">
                 {violation === "break_due"
-                  ? "Break necessário"
+                  ? "Break required"
                   : violation === "drive_exceeded"
-                    ? "Limite de direção excedido"
-                    : "Limite de shift excedido"}
+                    ? "Drive limit exceeded"
+                    : "Shift limit exceeded"}
               </div>
             )}
           </div>
@@ -375,25 +375,25 @@ const DotHud = memo(function DotHud({ onStopNow }: { onStopNow?: () => void }) {
         <div className="mt-2 w-[260px] rounded-xl bg-black/80 border border-white/10 px-3 py-2 text-white">
           <div className="flex items-center justify-between">
             <div className="text-[12px] font-extrabold">
-              {alertKind === "warning" ? "Atenção DOT" : "DOT estourou"}
+              {alertKind === "warning" ? "DOT Warning" : "DOT Violation"}
             </div>
             <button
               onClick={dismissX}
               className="text-[12px] px-2 py-1 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10"
-              title="Fechar e silenciar (sem override)"
+              title="Close and silence (no override)"
             >
               ✕
             </button>
           </div>
 
           <div className="mt-1 text-[11px] opacity-90">
-            {alertKind === "warning"
-              ? `Faltam ${fmtHM(warning.remainingSec)} para ${warning.label}.`
+             {alertKind === "warning"
+              ? `${fmtHM(warning.remainingSec)} until ${warning.label}.`
               : violation === "break_due"
-                ? "Break de 30 min necessário."
+                ? "30 min break required."
                 : violation === "drive_exceeded"
-                  ? "Limite de 11h excedido."
-                  : "Limite de 14h excedido."}
+                  ? "11h drive limit exceeded."
+                  : "14h shift limit exceeded."}
           </div>
 
           <div className="mt-2 flex gap-2">
@@ -401,30 +401,30 @@ const DotHud = memo(function DotHud({ onStopNow }: { onStopNow?: () => void }) {
               onClick={stopNow}
               className="flex-1 text-[11px] font-bold py-2 rounded-lg bg-green-500/15 border border-green-500/25 hover:bg-green-500/25"
             >
-              Parar agora
+              Stop now
             </button>
 
             {alertKind === "violation" ? (
               <button
                 onClick={ignore}
                 className="flex-1 text-[11px] font-bold py-2 rounded-lg bg-red-500/15 border border-red-500/25 hover:bg-red-500/25 text-red-300"
-                title="Override visual + silenciar"
-              >
-                Ignorar
+                 title="Override visual + silence"
+               >
+                 Ignore
               </button>
             ) : (
               <button
                 onClick={ackSeen}
                 className="flex-1 text-[11px] font-bold py-2 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10"
-                title="Marcar como visto"
-              >
-                Entendi
+                 title="Mark as seen"
+               >
+                 Got it
               </button>
             )}
           </div>
 
           <div className="mt-2 text-[10px] opacity-70">
-            Suporte visual apenas. Não altera seu logbook oficial.
+            Visual support only. Does not alter your official logbook.
           </div>
         </div>
       )}

@@ -51,7 +51,7 @@ const UnifiedRatingPrompt: React.FC<UnifiedRatingPromptProps> = ({
   const [showFullForm, setShowFullForm] = useState(false);
 
   // Determine location name and type
-  const locationName = facility?.name || poiName || 'Este local';
+  const locationName = facility?.name || poiName || 'This location';
   const locationAddress = facility?.address || poiAddress;
   const locationId = facility?.id || poiId || `poi-${Date.now()}`;
   
@@ -62,20 +62,20 @@ const UnifiedRatingPrompt: React.FC<UnifiedRatingPromptProps> = ({
   // UI labels based on type
   const getTitle = () => {
     if (isFuelStop) {
-      return promptType === 'arrival' ? 'Chegou ao posto?' : 'Saindo do posto?';
+      return promptType === 'arrival' ? 'Arrived at the stop?' : 'Leaving the stop?';
     }
-    return promptType === 'arrival' ? 'Chegou ao local?' : 'Saindo do local?';
+    return promptType === 'arrival' ? 'Arrived at location?' : 'Leaving location?';
   };
 
   const getDescription = () => {
     if (isFuelStop) {
       return promptType === 'arrival' 
-        ? 'Avalie a estrutura, limpeza e atendimento'
-        : 'Como foi sua experiência? Sua avaliação ajuda outros motoristas.';
+        ? 'Rate the facilities, cleanliness and service'
+        : 'How was your experience? Your review helps other drivers.';
     }
     return promptType === 'arrival' 
-      ? 'Avalie esta empresa para ajudar outros motoristas'
-      : 'Como foi o carregamento/descarga? Sua avaliação ajuda a comunidade.';
+      ? 'Rate this facility to help other drivers'
+      : 'How was the loading/unloading? Your review helps the community.';
   };
 
   const getIcon = () => {

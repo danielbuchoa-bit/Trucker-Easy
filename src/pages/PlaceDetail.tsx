@@ -10,7 +10,7 @@ import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { formatDistanceToNow } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
+import { enUS } from 'date-fns/locale';
 
 interface PlaceData {
   id: string;
@@ -267,7 +267,7 @@ const PlaceDetailScreen = () => {
       fetchReviews(place.id);
     } catch (error) {
       console.error('Error submitting review:', error);
-      toast.error('Erro ao enviar avaliação');
+      toast.error('Error submitting review');
     } finally {
       setSubmitting(false);
     }
@@ -480,21 +480,21 @@ const PlaceDetailScreen = () => {
                         <span className="text-2xl font-bold">{aggregateRating.avg_overall?.toFixed(1)}</span>
                       </div>
                       <span className="text-muted-foreground">
-                        ({aggregateRating.review_count} avaliações)
+                        ({aggregateRating.review_count} reviews)
                       </span>
                     </div>
                     <div className="grid grid-cols-2 gap-2 text-xs sm:text-sm">
                       <div className="flex justify-between">
-                        <span className="text-muted-foreground">Limpeza:</span>
+                        <span className="text-muted-foreground">Cleanliness:</span>
                         <span className="font-medium">{aggregateRating.avg_cleanliness?.toFixed(1) || '-'}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-muted-foreground">Atendimento:</span>
+                        <span className="text-muted-foreground">Service:</span>
                         <span className="font-medium">{aggregateRating.avg_friendliness?.toFixed(1) || '-'}</span>
                       </div>
                       {aggregateRating.would_return_pct !== null && (
                         <div className="flex justify-between col-span-2">
-                          <span className="text-muted-foreground">Voltariam:</span>
+                          <span className="text-muted-foreground">Would return:</span>
                           <span className="font-medium text-green-500">{aggregateRating.would_return_pct?.toFixed(0)}%</span>
                         </div>
                       )}
@@ -516,7 +516,7 @@ const PlaceDetailScreen = () => {
                     
                     {/* Recommendation Rating */}
                     <div>
-                      <label className="text-sm text-muted-foreground mb-2 block">Recomendação geral</label>
+                      <label className="text-sm text-muted-foreground mb-2 block">Overall recommendation</label>
                       <div className="flex gap-1 sm:gap-2">
                         {[1, 2, 3, 4, 5].map((star) => (
                           <button
@@ -534,7 +534,7 @@ const PlaceDetailScreen = () => {
 
                     {/* Cleanliness Rating */}
                     <div>
-                      <label className="text-sm text-muted-foreground mb-2 block">Limpeza</label>
+                      <label className="text-sm text-muted-foreground mb-2 block">Cleanliness</label>
                       <div className="flex gap-1 sm:gap-2">
                         {[1, 2, 3, 4, 5].map((star) => (
                           <button
@@ -552,7 +552,7 @@ const PlaceDetailScreen = () => {
 
                     {/* Friendliness Rating */}
                     <div>
-                      <label className="text-sm text-muted-foreground mb-2 block">Atendimento</label>
+                      <label className="text-sm text-muted-foreground mb-2 block">Service</label>
                       <div className="flex gap-1 sm:gap-2">
                         {[1, 2, 3, 4, 5].map((star) => (
                           <button
@@ -570,7 +570,7 @@ const PlaceDetailScreen = () => {
 
                     {/* Would Return */}
                     <div>
-                      <label className="text-sm text-muted-foreground mb-2 block">Voltaria aqui?</label>
+                      <label className="text-sm text-muted-foreground mb-2 block">Would you return?</label>
                       <div className="flex gap-2">
                         <button
                           onClick={() => setWouldReturn(true)}
@@ -581,7 +581,7 @@ const PlaceDetailScreen = () => {
                           }`}
                         >
                           <ThumbsUp className="w-4 h-4" />
-                          Sim
+                          Yes
                         </button>
                         <button
                           onClick={() => setWouldReturn(false)}
@@ -592,7 +592,7 @@ const PlaceDetailScreen = () => {
                           }`}
                         >
                           <ThumbsDown className="w-4 h-4" />
-                          Não
+                          No
                         </button>
                       </div>
                     </div>
@@ -620,7 +620,7 @@ const PlaceDetailScreen = () => {
                 {reviewsLoading && (
                   <div className="flex items-center justify-center py-8">
                     <Loader2 className="w-6 h-6 animate-spin text-primary" />
-                    <span className="ml-2 text-muted-foreground text-sm">Carregando avaliações...</span>
+                    <span className="ml-2 text-muted-foreground text-sm">Loading reviews...</span>
                   </div>
                 )}
 
@@ -628,8 +628,8 @@ const PlaceDetailScreen = () => {
                 {!reviewsLoading && reviews.length === 0 && (
                   <div className="bg-card rounded-xl border border-border p-6 text-center">
                     <Sparkles className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
-                    <p className="text-muted-foreground text-sm">Nenhuma avaliação ainda.</p>
-                    <p className="text-muted-foreground text-xs mt-1">Seja o primeiro a avaliar!</p>
+                    <p className="text-muted-foreground text-sm">No reviews yet.</p>
+                    <p className="text-muted-foreground text-xs mt-1">Be the first to review!</p>
                   </div>
                 )}
 
@@ -648,7 +648,7 @@ const PlaceDetailScreen = () => {
                           <span className="font-medium text-foreground text-sm">Driver</span>
                         </div>
                         <span className="text-xs sm:text-sm text-muted-foreground">
-                          {formatDistanceToNow(new Date(review.created_at), { addSuffix: true, locale: ptBR })}
+                          {formatDistanceToNow(new Date(review.created_at), { addSuffix: true, locale: enUS })}
                         </span>
                       </div>
                       
@@ -663,19 +663,19 @@ const PlaceDetailScreen = () => {
                       </div>
                       
                       <div className="grid grid-cols-2 gap-1 text-xs text-muted-foreground mb-2">
-                        <span>Limpeza: {review.cleanliness_rating}/5</span>
-                        <span>Atendimento: {review.friendliness_rating}/5</span>
+                        <span>Cleanliness: {review.cleanliness_rating}/5</span>
+                        <span>Service: {review.friendliness_rating}/5</span>
                       </div>
                       
                       {review.would_return !== null && (
                         <div className="flex items-center gap-1 text-xs">
                           {review.would_return ? (
                             <span className="text-green-500 flex items-center gap-1">
-                              <ThumbsUp className="w-3 h-3" /> Voltaria
+                              <ThumbsUp className="w-3 h-3" /> Would return
                             </span>
                           ) : (
                             <span className="text-red-500 flex items-center gap-1">
-                              <ThumbsDown className="w-3 h-3" /> Não voltaria
+                              <ThumbsDown className="w-3 h-3" /> Would not return
                             </span>
                           )}
                         </div>

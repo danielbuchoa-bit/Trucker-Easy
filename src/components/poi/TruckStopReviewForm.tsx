@@ -77,7 +77,7 @@ const TruckStopReviewForm: React.FC<TruckStopReviewFormProps> = ({
 
   const handleSubmit = async () => {
     if (overallRating === 0) {
-      toast({ title: 'Por favor, dê uma avaliação geral', variant: 'destructive' });
+      toast({ title: 'Please give an overall rating', variant: 'destructive' });
       return;
     }
 
@@ -86,7 +86,7 @@ const TruckStopReviewForm: React.FC<TruckStopReviewFormProps> = ({
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
-        toast({ title: 'Por favor, faça login', variant: 'destructive' });
+        toast({ title: 'Please sign in', variant: 'destructive' });
         setSubmitting(false);
         return;
       }
@@ -101,8 +101,8 @@ const TruckStopReviewForm: React.FC<TruckStopReviewFormProps> = ({
         console.error('Error checking feedback limit:', checkError);
       } else if (!canSubmit) {
         toast({ 
-          title: 'Limite de avaliação atingido', 
-          description: 'Você já avaliou este local recentemente.',
+          title: 'Rating limit reached', 
+          description: 'You already rated this location recently.',
           variant: 'destructive' 
         });
         setSubmitting(false);
@@ -126,11 +126,11 @@ const TruckStopReviewForm: React.FC<TruckStopReviewFormProps> = ({
 
       if (error) throw error;
       
-      toast({ title: 'Avaliação enviada!', description: 'Obrigado por ajudar outros motoristas.' });
+      toast({ title: 'Review submitted!', description: 'Thanks for helping other drivers.' });
       onComplete();
     } catch (error) {
       console.error('Error submitting review:', error);
-      toast({ title: 'Falha ao enviar avaliação', variant: 'destructive' });
+      toast({ title: 'Failed to submit review', variant: 'destructive' });
     }
     
     setSubmitting(false);
@@ -151,7 +151,7 @@ const TruckStopReviewForm: React.FC<TruckStopReviewFormProps> = ({
 
       {/* Overall Rating */}
       <div className="space-y-2">
-        <Label className="text-base font-medium">Avaliação Geral *</Label>
+        <Label className="text-base font-medium">Overall Rating *</Label>
         <StarRating
           rating={overallRating}
           interactive
@@ -162,7 +162,7 @@ const TruckStopReviewForm: React.FC<TruckStopReviewFormProps> = ({
 
       {/* Main Ratings - Structure, Cleanliness, Service */}
       <div className="space-y-3">
-        <Label className="text-muted-foreground">Avaliações Detalhadas</Label>
+        <Label className="text-muted-foreground">Detailed Ratings</Label>
         
         <div className="flex items-center gap-2">
           <ParkingCircle className="w-4 h-4 text-muted-foreground flex-shrink-0" />
@@ -170,7 +170,7 @@ const TruckStopReviewForm: React.FC<TruckStopReviewFormProps> = ({
             rating={structureRating}
             interactive
             onChange={setStructureRating}
-            label="Estrutura (estacionamento, comodidades)"
+            label="Facilities (parking, amenities)"
           />
         </div>
         
@@ -180,7 +180,7 @@ const TruckStopReviewForm: React.FC<TruckStopReviewFormProps> = ({
             rating={cleanlinessRating}
             interactive
             onChange={setCleanlinessRating}
-            label="Limpeza (banheiros, área comum)"
+            label="Cleanliness (restrooms, common area)"
           />
         </div>
         
@@ -190,14 +190,14 @@ const TruckStopReviewForm: React.FC<TruckStopReviewFormProps> = ({
             rating={friendlinessRating}
             interactive
             onChange={setFriendlinessRating}
-            label="Atendimento (funcionários)"
+            label="Service (staff)"
           />
         </div>
       </div>
 
       {/* Optional Ratings */}
       <div className="space-y-3">
-        <Label className="text-muted-foreground text-xs">Opcionais</Label>
+        <Label className="text-muted-foreground text-xs">Optional</Label>
         
         <div className="flex items-center gap-2">
           <Fuel className="w-4 h-4 text-muted-foreground flex-shrink-0" />
@@ -205,7 +205,7 @@ const TruckStopReviewForm: React.FC<TruckStopReviewFormProps> = ({
             rating={fuelPriceRating}
             interactive
             onChange={setFuelPriceRating}
-            label="Preço combustível"
+            label="Fuel price"
           />
         </div>
         
@@ -215,14 +215,14 @@ const TruckStopReviewForm: React.FC<TruckStopReviewFormProps> = ({
             rating={foodRating}
             interactive
             onChange={setFoodRating}
-            label="Alimentação"
+            label="Food"
           />
         </div>
       </div>
 
       {/* Would Return */}
       <div className="space-y-2">
-        <Label>Voltaria aqui?</Label>
+        <Label>Would you return?</Label>
         <div className="flex gap-2">
           <Button
             type="button"
@@ -232,7 +232,7 @@ const TruckStopReviewForm: React.FC<TruckStopReviewFormProps> = ({
             onClick={() => setWouldReturn(true)}
           >
             <ThumbsUp className="w-4 h-4" />
-            Sim
+            Yes
           </Button>
           <Button
             type="button"
@@ -242,16 +242,16 @@ const TruckStopReviewForm: React.FC<TruckStopReviewFormProps> = ({
             onClick={() => setWouldReturn(false)}
           >
             <ThumbsDown className="w-4 h-4" />
-            Não
+            No
           </Button>
         </div>
       </div>
 
       {/* Tips */}
       <div className="space-y-2">
-        <Label>Dica rápida (opcional)</Label>
+        <Label>Quick tip (optional)</Label>
         <Textarea
-          placeholder="Melhor bomba, horário, estacionamento preferencial..."
+          placeholder="Best pump, best time, preferred parking..."
           value={tips}
           onChange={(e) => setTips(e.target.value)}
           rows={2}
@@ -261,7 +261,7 @@ const TruckStopReviewForm: React.FC<TruckStopReviewFormProps> = ({
       {/* Submit Buttons */}
       <div className="flex gap-3 pt-2">
         <Button variant="outline" onClick={onCancel} className="flex-1">
-          Cancelar
+          Cancel
         </Button>
         <Button
           onClick={handleSubmit}
@@ -271,10 +271,10 @@ const TruckStopReviewForm: React.FC<TruckStopReviewFormProps> = ({
           {submitting ? (
             <>
               <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              Enviando...
+              Submitting...
             </>
           ) : (
-            'Enviar Avaliação'
+            'Submit Review'
           )}
         </Button>
       </div>

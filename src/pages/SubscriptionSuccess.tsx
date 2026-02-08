@@ -73,46 +73,46 @@ export default function SubscriptionSuccess() {
 
         {/* Title */}
         <div className="space-y-2">
-          <h1 className="text-3xl font-bold">Bem-vindo ao {getTierName()}! 🎉</h1>
+          <h1 className="text-3xl font-bold">Welcome to {getTierName()}! 🎉</h1>
           <p className="text-muted-foreground">
-            Sua assinatura foi ativada com sucesso. Você agora tem acesso a todos os recursos do plano {getTierName()}.
+            Your subscription has been activated. You now have access to all {getTierName()} plan features.
           </p>
         </div>
 
         {/* Trial Info */}
         <div className="bg-muted/50 rounded-lg p-4">
           <p className="text-sm text-muted-foreground">
-            <span className="font-medium text-foreground">3 dias grátis</span> para você experimentar. 
-            Após o período de teste, sua assinatura será renovada automaticamente.
+            <span className="font-medium text-foreground">3 days free</span> to try it out. 
+            After the trial period, your subscription will renew automatically.
           </p>
         </div>
 
         {/* Features Preview */}
         <div className="space-y-3 text-left">
-          <h3 className="font-semibold text-center">O que você pode fazer agora:</h3>
+          <h3 className="font-semibold text-center">What you can do now:</h3>
           <ul className="space-y-2">
             <li className="flex items-center gap-2 text-sm">
               <CheckCircle className="h-4 w-4 text-green-500 flex-shrink-0" />
-              <span>Navegação GPS especializada para caminhões</span>
+              <span>Specialized truck GPS navigation</span>
             </li>
             <li className="flex items-center gap-2 text-sm">
               <CheckCircle className="h-4 w-4 text-green-500 flex-shrink-0" />
-              <span>Pontos de interesse e paradas para truckers</span>
+              <span>Points of interest and trucker stops</span>
             </li>
             <li className="flex items-center gap-2 text-sm">
               <CheckCircle className="h-4 w-4 text-green-500 flex-shrink-0" />
-              <span>Comunidade de motoristas profissionais</span>
+              <span>Professional driver community</span>
             </li>
             {(tier === 'gold' || tier === 'diamond') && (
               <li className="flex items-center gap-2 text-sm">
                 <CheckCircle className="h-4 w-4 text-green-500 flex-shrink-0" />
-                <span>Mapas offline e alertas de tráfego</span>
+                <span>Offline maps and traffic alerts</span>
               </li>
             )}
             {tier === 'diamond' && (
               <li className="flex items-center gap-2 text-sm">
                 <CheckCircle className="h-4 w-4 text-green-500 flex-shrink-0" />
-                <span>Relatórios de viagem e suporte prioritário</span>
+                <span>Trip reports and priority support</span>
               </li>
             )}
           </ul>
@@ -126,7 +126,7 @@ export default function SubscriptionSuccess() {
             size="lg"
           >
             <Truck className="h-5 w-5 mr-2" />
-            Começar a Navegar
+            Start Navigating
             <ArrowRight className="h-5 w-5 ml-2" />
           </Button>
           
@@ -135,13 +135,13 @@ export default function SubscriptionSuccess() {
             onClick={() => navigate('/profile')}
             className="w-full"
           >
-            Ver Meu Perfil
+            View My Profile
           </Button>
         </div>
 
         {/* Footer */}
         <p className="text-xs text-muted-foreground pt-4">
-          Você pode gerenciar sua assinatura a qualquer momento nas configurações do seu perfil.
+          You can manage your subscription anytime in your profile settings.
         </p>
       </Card>
     </div>

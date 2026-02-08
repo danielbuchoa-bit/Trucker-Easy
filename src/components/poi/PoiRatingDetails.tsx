@@ -40,11 +40,11 @@ const PoiRatingDetails: React.FC<PoiRatingDetailsProps> = ({ rating }) => {
         <div className="flex-1">
           <div className="flex items-center gap-1 text-sm text-muted-foreground">
             <Users className="w-4 h-4" />
-            <span>{rating.review_count} avaliação{rating.review_count !== 1 ? 'ões' : ''}</span>
+            <span>{rating.review_count} review{rating.review_count !== 1 ? 's' : ''}</span>
           </div>
           <div className="flex items-center gap-1 text-sm">
             <ThumbsUp className="w-4 h-4 text-success" />
-            <span className="text-success">{rating.would_return_pct}% voltariam</span>
+            <span className="text-success">{rating.would_return_pct}% would return</span>
           </div>
         </div>
       </div>
@@ -52,22 +52,22 @@ const PoiRatingDetails: React.FC<PoiRatingDetailsProps> = ({ rating }) => {
       {/* Detailed Ratings */}
       <div className="space-y-2">
         <RatingRow
-          label="Atendimento"
+          label="Service"
           value={rating.avg_friendliness}
           icon={<Heart className="w-4 h-4" />}
         />
         <RatingRow
-          label="Limpeza"
+          label="Cleanliness"
           value={rating.avg_cleanliness}
           icon={<Sparkles className="w-4 h-4" />}
         />
         <RatingRow
-          label="Estrutura"
+          label="Facilities"
           value={rating.avg_structure}
           icon={<Home className="w-4 h-4" />}
         />
         <RatingRow
-          label="Nota Geral"
+          label="Overall"
           value={rating.avg_recommendation}
           icon={<Star className="w-4 h-4" />}
         />
