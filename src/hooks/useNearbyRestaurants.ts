@@ -53,7 +53,7 @@ const KNOWN_FOOD_BRANDS = [
   "dunkin", "starbucks", "tim horton",
   "pizza hut", "domino", "papa john", "little caesar", "hunt brothers",
   "cracker barrel", "golden corral", "shoney",
-  "naf naf", "chipotle",
+  "naf naf", "chipotle", "naf naf grill",
 ];
 
 // ============ UTILITY FUNCTIONS ============
