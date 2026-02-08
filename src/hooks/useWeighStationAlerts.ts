@@ -149,11 +149,10 @@ export function useWeighStationAlerts({
       
       const { data, error } = await supabase
         .from('weigh_station_reports')
-        .select('id, station_id, created_at, status_reported, outcome')
+        .select('id, station_id, created_at, status_reported, outcome, comment')
         .eq('station_id', stationId)
-        .gte('created_at', cutoffTime)
         .order('created_at', { ascending: false })
-        .limit(10);
+        .limit(20);
 
       if (error) throw error;
 
