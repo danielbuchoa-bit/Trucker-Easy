@@ -73,14 +73,16 @@ function computeWarning(state: any): { warn: boolean; label: string; remainingSe
   const driveRem = state.drivingRemainingSec;
   const shiftRem = state.dutyRemainingSec;
 
-  // When break is needed now → 0 remaining (most urgent)
-  // When not needed yet → countdown to 8h threshold
-  // When satisfied → Infinity (not a concern)
+  // Fix A: check if break was actually satisfied via rest duration
+  const breakSatisfied = (state.restContinuousSec ?? 0) >= BREAK_DURATION_SEC;
+
   const breakRem = state.needsBreak
     ? 0
     : Math.max(0, BREAK_REQUIRED_AFTER_SEC - (state.breakDrivingSinceLastBreakSec ?? 0));
 
-  const breakCandidate = (state.needsBreak || breakRem > 0) ? breakRem : Infinity;
+  // If needsBreak → 0 (urgent). If satisfied → Infinity (ignore). Otherwise → countdown.
+  const breakCandidate = state.needsBreak ? 0 : (breakSatisfied ? Infinity : breakRem);
+
   const minRem = Math.min(driveRem, shiftRem, breakCandidate);
   const warn = minRem <= WARN_THRESHOLD_SEC && minRem > 0;
 
@@ -97,7 +99,13 @@ function computeBarFill(state: any): number {
   if (!state) return 0;
 
   const driveFrac = clamp01((state.drivingTodaySec ?? 0) / DRIVE_LIMIT_SEC);
-  const shiftFrac = clamp01((state.dutyWindowSec ?? 0) / SHIFT_LIMIT_SEC);
+
+  // Fix B: use dutyWindowSec (consumed), fallback to computed from remaining
+  const dutyConsumed = (state.dutyWindowSec ?? null) !== null
+    ? state.dutyWindowSec
+    : (SHIFT_LIMIT_SEC - (state.dutyRemainingSec ?? SHIFT_LIMIT_SEC));
+  const shiftFrac = clamp01(dutyConsumed / SHIFT_LIMIT_SEC);
+
   const breakFrac = state.needsBreak
     ? 1
     : clamp01((state.breakDrivingSinceLastBreakSec ?? 0) / BREAK_REQUIRED_AFTER_SEC);
@@ -157,7 +165,7 @@ const DotHud = memo(function DotHud({ onStopNow }: { onStopNow?: () => void }) {
     return 'none';
   }, [state]);
 
-  // Warning detection (fix #1)
+  // Warning detection
   const warning = useMemo(() => computeWarning(state), [state]);
 
   // Bar visual state
@@ -208,25 +216,27 @@ const DotHud = memo(function DotHud({ onStopNow }: { onStopNow?: () => void }) {
     }
   }, [violation, updateOverride]);
 
-  // Alert logic (fix #2 + #3: trigger on type change, not only from 'none')
+  // Fix C: alert effect using functional setLastViolation to avoid dep loop
   useEffect(() => {
     const inQuiet = override.quietUntilTs > 0 && Date.now() < override.quietUntilTs;
 
-    if (
-      violation !== 'none' &&
-      !inQuiet &&
-      violation !== lastViolation &&
-      !override.overrideActive
-    ) {
-      setShowAlert(true);
-    }
+    setLastViolation(prev => {
+      if (
+        violation !== 'none' &&
+        !inQuiet &&
+        violation !== prev &&
+        !override.overrideActive
+      ) {
+        setShowAlert(true);
+      }
 
-    if (violation === 'none') {
-      setShowAlert(false);
-    }
+      if (violation === 'none') {
+        setShowAlert(false);
+      }
 
-    setLastViolation(violation);
-  }, [violation, override.quietUntilTs, override.overrideActive, lastViolation]);
+      return violation;
+    });
+  }, [violation, override.quietUntilTs, override.overrideActive]);
 
   // Overtime text
   const overtimeText = useMemo(() => {
