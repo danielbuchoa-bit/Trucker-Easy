@@ -58,38 +58,83 @@ const KNOWN_FOOD_BRANDS = [
 
 // Food categories are now handled by nb_browse_pois filterType: 'food'
 
-// ============ TRUCK STOP OFFERINGS CATALOG ============
-const STOP_OFFERINGS_CATALOG: Record<string, StopOfferings> = {
+// ============ ENHANCED TRUCK STOP & RESTAURANT CATALOG ============
+// Canonical inference engine v2 – typical items, never guaranteed availability
+
+interface TruckStopNetwork {
+  categories: string[];
+  hotItems: string[];
+  quickItems: string[];
+  healthierOptions: string[];
+  warningFlags: string[];
+}
+
+interface RestaurantChain {
+  cuisine: string;
+  typicalItems: string[];
+}
+
+const TRUCK_STOP_NETWORKS: Record<string, TruckStopNetwork> = {
   loves: {
-    breakfast: ['Oatmeal cup', 'Greek yogurt + fruit', 'Egg bites or omelet bowl'],
-    lunch_dinner: ['Grilled chicken salad', 'Turkey or chicken wrap', 'Chili cup'],
-    snacks: ['Nuts', 'String cheese', 'Fruit cup', 'Low sugar protein bar'],
-    drinks: ['Water', 'Unsweetened iced tea', 'Zero sugar sports drink'],
+    categories: ['diner', 'grill', 'grab_and_go'],
+    hotItems: ['Grilled chicken plate', 'Eggs with toast', 'Meatloaf'],
+    quickItems: ['Breakfast burrito', 'Pizza slice', 'Hot dog'],
+    healthierOptions: ['Grilled chicken', 'Eggs without bacon', 'Salad (when available)'],
+    warningFlags: ['high_sodium', 'fried_food_heavy'],
   },
   pilot: {
-    breakfast: ['Oatmeal cup', 'Yogurt + fruit', 'Egg option'],
-    lunch_dinner: ['Salad + lean protein', 'Whole wheat deli sandwich', 'Chicken bowl'],
-    snacks: ['Nuts', 'Low sugar jerky', 'Fruit', 'Cheese sticks'],
-    drinks: ['Water', 'Black coffee', 'Zero sugar drinks'],
+    categories: ['diner', 'fast_food', 'grab_and_go'],
+    hotItems: ['Grilled chicken', 'Roast beef', 'Egg breakfast'],
+    quickItems: ['Sandwich wrap', 'Pizza slice'],
+    healthierOptions: ['Grilled proteins', 'Egg-based meals', 'Salads'],
+    warningFlags: ['processed_food'],
   },
   ta: {
-    breakfast: ['Oatmeal cup', 'Yogurt + fruit', 'Egg option'],
-    lunch_dinner: ['Salad + lean protein', 'Grilled or roasted chicken', 'Soup or chili'],
-    snacks: ['Nuts', 'Fruit', 'Cheese sticks', 'Protein bar'],
-    drinks: ['Water', 'Unsweetened drinks', 'Black coffee'],
+    categories: ['full_diner', 'grill', 'grab_and_go'],
+    hotItems: ['Grilled chicken', 'Mashed potatoes', 'Green beans', 'Eggs'],
+    quickItems: ['Hot dogs', 'Pizza', 'Breakfast sandwiches'],
+    healthierOptions: ['Grilled chicken plate', 'Eggs without sides', 'Vegetables'],
+    warningFlags: ['large_portions', 'high_sodium'],
   },
   petro: {
-    breakfast: ['Oatmeal cup', 'Yogurt + fruit', 'Egg option'],
-    lunch_dinner: ['Salad + lean protein', 'Wrap or whole wheat sandwich', 'Soup or chili'],
-    snacks: ['Nuts', 'Fruit', 'Cheese sticks', 'Protein bar'],
-    drinks: ['Water', 'Unsweetened drinks', 'Black coffee'],
+    categories: ['full_diner', 'grill', 'grab_and_go'],
+    hotItems: ['Grilled chicken', 'Mashed potatoes', 'Green beans', 'Eggs'],
+    quickItems: ['Hot dogs', 'Pizza', 'Breakfast sandwiches'],
+    healthierOptions: ['Grilled chicken plate', 'Eggs without sides', 'Vegetables'],
+    warningFlags: ['large_portions', 'high_sodium'],
   },
-  generic: {
-    breakfast: ['Oatmeal cup', 'Yogurt + fruit', 'Egg option'],
-    lunch_dinner: ['Salad + lean protein', 'Wrap or whole wheat sandwich', 'Soup or chili'],
-    snacks: ['Nuts', 'Fruit', 'Cheese sticks', 'Protein bar'],
-    drinks: ['Water', 'Unsweetened drinks', 'Black coffee'],
+  kwiktrip: {
+    categories: ['grab_and_go', 'hot_bar'],
+    hotItems: ['Roasted chicken', 'Egg breakfast items'],
+    quickItems: ['Protein packs', 'Yogurt', 'Sandwiches'],
+    healthierOptions: ['Protein packs', 'Hard-boiled eggs', 'Fruit cups'],
+    warningFlags: ['processed_food'],
   },
+};
+
+const RESTAURANT_CHAINS: Record<string, RestaurantChain> = {
+  'naf naf grill': { cuisine: 'Mediterranean', typicalItems: ['Chicken shawarma bowl', 'Falafel bowl', 'Grilled chicken pita', 'Hummus with salad'] },
+  'chipotle': { cuisine: 'Mexican', typicalItems: ['Chicken burrito bowl', 'Steak bowl', 'Veggie bowl', 'Salad bowl'] },
+  'subway': { cuisine: 'Sandwiches', typicalItems: ['Turkey sandwich', 'Grilled chicken sandwich', 'Veggie sandwich'] },
+};
+
+const FOOD_DISCLAIMER = 'Typical options based on common offerings. Items may vary by location.';
+
+/** Convert enhanced catalog to legacy StopOfferings for backward compat */
+function networkToOfferings(net: TruckStopNetwork): StopOfferings {
+  return {
+    breakfast: net.healthierOptions.slice(0, 3),
+    lunch_dinner: net.hotItems.slice(0, 3),
+    snacks: net.quickItems.slice(0, 3),
+    drinks: ['Water', 'Unsweetened drinks', 'Black coffee'],
+  };
+}
+
+const GENERIC_OFFERINGS: StopOfferings = {
+  breakfast: ['Oatmeal cup', 'Yogurt + fruit', 'Egg option'],
+  lunch_dinner: ['Salad + lean protein', 'Wrap or whole wheat sandwich', 'Soup or chili'],
+  snacks: ['Nuts', 'Fruit', 'Cheese sticks', 'Protein bar'],
+  drinks: ['Water', 'Unsweetened drinks', 'Black coffee'],
 };
 
 // ============ UTILITY FUNCTIONS ============
@@ -164,7 +209,13 @@ function detectTruckStopBrand(stopName: string): string {
   if (name.includes("pilot") || name.includes("flying j")) return 'pilot';
   if (name.includes("ta ") || name.includes("travelcenter") || name.includes("travel center")) return 'ta';
   if (name.includes("petro")) return 'petro';
+  if (name.includes("kwik trip") || name.includes("kwiktrip") || name.includes("kwik star")) return 'kwiktrip';
   return 'generic';
+}
+
+function getOfferingsForBrand(brand: string): StopOfferings {
+  const network = TRUCK_STOP_NETWORKS[brand];
+  return network ? networkToOfferings(network) : GENERIC_OFFERINGS;
 }
 
 function getCacheKey(lat: number, lng: number): string {
@@ -293,7 +344,7 @@ export function useNearbyRestaurants() {
       } else {
         // No restaurants found, use fallback catalog
         const brand = detectTruckStopBrand(stopName);
-        const offerings = STOP_OFFERINGS_CATALOG[brand] || STOP_OFFERINGS_CATALOG.generic;
+        const offerings = getOfferingsForBrand(brand);
         
         resultData = {
           restaurants: [],
@@ -314,7 +365,7 @@ export function useNearbyRestaurants() {
       
       // Return fallback on error
       const brand = detectTruckStopBrand(stopName);
-      const offerings = STOP_OFFERINGS_CATALOG[brand] || STOP_OFFERINGS_CATALOG.generic;
+      const offerings = getOfferingsForBrand(brand);
       const fallbackResult: NearbyRestaurantsResult = {
         restaurants: [],
         fallback: { brand, offerings },
