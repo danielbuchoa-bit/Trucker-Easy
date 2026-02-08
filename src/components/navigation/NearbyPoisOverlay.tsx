@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { Navigation, MapPin, Star, Phone, Car, ParkingCircle } from 'lucide-react';
+import { Navigation, MapPin, Star, Phone, Car, ParkingCircle, AlertTriangle, X } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import {
   Sheet,
@@ -57,6 +58,8 @@ interface NearbyPoisOverlayProps {
   lng: number | null;
   heading: number | null;
   hasActiveTrip?: boolean;
+  stopNowActive?: boolean;
+  onStopNowDismiss?: () => void;
   onNavigateTo?: (poi: Poi) => void;
   onAddDetour?: (poi: Poi) => void;
   onPoisUpdate?: (pois: Poi[]) => void;
@@ -216,6 +219,8 @@ const NearbyPoisOverlay: React.FC<NearbyPoisOverlayProps> = ({
   lng, 
   heading,
   hasActiveTrip = false,
+  stopNowActive = false,
+  onStopNowDismiss,
   onNavigateTo,
   onAddDetour,
   onPoisUpdate,
@@ -235,6 +240,13 @@ const NearbyPoisOverlay: React.FC<NearbyPoisOverlayProps> = ({
   // Parking availability state
   const [parkingStatus, setParkingStatus] = useState<Map<string, ParkingReport>>(new Map());
   const [submittingParking, setSubmittingParking] = useState(false);
+
+  // Auto-select closest POI when Stop Now is triggered
+  useEffect(() => {
+    if (stopNowActive && pois.length > 0 && !selectedPoi) {
+      setSelectedPoi(pois[0]); // pois are sorted by distance
+    }
+  }, [stopNowActive, pois, selectedPoi]);
 
   // Fetch parking status for POIs
   const fetchParkingStatus = async (poiIds: string[]) => {
@@ -416,14 +428,37 @@ const NearbyPoisOverlay: React.FC<NearbyPoisOverlayProps> = ({
     return 'red';
   };
 
-  if (pois.length === 0 && !loading) {
+  if (pois.length === 0 && !loading && !stopNowActive) {
     return null;
   }
 
   return (
     <>
+      {/* Stop Now Banner */}
+      {stopNowActive && (
+        <div className="absolute top-44 left-4 right-4 z-30 bg-destructive/95 backdrop-blur-md text-destructive-foreground rounded-xl px-4 py-3 shadow-2xl animate-in slide-in-from-top-2 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-5 h-5 shrink-0" />
+            <div>
+              <p className="text-sm font-bold">Parar agora</p>
+              <p className="text-xs opacity-90">Escolha uma parada próxima</p>
+            </div>
+          </div>
+          <button
+            onClick={onStopNowDismiss}
+            className="p-1 hover:bg-destructive-foreground/10 rounded"
+            aria-label="Fechar"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
       {/* POI Cards Stack - Left side, positioned below NavigationHUD with safe spacing */}
-      <div className="absolute top-56 left-4 z-20 flex flex-col gap-2">
+      <div className={cn(
+        "absolute left-4 z-20 flex flex-col gap-2",
+        stopNowActive ? "top-64" : "top-56"
+      )}>
         {loading && pois.length === 0 && (
           <div className="bg-card/90 backdrop-blur-sm rounded-lg px-3 py-2 text-center">
             <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto" />

@@ -187,6 +187,9 @@ const ActiveNavigationView = () => {
   
   // DOT Hours of Service tracking
   const dotHos = useDotHosSafe();
+  
+  // Stop Now state — triggered by DotHud when driver exceeds HOS limits
+  const [stopNowActive, setStopNowActive] = useState(false);
 
   useEffect(() => {
     voiceRef.current = voice;
@@ -1058,19 +1061,27 @@ const ActiveNavigationView = () => {
         lng={userPosition?.lng ?? null}
         heading={debugInfo.calculatedBearing ?? userPosition?.heading ?? null}
         hasActiveTrip={hasActiveTrip}
+        stopNowActive={stopNowActive}
+        onStopNowDismiss={() => setStopNowActive(false)}
         onPoisUpdate={setNearbyPois}
-        onNavigateTo={(poi) => navigateToPoi({
-          lat: poi.lat,
-          lng: poi.lng,
-          name: poi.chainName || poi.name,
-          address: poi.address,
-        })}
-        onAddDetour={(poi) => addDetourStop({
-          lat: poi.lat,
-          lng: poi.lng,
-          name: poi.chainName || poi.name,
-          address: poi.address,
-        })}
+        onNavigateTo={(poi) => {
+          setStopNowActive(false);
+          navigateToPoi({
+            lat: poi.lat,
+            lng: poi.lng,
+            name: poi.chainName || poi.name,
+            address: poi.address,
+          });
+        }}
+        onAddDetour={(poi) => {
+          setStopNowActive(false);
+          addDetourStop({
+            lat: poi.lat,
+            lng: poi.lng,
+            name: poi.chainName || poi.name,
+            address: poi.address,
+          });
+        }}
       />
 
       {/* Route POI Markers - Truck Stops, Weigh Stations, Rest Areas on Map */}
@@ -1321,7 +1332,7 @@ const ActiveNavigationView = () => {
 
       {/* DOT Hours of Service HUD - Top Right Corner */}
       <div className="absolute top-4 right-4 z-40 pointer-events-none">
-        <DotHud />
+        <DotHud onStopNow={() => setStopNowActive(true)} />
       </div>
 
       {/* Rerouting indicator */}
