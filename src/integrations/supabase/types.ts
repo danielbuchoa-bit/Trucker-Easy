@@ -1258,6 +1258,7 @@ export type Database = {
       }
       weigh_station_reports: {
         Row: {
+          comment: string | null
           created_at: string
           device_anon_id_hash: string | null
           id: string
@@ -1270,6 +1271,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          comment?: string | null
           created_at?: string
           device_anon_id_hash?: string | null
           id?: string
@@ -1282,6 +1284,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          comment?: string | null
           created_at?: string
           device_anon_id_hash?: string | null
           id?: string
