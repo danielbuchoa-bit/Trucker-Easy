@@ -1,6 +1,6 @@
 import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import { useLanguage } from '@/i18n/LanguageContext';
-import { Search, Filter, MapPin, Navigation, Route, Building2, Loader2, RefreshCw, AlertCircle, Truck, Fuel, Scale, TreePine, Info, Star, Droplets, LogIn, Gift } from 'lucide-react';
+import { Search, Filter, MapPin, Navigation, Route, Building2, Loader2, RefreshCw, AlertCircle, Truck, Fuel, Scale, TreePine, Info, Star, Droplets, LogIn, Gift, Utensils } from 'lucide-react';
 import BottomNav from '@/components/navigation/BottomNav';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -15,6 +15,7 @@ import { Badge } from '@/components/ui/badge';
 import { useBatchPoiRatings } from '@/hooks/useBatchPoiRatings';
 import PoiRatingBadgeInline from '@/components/poi/PoiRatingBadgeInline';
 import PoiReviewsModal from '@/components/poi/PoiReviewsModal';
+import { usePoiFeedback } from '@/contexts/PoiFeedbackContext';
 
 interface NearbyPlace {
   id: string;
@@ -91,6 +92,9 @@ const HomeScreen = () => {
   
   // Diagnostics panel (5 taps on logo to open)
   const diagnostics = useNextBillionDiagnostics();
+
+  // Manual food suggestion trigger
+  const { triggerManualFoodSuggestion, isShowingFoodSuggestion } = usePoiFeedback();
   
   // STRICT TRUCK-ONLY filter tabs
   const filters = [
@@ -921,6 +925,17 @@ const HomeScreen = () => {
           </div>
         )}
       </div>
+
+      {/* Manual food suggestion button */}
+      {!isShowingFoodSuggestion && (
+        <button
+          onClick={triggerManualFoodSuggestion}
+          className="fixed bottom-24 right-4 z-40 w-12 h-12 rounded-full bg-primary shadow-lg flex items-center justify-center hover:bg-primary/90 transition-all active:scale-95"
+          aria-label="Food suggestions"
+        >
+          <Utensils className="w-5 h-5 text-primary-foreground" />
+        </button>
+      )}
 
       {/* Bottom Navigation */}
       <BottomNav
