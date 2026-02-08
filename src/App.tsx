@@ -3,7 +3,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { GeofenceProvider } from "./contexts/GeofenceContext";
 import { FacilityGeofenceProvider } from "./contexts/FacilityGeofenceContext";
 import { ActiveNavigationProvider } from "./contexts/ActiveNavigationContext";
@@ -110,6 +110,7 @@ const App = () => (
                                   <Route path="/chat/:id" element={<ProtectedRoute><ChatRoomScreen /></ProtectedRoute>} />
                                   <Route path="/bypass-history" element={<ProtectedRoute><BypassHistory /></ProtectedRoute>} />
                                   <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+                                  <Route path="/map" element={<Navigate to="/navigation" replace />} />
                                   <Route path="/navigation" element={<ProtectedRoute><NavigationScreen /></ProtectedRoute>} />
                                   <Route path="/stop-advisor" element={<ProtectedRoute><StopAdvisorScreen /></ProtectedRoute>} />
                                   <Route path="/facility-rating" element={<ProtectedRoute><FacilityRatingScreen /></ProtectedRoute>} />
