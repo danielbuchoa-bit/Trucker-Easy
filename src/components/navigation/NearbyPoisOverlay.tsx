@@ -1,6 +1,6 @@
-import React, { useEffect, useState, useRef, useMemo } from 'react';
+import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { Navigation, MapPin, Star, Phone, Car, ParkingCircle, AlertTriangle, X } from 'lucide-react';
+import { Navigation, MapPin, Star, Phone, Car, ParkingCircle, AlertTriangle, X, Fuel } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import {
@@ -241,7 +241,38 @@ const NearbyPoisOverlay: React.FC<NearbyPoisOverlayProps> = ({
   const [parkingStatus, setParkingStatus] = useState<Map<string, ParkingReport>>(new Map());
   const [submittingParking, setSubmittingParking] = useState(false);
 
+  // Diesel price state
+  const [dieselPrice, setDieselPrice] = useState<{ cents: number; source: string } | null>(null);
+  const [dieselLoading, setDieselLoading] = useState(false);
+
+  // Fetch diesel price when a POI is selected
+  const fetchDieselPrice = useCallback(async (poi: Poi) => {
+    setDieselPrice(null);
+    setDieselLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('fuel_price_lookup', {
+        body: { lat: poi.lat, lng: poi.lng, place_id: poi.id, place_name: poi.chainName || poi.name },
+      });
+      if (!error && data?.diesel_price_cents) {
+        setDieselPrice({ cents: data.diesel_price_cents, source: data.source });
+      }
+    } catch (err) {
+      console.error('[FUEL] Price lookup error:', err);
+    } finally {
+      setDieselLoading(false);
+    }
+  }, []);
+
   // Auto-select closest POI when Stop Now is triggered
+  // Fetch diesel price when POI is selected
+  useEffect(() => {
+    if (selectedPoi) {
+      fetchDieselPrice(selectedPoi);
+    } else {
+      setDieselPrice(null);
+    }
+  }, [selectedPoi, fetchDieselPrice]);
+
   useEffect(() => {
     if (stopNowActive && pois.length > 0 && !selectedPoi) {
       setSelectedPoi(pois[0]); // pois are sorted by distance
@@ -561,6 +592,39 @@ const NearbyPoisOverlay: React.FC<NearbyPoisOverlayProps> = ({
                   {!user && (
                     <p className="text-xs text-muted-foreground mt-2">Login to report parking availability</p>
                   )}
+                </div>
+
+                {/* Diesel Price Section */}
+                <div className="p-3 bg-muted/50 rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-full bg-emerald-500/20 flex items-center justify-center shrink-0">
+                      <Fuel className="w-4 h-4 text-emerald-400" />
+                    </div>
+                    <div className="flex-1">
+                      <span className="text-sm font-medium">Diesel</span>
+                      {dieselLoading ? (
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <div className="w-3 h-3 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                          <span className="text-xs text-muted-foreground">Buscando preço...</span>
+                        </div>
+                      ) : dieselPrice ? (
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <span className="text-lg font-bold text-emerald-400">
+                            ${(dieselPrice.cents / 100).toFixed(2)}
+                          </span>
+                          <span className="text-xs text-muted-foreground">/gal</span>
+                          {dieselPrice.source === 'estimate' && (
+                            <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">est.</span>
+                          )}
+                          {dieselPrice.source === 'gasbuddy' && (
+                            <span className="text-[10px] text-emerald-500 bg-emerald-500/10 px-1.5 py-0.5 rounded">GasBuddy</span>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">Preço indisponível</span>
+                      )}
+                    </div>
+                  </div>
                 </div>
 
                 {/* Rating Details Section */}
