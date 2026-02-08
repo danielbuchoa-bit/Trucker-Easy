@@ -7,9 +7,6 @@
 
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useDotHosSafe } from "@/contexts/DotHosContext";
-import { cn } from "@/lib/utils";
-import { Clock, AlertTriangle, X, Shield } from "lucide-react";
-
 // === Config ===
 const DRIVE_LIMIT_SEC = 11 * 3600;
 const SHIFT_LIMIT_SEC = 14 * 3600;
@@ -17,7 +14,7 @@ const BREAK_REQUIRED_AFTER_SEC = 8 * 3600;
 const BREAK_DURATION_SEC = 30 * 60;
 const WARN_THRESHOLD_SEC = 15 * 60;
 
-const UI_STORAGE_KEY = "dotHud_support_ui_v1";
+const UI_STORAGE_KEY = "dotHud_support_ui_v2";
 const QUIET_SNOOZE_MINUTES_DEFAULT = 30;
 const DISMISS_QUIET_MINUTES_DEFAULT = 60;
 
@@ -234,8 +231,7 @@ const DotHud = memo(function DotHud({ onStopNow }: { onStopNow?: () => void }) {
     }
 
     if (violation === "none" && !warning.warn) setShowAlert(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state, violation, warning.warn, ui.quietUntilTs, ui.ackedViolation, ui.mode]);
+  }, [state, violation, warning.warn, ui, updateUi]);
 
   // Clear override when compliant again
   useEffect(() => {
@@ -326,97 +322,84 @@ const DotHud = memo(function DotHud({ onStopNow }: { onStopNow?: () => void }) {
   const breakLine = getBreakText(state);
 
   return (
-    <div className="pointer-events-auto flex flex-col items-end gap-1.5" style={{ minWidth: 140 }}>
-
+    <div className="fixed top-[82px] right-[12px] z-[999] select-none">
       {/* === DOT BAR === */}
       <div
         onMouseDown={onPressStart}
         onMouseUp={onPressEnd}
         onTouchStart={onPressStart}
         onTouchEnd={onPressEnd}
-        className="flex items-center gap-2 cursor-pointer select-none"
-        role="button"
-        aria-label="DOT Hours of Service"
-        title="Tap: show/hide clock • Long press: Quiet → Normal → Hardcore"
+        className={`w-[150px] ${ringClass}`}
+        style={{ cursor: "pointer" }}
+        title="Tap: mostrar/esconder • Toque longo: Quiet→Normal→Hardcore"
       >
-        <div className={cn(
-          "relative w-28 h-3 rounded-full overflow-hidden shadow-lg backdrop-blur-sm border border-white/20",
-          barBgClass, ringClass
-        )}>
-          <div
-            className={cn("absolute top-0 left-0 h-full rounded-full transition-all duration-1000", barFillClass)}
-            style={{ width: `${Math.max(6, Math.round(barFill * 100))}%` }}
-          />
-          <div className="absolute inset-0 bg-gradient-to-b from-white/20 to-transparent pointer-events-none" />
+        <div className={`h-[10px] rounded-full ${barBgClass} overflow-hidden border border-white/10`}>
+          <div className={`h-full ${barFillClass}`} style={{ width: `${Math.max(6, Math.round(barFill * 100))}%` }} />
         </div>
-        <span className="text-[10px] font-bold uppercase tracking-wide text-white/80 drop-shadow-md">DOT</span>
+
+        {/* === CLOCK (compact support) === */}
+        {showClock && (
+          <div className="mt-2 w-[260px] rounded-xl bg-black/75 border border-white/10 px-3 py-2 text-white">
+            <div className="flex items-center justify-between">
+              <div className="text-[12px] font-extrabold">DOT (Support)</div>
+              <div className="text-[10px] opacity-80">
+                {modeLabel}{ui.overrideActive && violation !== "none" ? " · Override" : ""}
+              </div>
+            </div>
+
+            <div className="mt-1 text-[11px] opacity-90">{driveLine}</div>
+            <div className="mt-1 text-[11px] opacity-90">{breakLine}</div>
+            <div className="mt-1 text-[11px] opacity-90">{shiftLine}</div>
+
+            {warning.warn && violation === "none" && (
+              <div className="mt-2 text-[11px] font-bold text-yellow-400">
+                ⚠ {fmtHM(warning.remainingSec)} para {warning.label}
+              </div>
+            )}
+
+            {violation !== "none" && (
+              <div className="mt-2 text-[11px] font-extrabold text-red-400">
+                {violation === "break_due"
+                  ? "Break necessário"
+                  : violation === "drive_exceeded"
+                    ? "Limite de direção excedido"
+                    : "Limite de shift excedido"}
+              </div>
+            )}
+          </div>
+        )}
       </div>
-
-      {/* === CLOCK (compact support) === */}
-      {showClock && (
-        <div className="bg-gray-900/92 backdrop-blur-md text-white rounded-xl px-3 py-2.5 shadow-2xl border border-white/10 w-56">
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-xs font-extrabold tracking-wide flex items-center gap-1">
-              <Clock className="w-3 h-3" /> DOT (Support)
-            </span>
-            <span className="text-[9px] font-medium text-white/60">
-              {modeLabel}
-              {ui.overrideActive && violation !== "none" && (
-                <span className="text-red-400 ml-1 inline-flex items-center gap-0.5">
-                  <Shield className="w-2.5 h-2.5" /> Override
-                </span>
-              )}
-            </span>
-          </div>
-
-          <div className="space-y-0.5 text-[11px] font-medium text-white/90">
-            <div>{driveLine}</div>
-            <div>{breakLine}</div>
-            <div>{shiftLine}</div>
-          </div>
-
-          {warning.warn && violation === "none" && (
-            <div className="mt-1.5 text-[10px] text-yellow-400 font-bold bg-yellow-500/10 rounded px-1.5 py-0.5">
-              ⚠ {fmtHM(warning.remainingSec)} para {warning.label}
-            </div>
-          )}
-
-          {violation !== "none" && (
-            <div className="mt-1.5 text-[10px] text-red-400 font-extrabold">
-              {violation === "break_due" ? "Break necessário"
-                : violation === "drive_exceeded" ? "Limite de direção excedido"
-                : "Limite de shift excedido"}
-            </div>
-          )}
-        </div>
-      )}
 
       {/* === DISCREET ALERT (rare, minimal) === */}
       {showAlert && (
-        <div className="bg-gray-900/95 backdrop-blur-md text-white rounded-xl px-3 py-3 shadow-2xl border border-white/10 w-56 animate-in slide-in-from-top-2">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-extrabold flex items-center gap-1">
-              <AlertTriangle className="w-3.5 h-3.5 text-red-400" />
+        <div className="mt-2 w-[260px] rounded-xl bg-black/80 border border-white/10 px-3 py-2 text-white">
+          <div className="flex items-center justify-between">
+            <div className="text-[12px] font-extrabold">
               {alertKind === "warning" ? "Atenção DOT" : "DOT estourou"}
-            </span>
-            <button onClick={dismissX} className="p-0.5 hover:bg-white/10 rounded" aria-label="Dispensar"
-              title="Fechar e silenciar (não ativa override)">
-              <X className="w-3.5 h-3.5 text-white/60" />
+            </div>
+            <button
+              onClick={dismissX}
+              className="text-[12px] px-2 py-1 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10"
+              title="Fechar e silenciar (sem override)"
+            >
+              ✕
             </button>
           </div>
 
-          <p className="text-[11px] text-white/80 mb-3">
+          <div className="mt-1 text-[11px] opacity-90">
             {alertKind === "warning"
               ? `Faltam ${fmtHM(warning.remainingSec)} para ${warning.label}.`
-              : violation === "break_due" ? "Break de 30 min necessário."
-              : violation === "drive_exceeded" ? "Limite de 11h excedido."
-              : "Limite de 14h excedido."}
-          </p>
+              : violation === "break_due"
+                ? "Break de 30 min necessário."
+                : violation === "drive_exceeded"
+                  ? "Limite de 11h excedido."
+                  : "Limite de 14h excedido."}
+          </div>
 
-          <div className="flex gap-2">
+          <div className="mt-2 flex gap-2">
             <button
               onClick={stopNow}
-              className="flex-1 text-[11px] font-bold py-2 rounded-lg bg-green-500/15 border border-green-500/25 text-green-400 hover:bg-green-500/25 transition-colors"
+              className="flex-1 text-[11px] font-bold py-2 rounded-lg bg-green-500/15 border border-green-500/25 hover:bg-green-500/25"
             >
               Parar agora
             </button>
@@ -424,7 +407,7 @@ const DotHud = memo(function DotHud({ onStopNow }: { onStopNow?: () => void }) {
             {alertKind === "violation" ? (
               <button
                 onClick={ignore}
-                className="flex-1 text-[11px] font-bold py-2 rounded-lg bg-red-500/15 border border-red-500/25 text-red-400 hover:bg-red-500/25 transition-colors"
+                className="flex-1 text-[11px] font-bold py-2 rounded-lg bg-red-500/15 border border-red-500/25 hover:bg-red-500/25 text-red-300"
                 title="Override visual + silenciar"
               >
                 Ignorar
@@ -432,7 +415,7 @@ const DotHud = memo(function DotHud({ onStopNow }: { onStopNow?: () => void }) {
             ) : (
               <button
                 onClick={ackSeen}
-                className="flex-1 text-[11px] font-bold py-2 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 transition-colors"
+                className="flex-1 text-[11px] font-bold py-2 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10"
                 title="Marcar como visto"
               >
                 Entendi
@@ -440,9 +423,9 @@ const DotHud = memo(function DotHud({ onStopNow }: { onStopNow?: () => void }) {
             )}
           </div>
 
-          <p className="text-[9px] text-white/40 mt-2">
+          <div className="mt-2 text-[10px] opacity-70">
             Suporte visual apenas. Não altera seu logbook oficial.
-          </p>
+          </div>
         </div>
       )}
     </div>
