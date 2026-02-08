@@ -15,6 +15,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { detectLocationType } from '@/components/facility/UnifiedRatingPrompt';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 
 // Helper to check if facility was created in the last 7 days
 const isNewFacility = (createdAt: string): boolean => {
@@ -54,6 +55,7 @@ const FacilitiesList: React.FC = () => {
   const [showGeoResults, setShowGeoResults] = useState(false);
   const [searchPerformed, setSearchPerformed] = useState(false);
   const [showNewOnly, setShowNewOnly] = useState(false);
+  const [categoryTab, setCategoryTab] = useState<'all' | 'truck_stops' | 'facilities'>('all');
 
   // Manual entry modal state
   const [showManualEntry, setShowManualEntry] = useState(false);
@@ -279,6 +281,14 @@ const FacilitiesList: React.FC = () => {
 
   const filteredFacilities = facilities
     .filter(f => {
+      // Filter by category tab
+      if (categoryTab !== 'all') {
+        const locType = detectLocationType(f.name, f.address || undefined);
+        const isTruckStop = locType === 'truck_stop' || locType === 'fuel';
+        if (categoryTab === 'truck_stops' && !isTruckStop) return false;
+        if (categoryTab === 'facilities' && isTruckStop) return false;
+      }
+
       // Filter by new only if toggle is on
       if (showNewOnly && !isNewFacility(f.created_at)) return false;
       
@@ -309,12 +319,29 @@ const FacilitiesList: React.FC = () => {
 
   return (
     <div className="space-y-4">
+      {/* Category Sub-tabs */}
+      <Tabs value={categoryTab} onValueChange={(v) => setCategoryTab(v as 'all' | 'truck_stops' | 'facilities')}>
+        <TabsList className="grid grid-cols-3 h-auto">
+          <TabsTrigger value="all" className="text-xs py-2">
+            All
+          </TabsTrigger>
+          <TabsTrigger value="truck_stops" className="flex items-center gap-1 text-xs py-2">
+            <Fuel className="w-3.5 h-3.5" />
+            Truck Stops
+          </TabsTrigger>
+          <TabsTrigger value="facilities" className="flex items-center gap-1 text-xs py-2">
+            <Building2 className="w-3.5 h-3.5" />
+            Facilities
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
+
       {/* Search */}
       <div className="flex gap-2">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
-            placeholder="Search facilities..."
+            placeholder={categoryTab === 'truck_stops' ? "Search truck stops..." : categoryTab === 'facilities' ? "Search facilities..." : "Search facilities..."}
             value={searchQuery}
             onChange={(e) => {
               setSearchQuery(e.target.value);
