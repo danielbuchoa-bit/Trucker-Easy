@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { 
   ArrowLeft, Users, FileText, Star, Heart, TrendingUp, Search, 
   ChevronRight, Shield, Loader2, AlertCircle, RefreshCw, 
-  CreditCard, Crown, Gem, Apple, Smartphone, Filter, History
+  CreditCard, Crown, Gem, Apple, Smartphone, Filter, History,
+  Fuel, Building2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -70,6 +71,49 @@ interface AuditLog {
   admin: { email: string; full_name: string | null };
 }
 
+interface GasStationRating {
+  id: string;
+  type: 'gas_station';
+  poi_name: string;
+  poi_type: string;
+  brand: string;
+  avg_rating: number;
+  friendliness: number;
+  cleanliness: number;
+  recommendation: number;
+  structure: number | null;
+  would_return: boolean | null;
+  driver_name: string;
+  driver_id: string;
+  created_at: string;
+}
+
+interface FacilityRating {
+  id: string;
+  type: 'facility';
+  facility_name: string;
+  facility_type: string;
+  facility_address: string | null;
+  overall_rating: number;
+  treatment: number | null;
+  speed: number | null;
+  staff_help: number | null;
+  parking: number | null;
+  exit_ease: number | null;
+  visit_type: string;
+  time_spent: string | null;
+  tips: string | null;
+  driver_name: string;
+  driver_id: string;
+  created_at: string;
+}
+
+interface BrandAverage {
+  brand: string;
+  avg_rating: number;
+  total_reviews: number;
+}
+
 const TIER_COLORS: Record<string, string> = {
   silver: 'bg-slate-400',
   gold: 'bg-yellow-500',
@@ -98,6 +142,11 @@ const AdminDashboard: React.FC = () => {
   const [stats, setStats] = useState<PlatformStats | null>(null);
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+  const [gasStationRatings, setGasStationRatings] = useState<GasStationRating[]>([]);
+  const [facilityRatings, setFacilityRatings] = useState<FacilityRating[]>([]);
+  const [brandAverages, setBrandAverages] = useState<BrandAverage[]>([]);
+  const [ratingsDriverFilter, setRatingsDriverFilter] = useState<string>('all');
+  const [ratingsSubTab, setRatingsSubTab] = useState<'gas_stations' | 'facilities' | 'brands'>('gas_stations');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedTab, setSelectedTab] = useState('users');
   
@@ -196,6 +245,18 @@ const AdminDashboard: React.FC = () => {
     }
   };
 
+  const loadRatings = async () => {
+    try {
+      const data = await fetchAdminData('ratings');
+      setGasStationRatings(data.gas_station_ratings || []);
+      setFacilityRatings(data.facility_ratings || []);
+      setBrandAverages(data.brand_averages || []);
+    } catch (error) {
+      console.error('Load ratings error:', error);
+      toast.error('Error loading ratings');
+    }
+  };
+
   useEffect(() => {
     if (isAdmin && selectedTab === 'subscriptions') {
       loadSubscriptions();
@@ -205,6 +266,9 @@ const AdminDashboard: React.FC = () => {
   useEffect(() => {
     if (isAdmin && selectedTab === 'audit') {
       loadAuditLogs();
+    }
+    if (isAdmin && selectedTab === 'ratings') {
+      loadRatings();
     }
   }, [isAdmin, selectedTab]);
 
@@ -362,8 +426,9 @@ const AdminDashboard: React.FC = () => {
 
         {/* Tabs */}
         <Tabs value={selectedTab} onValueChange={setSelectedTab}>
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="users">Users</TabsTrigger>
+            <TabsTrigger value="ratings">Ratings</TabsTrigger>
             <TabsTrigger value="subscriptions">Subs</TabsTrigger>
             <TabsTrigger value="audit">Audit</TabsTrigger>
           </TabsList>
@@ -420,6 +485,195 @@ const AdminDashboard: React.FC = () => {
                 ))
               )}
             </div>
+          </TabsContent>
+
+          {/* Ratings Tab */}
+          <TabsContent value="ratings" className="space-y-4">
+            {/* Sub-tabs */}
+            <Tabs value={ratingsSubTab} onValueChange={(v) => setRatingsSubTab(v as any)}>
+              <TabsList className="grid w-full grid-cols-3">
+                <TabsTrigger value="gas_stations" className="text-xs">
+                  <Fuel className="w-3 h-3 mr-1" />
+                  Gas Stations
+                </TabsTrigger>
+                <TabsTrigger value="facilities" className="text-xs">
+                  <Building2 className="w-3 h-3 mr-1" />
+                  Facilities
+                </TabsTrigger>
+                <TabsTrigger value="brands" className="text-xs">
+                  <TrendingUp className="w-3 h-3 mr-1" />
+                  Brands
+                </TabsTrigger>
+              </TabsList>
+
+              {/* Driver filter */}
+              {ratingsSubTab !== 'brands' && (
+                <div className="mt-3">
+                  <Select value={ratingsDriverFilter} onValueChange={setRatingsDriverFilter}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Filter by driver" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Drivers</SelectItem>
+                      {Array.from(new Set(
+                        [...gasStationRatings, ...facilityRatings].map(r => r.driver_id)
+                      )).map(driverId => {
+                        const name = [...gasStationRatings, ...facilityRatings].find(r => r.driver_id === driverId)?.driver_name || driverId;
+                        return (
+                          <SelectItem key={driverId} value={driverId}>{name}</SelectItem>
+                        );
+                      })}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
+              {/* Gas Stations sub-tab */}
+              <TabsContent value="gas_stations" className="space-y-3 mt-2">
+                {gasStationRatings
+                  .filter(r => ratingsDriverFilter === 'all' || r.driver_id === ratingsDriverFilter)
+                  .length === 0 ? (
+                  <Card>
+                    <CardContent className="p-6 text-center">
+                      <Fuel className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
+                      <p className="text-muted-foreground">No gas station ratings yet</p>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  gasStationRatings
+                    .filter(r => ratingsDriverFilter === 'all' || r.driver_id === ratingsDriverFilter)
+                    .map((r) => (
+                      <Card key={r.id}>
+                        <CardContent className="p-4">
+                          <div className="flex items-start justify-between">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1">
+                                <Fuel className="w-4 h-4 text-primary flex-shrink-0" />
+                                <p className="font-medium truncate">{r.poi_name}</p>
+                              </div>
+                              <Badge variant="outline" className="text-xs mb-2">{r.brand}</Badge>
+                              <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-muted-foreground mt-2">
+                                <span>Friendliness: <strong className="text-foreground">{r.friendliness}</strong>/5</span>
+                                <span>Cleanliness: <strong className="text-foreground">{r.cleanliness}</strong>/5</span>
+                                <span>Recommendation: <strong className="text-foreground">{r.recommendation}</strong>/5</span>
+                                {r.structure !== null && <span>Structure: <strong className="text-foreground">{r.structure}</strong>/5</span>}
+                              </div>
+                              {r.would_return !== null && (
+                                <p className="text-xs mt-1">
+                                  Would return: <strong className={r.would_return ? 'text-green-500' : 'text-destructive'}>{r.would_return ? 'Yes' : 'No'}</strong>
+                                </p>
+                              )}
+                            </div>
+                            <div className="text-right flex-shrink-0 ml-2">
+                              <div className="flex items-center gap-1 mb-1">
+                                <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
+                                <span className="font-bold">{r.avg_rating}</span>
+                              </div>
+                              <p className="text-xs text-muted-foreground">{r.driver_name}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {format(new Date(r.created_at), 'dd/MM/yy')}
+                              </p>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))
+                )}
+              </TabsContent>
+
+              {/* Facilities sub-tab */}
+              <TabsContent value="facilities" className="space-y-3 mt-2">
+                {facilityRatings
+                  .filter(r => ratingsDriverFilter === 'all' || r.driver_id === ratingsDriverFilter)
+                  .length === 0 ? (
+                  <Card>
+                    <CardContent className="p-6 text-center">
+                      <Building2 className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
+                      <p className="text-muted-foreground">No facility ratings yet</p>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  facilityRatings
+                    .filter(r => ratingsDriverFilter === 'all' || r.driver_id === ratingsDriverFilter)
+                    .map((r) => (
+                      <Card key={r.id}>
+                        <CardContent className="p-4">
+                          <div className="flex items-start justify-between">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1">
+                                <Building2 className="w-4 h-4 text-primary flex-shrink-0" />
+                                <p className="font-medium truncate">{r.facility_name}</p>
+                              </div>
+                              <div className="flex items-center gap-2 mb-2">
+                                <Badge variant="outline" className="text-xs">{r.facility_type}</Badge>
+                                <Badge variant="secondary" className="text-xs">{r.visit_type}</Badge>
+                              </div>
+                              {r.facility_address && (
+                                <p className="text-xs text-muted-foreground mb-2 truncate">{r.facility_address}</p>
+                              )}
+                              <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                                {r.treatment !== null && <span>Treatment: <strong className="text-foreground">{r.treatment}</strong>/5</span>}
+                                {r.speed !== null && <span>Speed: <strong className="text-foreground">{r.speed}</strong>/5</span>}
+                                {r.staff_help !== null && <span>Staff: <strong className="text-foreground">{r.staff_help}</strong>/5</span>}
+                                {r.parking !== null && <span>Parking: <strong className="text-foreground">{r.parking}</strong>/5</span>}
+                                {r.exit_ease !== null && <span>Exit ease: <strong className="text-foreground">{r.exit_ease}</strong>/5</span>}
+                              </div>
+                              {r.tips && (
+                                <p className="text-xs text-muted-foreground mt-2 italic line-clamp-2">💡 {r.tips}</p>
+                              )}
+                            </div>
+                            <div className="text-right flex-shrink-0 ml-2">
+                              <div className="flex items-center gap-1 mb-1">
+                                <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
+                                <span className="font-bold">{r.overall_rating}</span>
+                              </div>
+                              <p className="text-xs text-muted-foreground">{r.driver_name}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {format(new Date(r.created_at), 'dd/MM/yy')}
+                              </p>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))
+                )}
+              </TabsContent>
+
+              {/* Brands sub-tab */}
+              <TabsContent value="brands" className="space-y-3 mt-2">
+                <h3 className="text-sm font-semibold text-muted-foreground">Average Rating by Brand</h3>
+                {brandAverages.length === 0 ? (
+                  <Card>
+                    <CardContent className="p-6 text-center">
+                      <TrendingUp className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
+                      <p className="text-muted-foreground">No brand data yet</p>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  brandAverages.map((b) => (
+                    <Card key={b.brand}>
+                      <CardContent className="p-4">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+                              <Fuel className="w-5 h-5 text-primary" />
+                            </div>
+                            <div>
+                              <p className="font-semibold">{b.brand}</p>
+                              <p className="text-xs text-muted-foreground">{b.total_reviews} review{b.total_reviews !== 1 ? 's' : ''}</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Star className="w-5 h-5 fill-yellow-400 text-yellow-400" />
+                            <span className="text-xl font-bold">{b.avg_rating}</span>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))
+                )}
+              </TabsContent>
+            </Tabs>
           </TabsContent>
 
           {/* Subscriptions Tab */}

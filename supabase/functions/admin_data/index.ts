@@ -270,6 +270,141 @@ serve(async (req) => {
       });
     }
 
+    if (action === "ratings") {
+      await logAdminAction("view_ratings", "ratings");
+
+      // Get all poi_feedback with user info
+      const { data: poiFeedback } = await adminClient
+        .from("poi_feedback")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+      // Get all facility_reviews with user info
+      const { data: facilityReviews } = await adminClient
+        .from("facility_reviews")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+      // Get facilities for name mapping
+      const { data: facilities } = await adminClient
+        .from("facilities")
+        .select("id, name, facility_type, address");
+
+      // Get profiles for driver names
+      const allUserIds = new Set<string>();
+      poiFeedback?.forEach(f => allUserIds.add(f.user_id));
+      facilityReviews?.forEach(f => allUserIds.add(f.user_id));
+
+      const { data: profiles } = await adminClient
+        .from("profiles")
+        .select("id, email, full_name")
+        .in("id", Array.from(allUserIds));
+
+      const profileMap = new Map(profiles?.map(p => [p.id, p]) || []);
+      const facilityMap = new Map(facilities?.map(f => [f.id, f]) || []);
+
+      // Gas station brand keywords for grouping
+      const BRAND_PATTERNS: Record<string, RegExp> = {
+        "Love's": /love'?s/i,
+        "Pilot/Flying J": /pilot|flying\s*j/i,
+        "TA/Petro": /\bta\b|petro|travelcenter/i,
+        "Kwik Trip": /kwik\s*trip/i,
+        "Town Pump": /town\s*pump/i,
+        "Speedway": /speedway/i,
+        "7-Eleven": /7.eleven/i,
+        "Shell": /\bshell\b/i,
+        "Chevron": /chevron/i,
+        "BP": /\bbp\b/i,
+        "Casey's": /casey/i,
+        "Buc-ee's": /buc.?ee/i,
+        "Sapp Bros": /sapp/i,
+        "QuikTrip": /quiktrip/i,
+        "Sheetz": /sheetz/i,
+        "Wawa": /wawa/i,
+        "Cat Scale": /cat\s*scale/i,
+      };
+
+      function detectBrand(name: string): string {
+        for (const [brand, pattern] of Object.entries(BRAND_PATTERNS)) {
+          if (pattern.test(name)) return brand;
+        }
+        return "Other";
+      }
+
+      // Process poi_feedback (gas stations / truck stops)
+      const gasStationRatings = (poiFeedback || []).map(f => {
+        const profile = profileMap.get(f.user_id);
+        const avgRating = ((f.friendliness_rating + f.cleanliness_rating + f.recommendation_rating + (f.structure_rating || 0)) / (f.structure_rating ? 4 : 3));
+        return {
+          id: f.id,
+          type: 'gas_station' as const,
+          poi_name: f.poi_name,
+          poi_type: f.poi_type,
+          brand: detectBrand(f.poi_name),
+          avg_rating: Math.round(avgRating * 10) / 10,
+          friendliness: f.friendliness_rating,
+          cleanliness: f.cleanliness_rating,
+          recommendation: f.recommendation_rating,
+          structure: f.structure_rating,
+          would_return: f.would_return,
+          driver_name: profile?.full_name || profile?.email || 'Unknown',
+          driver_id: f.user_id,
+          created_at: f.created_at,
+        };
+      });
+
+      // Process facility_reviews
+      const facilityRatings = (facilityReviews || []).map(f => {
+        const profile = profileMap.get(f.user_id);
+        const facility = facilityMap.get(f.facility_id);
+        return {
+          id: f.id,
+          type: 'facility' as const,
+          facility_name: facility?.name || `Facility ${f.facility_id.slice(0, 8)}`,
+          facility_type: facility?.facility_type || 'unknown',
+          facility_address: facility?.address,
+          overall_rating: f.overall_rating,
+          treatment: f.treatment_rating,
+          speed: f.speed_rating,
+          staff_help: f.staff_help_rating,
+          parking: f.parking_rating,
+          exit_ease: f.exit_ease_rating,
+          visit_type: f.visit_type,
+          time_spent: f.time_spent,
+          tips: f.tips,
+          driver_name: profile?.full_name || profile?.email || 'Unknown',
+          driver_id: f.user_id,
+          created_at: f.created_at,
+        };
+      });
+
+      // Brand averages for gas stations
+      const brandMap = new Map<string, { total: number; count: number; reviews: number }>();
+      gasStationRatings.forEach(r => {
+        const existing = brandMap.get(r.brand) || { total: 0, count: 0, reviews: 0 };
+        existing.total += r.avg_rating;
+        existing.count += 1;
+        existing.reviews = existing.count;
+        brandMap.set(r.brand, existing);
+      });
+
+      const brandAverages = Array.from(brandMap.entries())
+        .map(([brand, data]) => ({
+          brand,
+          avg_rating: Math.round((data.total / data.count) * 10) / 10,
+          total_reviews: data.reviews,
+        }))
+        .sort((a, b) => b.total_reviews - a.total_reviews);
+
+      return new Response(JSON.stringify({
+        gas_station_ratings: gasStationRatings,
+        facility_ratings: facilityRatings,
+        brand_averages: brandAverages,
+      }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     return new Response(JSON.stringify({ error: "Invalid action" }), {
       status: 400,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
