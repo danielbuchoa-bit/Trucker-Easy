@@ -67,9 +67,10 @@ const FacilitiesList: React.FC = () => {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [facilitiesRes, aggregatesRes, tipsRes] = await Promise.all([
+        const [facilitiesRes, aggregatesRes, poiAggRes, tipsRes] = await Promise.all([
           supabase.from('facilities').select('*').limit(100),
           supabase.from('facility_aggregates').select('*'),
+          supabase.from('poi_ratings_aggregate').select('*'),
           supabase.from('facility_reviews')
             .select('facility_id, tips, created_at')
             .not('tips', 'is', null)
@@ -81,14 +82,34 @@ const FacilitiesList: React.FC = () => {
           setFacilities(facilitiesRes.data as unknown as Facility[]);
         }
         
+        const map: Record<string, FacilityAggregate> = {};
         if (aggregatesRes.data) {
-          const map: Record<string, FacilityAggregate> = {};
           aggregatesRes.data.forEach((agg: unknown) => {
             const a = agg as FacilityAggregate;
             map[a.facility_id] = a;
           });
-          setAggregates(map);
         }
+        
+        // Merge poi_ratings_aggregate as fallback for facilities without facility_aggregates
+        if (poiAggRes.data) {
+          poiAggRes.data.forEach((poi: any) => {
+            if (poi.poi_id && !map[poi.poi_id] && (poi.review_count || 0) > 0) {
+              map[poi.poi_id] = {
+                facility_id: poi.poi_id,
+                review_count: poi.review_count || 0,
+                avg_overall: poi.avg_overall || 0,
+                avg_parking: null,
+                avg_speed: null,
+                avg_staff_help: null,
+                avg_treatment: null,
+                avg_exit_ease: null,
+                typical_time: null,
+                updated_at: new Date().toISOString(),
+              } as FacilityAggregate;
+            }
+          });
+        }
+        setAggregates(map);
 
         if (tipsRes.data) {
           const tipsMap: Record<string, LatestTip> = {};
@@ -544,7 +565,7 @@ const FacilitiesList: React.FC = () => {
                             </div>
                             <Button
                               size="sm"
-                              className="h-7 text-xs bg-primary/90 hover:bg-primary text-primary-foreground animate-pulse hover:animate-none shadow-[0_0_10px_hsl(var(--primary)/0.4)]"
+                              className="h-7 text-xs bg-primary/90 hover:bg-primary text-primary-foreground shadow-[0_0_10px_hsl(var(--primary)/0.4)]"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 navigate(`/facility/${facility.id}`);
