@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Scale, CloudSnow, Car, ThumbsUp, ThumbsDown, Loader2 } from 'lucide-react';
+import { Scale, CloudSnow, Car, ThumbsUp, ThumbsDown, Loader2, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -186,8 +186,10 @@ const RoadReportsList: React.FC<RoadReportsListProps> = ({ maxDistance = 50000 }
   if (filteredReports.length === 0) {
     return (
       <Card>
-        <CardContent className="py-8 text-center text-muted-foreground">
-          No active reports nearby. Be the first to report!
+        <CardContent className="py-8 text-center">
+          <AlertTriangle className="w-10 h-10 text-muted-foreground mx-auto mb-3 opacity-50" />
+          <p className="text-muted-foreground font-medium">No active reports right now</p>
+          <p className="text-sm text-muted-foreground/70 mt-1">Reports expire after a few hours. Use the Report button to share road conditions!</p>
         </CardContent>
       </Card>
     );

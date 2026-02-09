@@ -135,7 +135,7 @@ const CommunityScreen = () => {
 
       {/* Content */}
       <div className="p-4">
-        {activeTab === 'reports' && <RoadReportsList />}
+        {activeTab === 'reports' && <RoadReportsList maxDistance={Infinity} />}
         
         {activeTab === 'facilities' && <FacilitiesList />}
         
