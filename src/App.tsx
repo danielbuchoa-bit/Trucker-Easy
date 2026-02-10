@@ -29,6 +29,7 @@ import EnglishQuickReturn from "./components/settings/EnglishQuickReturn";
 import LanguageSuggestionModal from "./components/settings/LanguageSuggestionModal";
 import ProtectedRoute from "./components/auth/ProtectedRoute";
 import WelcomeScreen from "./pages/Welcome";
+import WebsiteScreen from "./pages/Website";
 import AuthScreen from "./pages/Auth";
 import OnboardingScreen from "./pages/Onboarding";
 import HomeScreen from "./pages/Home";
@@ -95,7 +96,8 @@ const App = () => (
                                 <CheckInTrigger />
                                 <Routes>
                                   {/* Public routes */}
-                                  <Route path="/" element={<WelcomeScreen onComplete={() => {}} />} />
+                                  <Route path="/" element={<WebsiteScreen />} />
+                                  <Route path="/welcome" element={<WelcomeScreen onComplete={() => {}} />} />
                                   <Route path="/auth" element={<AuthScreen onComplete={() => {}} onBack={() => {}} />} />
                                   <Route path="/privacy" element={<Privacy />} />
                                   <Route path="/invite" element={<InviteLanding />} />
