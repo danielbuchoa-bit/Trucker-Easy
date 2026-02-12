@@ -119,17 +119,16 @@ async function fetchEiaPrice(stateCode: string): Promise<number | null> {
   }
 
   try {
-    // EIA APIv2: Weekly Retail Gasoline and Diesel Prices by state
-    // series format: W_EPD2F_PRS_S{state}_DPG (weekly diesel #2 retail price by state)
-    const url = `https://api.eia.gov/v2/petroleum/pri/gnd/data/?api_key=${eiaKey}&frequency=weekly&data[0]=value&facets[product][]=EPD2F&facets[duoarea][]=S${stateCode}&sort[0][column]=period&sort[0][direction]=desc&length=1`;
+    // EIA APIv2: Weekly Retail Gasoline and Diesel Prices
+    // Use the weekly fuel report endpoint for diesel by state
+    const url = `https://api.eia.gov/v2/petroleum/pri/gnd/data/?api_key=${eiaKey}&frequency=weekly&data[0]=value&facets[product][]=EPD2D&facets[duoarea][]=S${stateCode}&sort[0][column]=period&sort[0][direction]=desc&length=1`;
     
-    const res = await fetch(url, {
-      headers: { "Accept": "application/json" },
-    });
+    console.log(`[fuel_price] Fetching EIA for state ${stateCode}`);
+    const res = await fetch(url);
 
     if (!res.ok) {
-      console.warn("[fuel_price] EIA API error:", res.status);
-      await res.text(); // consume body
+      const body = await res.text();
+      console.warn(`[fuel_price] EIA API error: ${res.status} - ${body.substring(0, 200)}`);
       return null;
     }
 
@@ -145,11 +144,13 @@ async function fetchEiaPrice(stateCode: string): Promise<number | null> {
       return priceCents;
     }
 
+    console.log(`[fuel_price] No EIA data for state ${stateCode}, trying PADD region`);
+
     // Try PADD region if state not available
     const padd = getPaddRegion(stateCode);
-    const paddUrl = `https://api.eia.gov/v2/petroleum/pri/gnd/data/?api_key=${eiaKey}&frequency=weekly&data[0]=value&facets[product][]=EPD2F&facets[duoarea][]=${padd}&sort[0][column]=period&sort[0][direction]=desc&length=1`;
+    const paddUrl = `https://api.eia.gov/v2/petroleum/pri/gnd/data/?api_key=${eiaKey}&frequency=weekly&data[0]=value&facets[product][]=EPD2D&facets[duoarea][]=${padd}&sort[0][column]=period&sort[0][direction]=desc&length=1`;
     
-    const paddRes = await fetch(paddUrl, { headers: { "Accept": "application/json" } });
+    const paddRes = await fetch(paddUrl);
     if (paddRes.ok) {
       const paddData = await paddRes.json();
       const paddRecords = paddData?.response?.data;
