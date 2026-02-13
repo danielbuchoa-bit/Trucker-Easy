@@ -67,7 +67,7 @@ export default function ChoosePlan({ isOnboarding = false, onComplete }: ChooseP
     if (!user) {
       toast.error('Please sign in to subscribe');
       sessionStorage.setItem('pendingPlan', JSON.stringify({ selectedPlan, referralCode }));
-      navigate('/auth');
+      navigate('/auth?redirect=checkout');
       return;
     }
 
