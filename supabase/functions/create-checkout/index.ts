@@ -13,8 +13,8 @@ const logStep = (step: string, details?: any) => {
 };
 
 // PRO Plan prices
-const MONTHLY_PRICE_ID = "price_1SyR2S2MEO38NbGnf4yYBL5b";
-const ANNUAL_PRICE_ID = "price_1SyR2d2MEO38NbGnIOso9kgl";
+const MONTHLY_PRICE_ID = "price_1SyR2S2MEO38NbGnf4yYBL5b"; // recurring/month $19.99
+const ANNUAL_PRICE_ID = "price_1T0BQT2MEO38NbGn3UVcef9L";  // one-time $179.99
 const REFERRAL_COUPON_ID = "1Obg7UIY";
 const TRIAL_DAYS = 5;
 
@@ -33,6 +33,7 @@ serve(async (req) => {
 
     let priceId = MONTHLY_PRICE_ID;
     let referralCode: string | undefined;
+    let planType: 'monthly' | 'annual' = 'monthly';
     
     try {
       const body = await req.json();
@@ -42,10 +43,18 @@ serve(async (req) => {
       if (body.referralCode) {
         referralCode = body.referralCode;
       }
+      if (body.planType) {
+        planType = body.planType;
+      }
     } catch {
       // No body or invalid JSON, use defaults
     }
-    logStep("Using price", { priceId, referralCode: referralCode || 'none' });
+
+    // Determine mode based on price
+    const isAnnual = priceId === ANNUAL_PRICE_ID || planType === 'annual';
+    const mode = isAnnual ? 'payment' : 'subscription';
+    
+    logStep("Plan config", { priceId, mode, planType, referralCode: referralCode || 'none' });
 
     const authHeader = req.headers.get("Authorization")!;
     const token = authHeader.replace("Bearer ", "");
@@ -70,32 +79,48 @@ serve(async (req) => {
       customer: customerId,
       customer_email: customerId ? undefined : user.email,
       line_items: [{ price: priceId, quantity: 1 }],
-      mode: "subscription",
+      mode,
       success_url: `${req.headers.get("origin")}/subscription/success`,
       cancel_url: `${req.headers.get("origin")}/choose-plan?canceled=true`,
-      allow_promotion_codes: !referralCode, // Disable promo codes if referral applied
-      subscription_data: {
+      metadata: {
+        user_id: user.id,
+        requested_price_id: priceId,
+        plan_type: isAnnual ? 'annual' : 'monthly',
+      },
+    };
+
+    // Only add subscription-specific options for monthly recurring
+    if (mode === 'subscription') {
+      sessionConfig.allow_promotion_codes = !referralCode;
+      sessionConfig.subscription_data = {
         trial_period_days: TRIAL_DAYS,
         metadata: {
           user_id: user.id,
           user_email: user.email,
         },
-      },
-      metadata: {
-        user_id: user.id,
-        requested_price_id: priceId,
-      },
-    };
+      };
 
-    // Apply referral coupon if valid code provided
-    if (referralCode) {
-      logStep("Applying referral coupon", { referralCode });
-      sessionConfig.discounts = [{ coupon: REFERRAL_COUPON_ID }];
-      sessionConfig.metadata.referral_code = referralCode;
+      // Apply referral coupon if valid code provided
+      if (referralCode) {
+        logStep("Applying referral coupon", { referralCode });
+        sessionConfig.discounts = [{ coupon: REFERRAL_COUPON_ID }];
+        sessionConfig.metadata.referral_code = referralCode;
+      }
+    }
+
+    // For one-time payment (annual), add payment metadata
+    if (mode === 'payment') {
+      sessionConfig.payment_intent_data = {
+        metadata: {
+          user_id: user.id,
+          user_email: user.email,
+          plan_type: 'annual',
+        },
+      };
     }
 
     const session = await stripe.checkout.sessions.create(sessionConfig);
-    logStep("Checkout session created", { sessionId: session.id });
+    logStep("Checkout session created", { sessionId: session.id, mode });
 
     return new Response(JSON.stringify({ url: session.url }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
