@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect, useRef } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -17,6 +17,7 @@ interface ChoosePlanProps {
 
 export default function ChoosePlan({ isOnboarding = false, onComplete }: ChoosePlanProps) {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [selectedPlan, setSelectedPlan] = useState<'monthly' | 'annual'>('annual');
   const [loading, setLoading] = useState(false);
   const [user, setUser] = useState<User | null>(null);
@@ -24,6 +25,30 @@ export default function ChoosePlan({ isOnboarding = false, onComplete }: ChooseP
   const [referralCode, setReferralCode] = useState('');
   const [referralValid, setReferralValid] = useState<boolean | null>(null);
   const [validatingCode, setValidatingCode] = useState(false);
+  const autoCheckoutTriggered = useRef(false);
+
+  const triggerCheckout = async (plan: 'monthly' | 'annual', code?: string) => {
+    const priceId = plan === 'annual' 
+      ? PRO_PLAN.annual.price_id 
+      : PRO_PLAN.monthly.price_id;
+    setLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('create-checkout', {
+        body: { priceId, referralCode: code || undefined }
+      });
+      if (error) throw error;
+      if (data?.url) {
+        window.location.href = data.url;
+        return;
+      }
+      throw new Error('No checkout URL returned');
+    } catch (e) {
+      console.error('Checkout failed:', e);
+      toast.error('Failed to start checkout. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -31,32 +56,22 @@ export default function ChoosePlan({ isOnboarding = false, onComplete }: ChooseP
       setUser(user);
       setAuthLoading(false);
 
-      // If user just came back from auth, restore pending plan and auto-checkout
-      if (user) {
+      // If user just came back from auth with ?auto=1, auto-trigger checkout
+      if (user && searchParams.get('auto') === '1' && !autoCheckoutTriggered.current) {
+        autoCheckoutTriggered.current = true;
         const pending = sessionStorage.getItem('pendingPlan');
+        let plan: 'monthly' | 'annual' = 'annual';
+        let code: string | undefined;
         if (pending) {
           sessionStorage.removeItem('pendingPlan');
           try {
-            const { selectedPlan: plan, referralCode: code } = JSON.parse(pending);
-            if (plan) setSelectedPlan(plan);
-            // Auto-trigger checkout
-            const priceId = plan === 'annual' 
-              ? PRO_PLAN.annual.price_id 
-              : PRO_PLAN.monthly.price_id;
-            setLoading(true);
-            const { data, error } = await supabase.functions.invoke('create-checkout', {
-              body: { priceId, referralCode: code || undefined }
-            });
-            if (!error && data?.url) {
-              window.location.href = data.url;
-              return;
-            }
-          } catch (e) {
-            console.error('Auto-checkout failed:', e);
-          } finally {
-            setLoading(false);
-          }
+            const parsed = JSON.parse(pending);
+            if (parsed.selectedPlan) plan = parsed.selectedPlan;
+            if (parsed.referralCode) code = parsed.referralCode;
+          } catch {}
         }
+        setSelectedPlan(plan);
+        await triggerCheckout(plan, code);
       }
     };
     checkAuth();
