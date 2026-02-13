@@ -107,12 +107,7 @@ export default function ChoosePlan({ isOnboarding = false, onComplete }: ChooseP
   }, [referralCode]);
 
   const handleSubscribe = async () => {
-    if (!user) {
-      toast.error('Please sign in to subscribe');
-      sessionStorage.setItem('pendingPlan', JSON.stringify({ selectedPlan, referralCode }));
-      navigate('/auth?redirect=checkout');
-      return;
-    }
+    // User is guaranteed authenticated by ProtectedRoute
 
     setLoading(true);
     try {

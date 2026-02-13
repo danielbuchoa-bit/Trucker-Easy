@@ -122,8 +122,8 @@ const App = () => (
                                   <Route path="/food-preferences" element={<ProtectedRoute><FoodPreferencesScreen /></ProtectedRoute>} />
                                   <Route path="/favorite-meals" element={<ProtectedRoute><FavoriteMealsScreen /></ProtectedRoute>} />
                                   <Route path="/subscription" element={<ProtectedRoute><SubscriptionScreen /></ProtectedRoute>} />
-                                  <Route path="/subscription/success" element={<ProtectedRoute><SubscriptionSuccessScreen /></ProtectedRoute>} />
-                                  <Route path="/choose-plan" element={<ChoosePlanScreen />} />
+                                  <Route path="/subscription/success" element={<ProtectedRoute skipSubscriptionCheck><SubscriptionSuccessScreen /></ProtectedRoute>} />
+                                  <Route path="/choose-plan" element={<ProtectedRoute skipSubscriptionCheck><ChoosePlanScreen /></ProtectedRoute>} />
                                   <Route path="/rating-history" element={<ProtectedRoute><RatingHistoryScreen /></ProtectedRoute>} />
                                   <Route path="/road-test-checklist" element={<ProtectedRoute><RoadTestChecklist /></ProtectedRoute>} />
                                   <Route path="/wellbeing" element={<ProtectedRoute><WellbeingScreen /></ProtectedRoute>} />
