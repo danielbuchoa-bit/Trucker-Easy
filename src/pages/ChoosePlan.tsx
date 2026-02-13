@@ -30,6 +30,34 @@ export default function ChoosePlan({ isOnboarding = false, onComplete }: ChooseP
       const { data: { user } } = await supabase.auth.getUser();
       setUser(user);
       setAuthLoading(false);
+
+      // If user just came back from auth, restore pending plan and auto-checkout
+      if (user) {
+        const pending = sessionStorage.getItem('pendingPlan');
+        if (pending) {
+          sessionStorage.removeItem('pendingPlan');
+          try {
+            const { selectedPlan: plan, referralCode: code } = JSON.parse(pending);
+            if (plan) setSelectedPlan(plan);
+            // Auto-trigger checkout
+            const priceId = plan === 'annual' 
+              ? PRO_PLAN.annual.price_id 
+              : PRO_PLAN.monthly.price_id;
+            setLoading(true);
+            const { data, error } = await supabase.functions.invoke('create-checkout', {
+              body: { priceId, referralCode: code || undefined }
+            });
+            if (!error && data?.url) {
+              window.location.href = data.url;
+              return;
+            }
+          } catch (e) {
+            console.error('Auto-checkout failed:', e);
+          } finally {
+            setLoading(false);
+          }
+        }
+      }
     };
     checkAuth();
 
