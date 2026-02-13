@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { useLanguage } from '@/i18n/LanguageContext';
 import { Mail, Lock, Eye, EyeOff, ArrowLeft, User, Phone } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { toast as sonnerToast } from 'sonner';
 
 interface AuthScreenProps {
   onComplete: () => void;
@@ -24,6 +25,27 @@ const AuthScreen = ({ onComplete, onBack }: AuthScreenProps) => {
   const [phone, setPhone] = useState('');
   const [loading, setLoading] = useState(false);
 
+  const triggerCheckout = useCallback(async (cycle: 'monthly' | 'annual' = 'annual') => {
+    try {
+      const priceId = cycle === 'annual' 
+        ? 'price_1SyR2d2MEO38NbGnIOso9kgl' 
+        : 'price_1SyR2S2MEO38NbGnf4yYBL5b';
+      const { data, error } = await supabase.functions.invoke('create-checkout', {
+        body: { priceId },
+      });
+      if (error) throw error;
+      if (data?.url) {
+        window.location.href = data.url;
+        return;
+      }
+    } catch (err) {
+      console.error('Checkout error:', err);
+      sonnerToast.error('Error starting checkout. Please try again.');
+    }
+    // Fallback if checkout fails
+    navigate('/choose-plan');
+  }, [navigate]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -43,12 +65,13 @@ const AuthScreen = ({ onComplete, onBack }: AuthScreenProps) => {
         });
         
         if (redirectTo === 'checkout') {
-          navigate('/choose-plan');
+          // Go directly to Stripe checkout
+          await triggerCheckout();
         } else {
           navigate('/home');
         }
       } else {
-        // New signups MUST go through checkout - no free access
+        // New signups MUST go through checkout
         const { error } = await supabase.auth.signUp({
           email,
           password,
@@ -66,8 +89,8 @@ const AuthScreen = ({ onComplete, onBack }: AuthScreenProps) => {
           title: t.common.success,
           description: t.auth.signup,
         });
-        // Always redirect new signups to checkout/choose-plan
-        navigate('/choose-plan');
+        // Always send new signups directly to Stripe checkout
+        await triggerCheckout();
       }
       onComplete();
     } catch (error: any) {
