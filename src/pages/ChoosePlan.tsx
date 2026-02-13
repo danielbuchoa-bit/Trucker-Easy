@@ -34,7 +34,7 @@ export default function ChoosePlan({ isOnboarding = false, onComplete }: ChooseP
     setLoading(true);
     try {
       const { data, error } = await supabase.functions.invoke('create-checkout', {
-        body: { priceId, referralCode: code || undefined }
+        body: { priceId, planType: plan, referralCode: code || undefined }
       });
       if (error) throw error;
       if (data?.url) {
@@ -123,6 +123,7 @@ export default function ChoosePlan({ isOnboarding = false, onComplete }: ChooseP
       const { data, error } = await supabase.functions.invoke('create-checkout', {
         body: { 
           priceId,
+          planType: selectedPlan,
           referralCode: referralValid ? referralCode : undefined,
         }
       });

@@ -26,10 +26,10 @@ export const PRO_PLAN: PlanDefinition = {
     amount: 1999,
   },
   annual: {
-    price_id: 'price_1SyR2d2MEO38NbGnIOso9kgl',
+    price_id: 'price_1T0BQT2MEO38NbGn3UVcef9L',
     amount: 17999,
   },
-  product_ids: ['prod_TwJfOGBBNJ6Myz', 'prod_TwJfW7sH7eyHrC'],
+  product_ids: ['prod_TwJfOGBBNJ6Myz', 'prod_TwJfW7sH7eyHrC', 'prod_Ty7fqQU1p8W91t'],
   trial_days: 5,
   features: [
     'Truck-aware GPS navigation (height, weight, length)',
