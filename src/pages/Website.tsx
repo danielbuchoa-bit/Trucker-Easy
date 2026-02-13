@@ -13,11 +13,43 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
+import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
 
 const Website = () => {
   const navigate = useNavigate();
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'annual'>('annual');
+  const [checkoutLoading, setCheckoutLoading] = useState(false);
+
+  const handleStartTrial = useCallback(async () => {
+    setCheckoutLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        navigate('/auth?redirect=checkout');
+        return;
+      }
+
+      const priceId = billingCycle === 'annual' 
+        ? 'price_1SyR2d2MEO38NbGnIOso9kgl' 
+        : 'price_1SyR2S2MEO38NbGnf4yYBL5b';
+
+      const { data, error } = await supabase.functions.invoke('create-checkout', {
+        body: { priceId },
+      });
+
+      if (error) throw error;
+      if (data?.url) {
+        window.location.href = data.url;
+      }
+    } catch (err) {
+      console.error('Checkout error:', err);
+      toast.error('Error starting checkout. Please try again.');
+    } finally {
+      setCheckoutLoading(false);
+    }
+  }, [billingCycle, navigate]);
 
   const features = [
     { icon: Navigation, title: 'Truck-Aware GPS', description: 'Routes optimized for height, weight, and length restrictions. Never worry about low bridges again.' },
@@ -55,7 +87,7 @@ const Website = () => {
             <a href="#screenshots" className="hover:text-primary transition-colors">App</a>
             <a href="#pricing" className="hover:text-primary transition-colors">Pricing</a>
           </div>
-          <Button onClick={() => navigate('/auth')} className="metallic-gradient text-primary-foreground font-semibold border-0">
+          <Button onClick={handleStartTrial} disabled={checkoutLoading} className="metallic-gradient text-primary-foreground font-semibold border-0">
             Get Started <ArrowRight className="w-4 h-4 ml-1" />
           </Button>
         </div>
@@ -85,7 +117,8 @@ const Website = () => {
               <div className="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start">
                 <Button
                   size="lg"
-                  onClick={() => navigate('/auth')}
+                  onClick={handleStartTrial}
+                  disabled={checkoutLoading}
                   className="metallic-gradient text-primary-foreground text-lg px-8 py-6 border-0 font-semibold glow-steel hover:glow-steel-strong"
                 >
                   Start {PRO_PLAN.trial_days}-Day Free Trial
@@ -240,7 +273,8 @@ const Website = () => {
 
               <Button
                 size="lg"
-                onClick={() => navigate('/auth')}
+                onClick={handleStartTrial}
+                disabled={checkoutLoading}
                 className="w-full metallic-gradient text-primary-foreground text-lg py-6 border-0 font-semibold glow-steel hover:glow-steel-strong"
               >
                 Start Free Trial
@@ -264,7 +298,8 @@ const Website = () => {
           </p>
           <Button
             size="lg"
-            onClick={() => navigate('/auth')}
+            onClick={handleStartTrial}
+            disabled={checkoutLoading}
             className="metallic-gradient text-primary-foreground text-lg px-10 py-6 border-0 font-semibold glow-steel hover:glow-steel-strong"
           >
             Get Started Now

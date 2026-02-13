@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useLanguage } from '@/i18n/LanguageContext';
 import { Mail, Lock, Eye, EyeOff, ArrowLeft, User, Phone } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 
@@ -14,6 +14,8 @@ const AuthScreen = ({ onComplete, onBack }: AuthScreenProps) => {
   const { t } = useLanguage();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const [searchParams] = useSearchParams();
+  const redirectTo = searchParams.get('redirect');
   const [isLogin, setIsLogin] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState('');
@@ -40,7 +42,11 @@ const AuthScreen = ({ onComplete, onBack }: AuthScreenProps) => {
           description: t.auth.login,
         });
         
-        navigate('/home');
+        if (redirectTo === 'checkout') {
+          navigate('/choose-plan');
+        } else {
+          navigate('/home');
+        }
       } else {
         const { error } = await supabase.auth.signUp({
           email,
@@ -59,7 +65,11 @@ const AuthScreen = ({ onComplete, onBack }: AuthScreenProps) => {
           title: t.common.success,
           description: t.auth.signup,
         });
-        navigate('/home');
+        if (redirectTo === 'checkout') {
+          navigate('/choose-plan');
+        } else {
+          navigate('/home');
+        }
       }
       onComplete();
     } catch (error: any) {
