@@ -87,8 +87,7 @@ export default function ChoosePlan({ isOnboarding = false, onComplete }: ChooseP
       if (error) throw error;
 
       if (data.url) {
-        window.open(data.url, '_blank');
-        toast.success('Checkout opened in new tab. Complete your payment there!');
+        window.location.href = data.url;
       }
     } catch (error) {
       console.error('Error creating checkout:', error);
