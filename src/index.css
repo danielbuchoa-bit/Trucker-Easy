@@ -2,59 +2,59 @@
 @tailwind components;
 @tailwind utilities;
 
-/* TruckerEasy Technologies Design System - Steel Metallic Tech Theme */
+/* TruckerEasy Technologies Design System - Gold & Dark Tech Theme */
 
 @layer base {
   :root {
-    /* Deep charcoal slate background */
-    --background: 220 15% 12%;
-    --foreground: 210 20% 92%;
-    --card: 220 15% 16%;
-    --card-foreground: 210 20% 92%;
-    --popover: 220 15% 16%;
-    --popover-foreground: 210 20% 92%;
+    /* Deep dark charcoal background */
+    --background: 220 20% 10%;
+    --foreground: 40 20% 92%;
+    --card: 220 18% 14%;
+    --card-foreground: 40 20% 92%;
+    --popover: 220 18% 14%;
+    --popover-foreground: 40 20% 92%;
     
-    /* Primary: Steel blue metallic */
-    --primary: 200 55% 50%;
-    --primary-foreground: 220 15% 98%;
+    /* Primary: Rich Gold */
+    --primary: 42 78% 50%;
+    --primary-foreground: 220 20% 8%;
     
     /* Secondary: Dark slate */
-    --secondary: 215 18% 22%;
-    --secondary-foreground: 210 20% 92%;
+    --secondary: 220 18% 18%;
+    --secondary-foreground: 40 20% 92%;
     
-    /* Muted: Charcoal gray */
-    --muted: 215 15% 18%;
-    --muted-foreground: 210 10% 50%;
+    /* Muted: Charcoal */
+    --muted: 220 15% 16%;
+    --muted-foreground: 40 10% 50%;
     
-    /* Accent: Cyan steel highlight */
-    --accent: 195 60% 55%;
-    --accent-foreground: 220 15% 10%;
+    /* Accent: Warm amber highlight */
+    --accent: 38 70% 55%;
+    --accent-foreground: 220 20% 8%;
     
     --destructive: 0 72% 51%;
-    --destructive-foreground: 210 20% 98%;
+    --destructive-foreground: 40 20% 98%;
     
-    /* Border with subtle steel tint */
-    --border: 215 15% 24%;
-    --input: 215 15% 20%;
-    --ring: 200 55% 50%;
+    /* Border with subtle gold tint */
+    --border: 40 10% 22%;
+    --input: 220 15% 18%;
+    --ring: 42 78% 50%;
     --radius: 0.75rem;
     
-    /* Semantic colors with metallic palette */
+    /* Semantic colors */
     --success: 160 60% 42%;
     --success-foreground: 220 15% 98%;
     --warning: 45 93% 47%;
     --warning-foreground: 220 15% 10%;
-    --info: 200 55% 50%;
-    --info-foreground: 220 15% 98%;
+    --info: 42 78% 50%;
+    --info-foreground: 220 20% 8%;
     
     /* Action button colors */
-    --facility-action: 200 55% 50%;
-    --facility-action-foreground: 0 0% 100%;
+    --facility-action: 42 78% 50%;
+    --facility-action-foreground: 220 20% 8%;
     
     /* Status colors */
     --status-open: 160 60% 42%;
     --status-closed: 0 72% 51%;
-    --status-unknown: 210 15% 45%;
+    --status-unknown: 40 10% 45%;
     --status-limited: 45 93% 47%;
     
     /* Parking availability */
@@ -62,53 +62,53 @@
     --parking-limited: 45 93% 47%;
     --parking-full: 0 72% 51%;
 
-    /* Steel glow effects */
-    --neon-glow: 200 55% 50%;
-    --neon-glow-strong: 195 60% 60%;
+    /* Gold glow effects */
+    --neon-glow: 42 78% 50%;
+    --neon-glow-strong: 38 85% 58%;
 
-    /* Sidebar with steel styling */
-    --sidebar-background: 220 15% 10%;
-    --sidebar-foreground: 210 20% 92%;
-    --sidebar-primary: 200 55% 50%;
-    --sidebar-primary-foreground: 220 15% 98%;
-    --sidebar-accent: 215 15% 18%;
-    --sidebar-accent-foreground: 210 20% 92%;
-    --sidebar-border: 215 15% 24%;
-    --sidebar-ring: 200 55% 50%;
+    /* Sidebar with gold styling */
+    --sidebar-background: 220 20% 8%;
+    --sidebar-foreground: 40 20% 92%;
+    --sidebar-primary: 42 78% 50%;
+    --sidebar-primary-foreground: 220 20% 8%;
+    --sidebar-accent: 220 15% 16%;
+    --sidebar-accent-foreground: 40 20% 92%;
+    --sidebar-border: 40 10% 22%;
+    --sidebar-ring: 42 78% 50%;
   }
 
   .light {
-    --background: 210 25% 97%;
+    --background: 40 25% 97%;
     --foreground: 220 25% 10%;
     --card: 0 0% 100%;
     --card-foreground: 220 25% 10%;
     --popover: 0 0% 100%;
     --popover-foreground: 220 25% 10%;
-    --primary: 200 100% 45%;
+    --primary: 42 78% 45%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 210 20% 92%;
+    --secondary: 40 15% 92%;
     --secondary-foreground: 220 25% 10%;
-    --muted: 210 15% 94%;
-    --muted-foreground: 215 15% 40%;
-    --accent: 195 100% 45%;
+    --muted: 40 10% 94%;
+    --muted-foreground: 220 15% 40%;
+    --accent: 38 70% 50%;
     --accent-foreground: 0 0% 100%;
     --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 100%;
-    --border: 210 15% 88%;
-    --input: 210 15% 88%;
-    --ring: 200 100% 45%;
+    --border: 40 15% 85%;
+    --input: 40 15% 88%;
+    --ring: 42 78% 45%;
     
-    --neon-glow: 200 100% 45%;
-    --neon-glow-strong: 195 100% 55%;
+    --neon-glow: 42 78% 45%;
+    --neon-glow-strong: 38 85% 55%;
     
     --sidebar-background: 0 0% 98%;
     --sidebar-foreground: 220 25% 10%;
-    --sidebar-primary: 200 100% 45%;
+    --sidebar-primary: 42 78% 45%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 210 15% 94%;
+    --sidebar-accent: 40 10% 94%;
     --sidebar-accent-foreground: 220 25% 10%;
-    --sidebar-border: 210 15% 88%;
-    --sidebar-ring: 200 100% 45%;
+    --sidebar-border: 40 15% 85%;
+    --sidebar-ring: 42 78% 45%;
   }
 }
 
@@ -201,14 +201,20 @@
 
   .metallic-gradient {
     background: linear-gradient(135deg, 
-      hsl(200 55% 55% / 0.9) 0%, 
-      hsl(210 45% 40% / 0.9) 50%,
-      hsl(200 55% 50% / 0.9) 100%);
+      hsl(42 78% 55% / 0.95) 0%, 
+      hsl(38 70% 40% / 0.95) 50%,
+      hsl(42 78% 50% / 0.95) 100%);
   }
 
   .hexagon-pattern {
-    background-image: url("data:image/svg+xml,%3Csvg width='60' height='52' viewBox='0 0 60 52' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M30 0l25.98 15v30L30 60 4.02 45V15z' fill='none' stroke='%233a9cc5' stroke-opacity='0.08' stroke-width='1'/%3E%3C/svg%3E");
+    background-image: url("data:image/svg+xml,%3Csvg width='60' height='52' viewBox='0 0 60 52' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M30 0l25.98 15v30L30 60 4.02 45V15z' fill='none' stroke='%23c5962e' stroke-opacity='0.08' stroke-width='1'/%3E%3C/svg%3E");
     background-size: 60px 52px;
+  }
+
+  /* Circuit board pattern inspired by logo */
+  .circuit-pattern {
+    background-image: url("data:image/svg+xml,%3Csvg width='80' height='80' viewBox='0 0 80 80' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M40 0v20M40 60v20M0 40h20M60 40h80M20 20l10 10M50 50l10 10M50 20l-10 10M20 50l10 10' fill='none' stroke='%23c5962e' stroke-opacity='0.06' stroke-width='1'/%3E%3Ccircle cx='40' cy='40' r='3' fill='%23c5962e' fill-opacity='0.06'/%3E%3Ccircle cx='20' cy='20' r='2' fill='%23c5962e' fill-opacity='0.04'/%3E%3Ccircle cx='60' cy='60' r='2' fill='%23c5962e' fill-opacity='0.04'/%3E%3C/svg%3E");
+    background-size: 80px 80px;
   }
 
   /* Confetti animation */

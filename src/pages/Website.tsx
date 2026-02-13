@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import { useLanguage } from '@/i18n/LanguageContext';
-import truckerEasyLogo from '@/assets/trucker-easy-logo-new.png';
+import truckerEasyLogo from '@/assets/trucker-easy-logo-gold.png';
 import screenMap from '@/assets/promo/screen-map.png';
 import screenStops from '@/assets/promo/screen-stops.png';
 import screenNavigation from '@/assets/promo/screen-navigation.png';
@@ -44,18 +44,18 @@ const Website = () => {
   return (
     <div className="min-h-screen bg-background text-foreground overflow-x-hidden">
       {/* Navigation Bar */}
-      <nav className="fixed top-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-xl border-b border-border/50">
+      <nav className="fixed top-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-xl border-b border-primary/10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between h-16">
           <div className="flex items-center gap-3">
             <img src={truckerEasyLogo} alt="TruckerEasy" className="w-10 h-10 object-contain" />
-            <span className="font-bold text-lg tracking-wide">TruckerEasy</span>
+            <span className="font-bold text-lg tracking-wide text-primary">TruckerEasy</span>
           </div>
           <div className="hidden md:flex items-center gap-8 text-sm text-muted-foreground">
-            <a href="#features" className="hover:text-foreground transition-colors">Features</a>
-            <a href="#screenshots" className="hover:text-foreground transition-colors">App</a>
-            <a href="#pricing" className="hover:text-foreground transition-colors">Pricing</a>
+            <a href="#features" className="hover:text-primary transition-colors">Features</a>
+            <a href="#screenshots" className="hover:text-primary transition-colors">App</a>
+            <a href="#pricing" className="hover:text-primary transition-colors">Pricing</a>
           </div>
-          <Button onClick={() => navigate('/auth')} className="metallic-gradient text-white border-0">
+          <Button onClick={() => navigate('/auth')} className="metallic-gradient text-primary-foreground font-semibold border-0">
             Get Started <ArrowRight className="w-4 h-4 ml-1" />
           </Button>
         </div>
@@ -64,20 +64,20 @@ const Website = () => {
       {/* Hero Section */}
       <section className="relative pt-32 pb-20 px-4 sm:px-6 lg:px-8 overflow-hidden">
         {/* Background effects */}
-        <div className="absolute inset-0 hexagon-pattern opacity-30" />
-        <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-primary rounded-full blur-[200px] opacity-10" />
-        <div className="absolute bottom-0 right-0 w-[400px] h-[400px] bg-accent rounded-full blur-[150px] opacity-8" />
+        <div className="absolute inset-0 circuit-pattern opacity-40" />
+        <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-primary rounded-full blur-[250px] opacity-8" />
+        <div className="absolute bottom-0 right-0 w-[400px] h-[400px] bg-accent rounded-full blur-[200px] opacity-5" />
 
         <div className="max-w-7xl mx-auto relative z-10">
           <div className="grid lg:grid-cols-2 gap-12 items-center">
             <div className="text-center lg:text-left">
-              <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-primary/10 border border-primary/20 text-primary text-sm font-medium mb-6">
+              <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-primary/10 border border-primary/25 text-primary text-sm font-medium mb-6">
                 <Truck className="w-4 h-4" />
                 Built by truckers, for truckers
               </div>
               <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight leading-tight mb-6">
                 Your Road
-                <span className="block text-primary">Companion</span>
+                <span className="block text-primary drop-shadow-[0_0_20px_hsl(42_78%_50%/0.3)]">Companion</span>
               </h1>
               <p className="text-lg sm:text-xl text-muted-foreground max-w-lg mx-auto lg:mx-0 mb-8">
                 Professional trucking technology with truck-aware GPS, community-powered insights, and everything you need on the road.
@@ -86,7 +86,7 @@ const Website = () => {
                 <Button
                   size="lg"
                   onClick={() => navigate('/auth')}
-                  className="metallic-gradient text-white text-lg px-8 py-6 border-0 glow-steel hover:glow-steel-strong"
+                  className="metallic-gradient text-primary-foreground text-lg px-8 py-6 border-0 font-semibold glow-steel hover:glow-steel-strong"
                 >
                   Start {PRO_PLAN.trial_days}-Day Free Trial
                   <ArrowRight className="w-5 h-5 ml-2" />
@@ -95,7 +95,7 @@ const Website = () => {
                   size="lg"
                   variant="outline"
                   onClick={() => document.getElementById('features')?.scrollIntoView({ behavior: 'smooth' })}
-                  className="text-lg px-8 py-6"
+                  className="text-lg px-8 py-6 border-primary/30 text-primary hover:bg-primary/10"
                 >
                   Learn More
                   <ChevronDown className="w-5 h-5 ml-2" />
@@ -107,8 +107,8 @@ const Website = () => {
             {/* Hero phone mockup */}
             <div className="relative flex justify-center">
               <div className="relative w-[280px] sm:w-[300px]">
-                <div className="absolute inset-0 bg-primary/20 rounded-[2.5rem] blur-xl scale-105" />
-                <div className="relative bg-card rounded-[2.5rem] border-2 border-border/60 overflow-hidden shadow-2xl">
+                <div className="absolute inset-0 bg-primary/15 rounded-[2.5rem] blur-xl scale-105" />
+                <div className="relative bg-card rounded-[2.5rem] border-2 border-primary/20 overflow-hidden shadow-2xl shadow-primary/10">
                   <div className="h-6 bg-card flex items-center justify-center">
                     <div className="w-20 h-1.5 bg-border rounded-full" />
                   </div>
@@ -121,7 +121,7 @@ const Website = () => {
       </section>
 
       {/* Stats Bar */}
-      <section className="border-y border-border/50 bg-card/50">
+      <section className="border-y border-primary/10 bg-card/50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 grid grid-cols-2 md:grid-cols-4 gap-6 text-center">
           {[
             { value: '50K+', label: 'Active Drivers' },
@@ -148,7 +148,7 @@ const Website = () => {
           </div>
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
             {features.map((feature) => (
-              <Card key={feature.title} className="bg-card/60 border-border/50 hover:border-primary/30 transition-all duration-300 group">
+              <Card key={feature.title} className="bg-card/60 border-primary/10 hover:border-primary/30 transition-all duration-300 group">
                 <CardContent className="p-6">
                   <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center mb-4 group-hover:bg-primary/20 transition-colors">
                     <feature.icon className="w-6 h-6 text-primary" />
@@ -172,7 +172,7 @@ const Website = () => {
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
             {screenshots.map((screen) => (
               <div key={screen.label} className="text-center group">
-                <div className="relative rounded-2xl overflow-hidden border border-border/50 shadow-lg group-hover:shadow-primary/20 transition-shadow duration-300 mb-3">
+                <div className="relative rounded-2xl overflow-hidden border border-primary/10 shadow-lg group-hover:shadow-primary/20 transition-shadow duration-300 mb-3">
                   <img src={screen.src} alt={screen.alt} className="w-full" loading="lazy" />
                 </div>
                 <p className="text-sm font-medium text-muted-foreground">{screen.label}</p>
@@ -190,7 +190,7 @@ const Website = () => {
             <p className="text-lg text-muted-foreground mb-8">One plan, everything included. Start with a free trial.</p>
 
             {/* Billing toggle */}
-            <div className="inline-flex items-center bg-card border border-border rounded-full p-1">
+            <div className="inline-flex items-center bg-card border border-primary/15 rounded-full p-1">
               <button
                 onClick={() => setBillingCycle('monthly')}
                 className={`px-5 py-2 rounded-full text-sm font-medium transition-all ${billingCycle === 'monthly' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}
@@ -208,7 +208,7 @@ const Website = () => {
           </div>
 
           {/* Pricing Card */}
-          <Card className="relative overflow-hidden border-primary/30 bg-card">
+          <Card className="relative overflow-hidden border-primary/20 bg-card">
             <div className="absolute top-0 left-0 right-0 h-1 metallic-gradient" />
             <CardContent className="p-8 sm:p-10">
               <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6 mb-8">
@@ -241,7 +241,7 @@ const Website = () => {
               <Button
                 size="lg"
                 onClick={() => navigate('/auth')}
-                className="w-full metallic-gradient text-white text-lg py-6 border-0 glow-steel hover:glow-steel-strong"
+                className="w-full metallic-gradient text-primary-foreground text-lg py-6 border-0 font-semibold glow-steel hover:glow-steel-strong"
               >
                 Start Free Trial
                 <ArrowRight className="w-5 h-5 ml-2" />
@@ -254,7 +254,7 @@ const Website = () => {
 
       {/* CTA Section */}
       <section className="py-20 px-4 sm:px-6 lg:px-8 relative overflow-hidden">
-        <div className="absolute inset-0 hexagon-pattern opacity-20" />
+        <div className="absolute inset-0 circuit-pattern opacity-30" />
         <div className="absolute inset-0 bg-gradient-to-b from-transparent via-primary/5 to-transparent" />
         <div className="max-w-3xl mx-auto text-center relative z-10">
           <Route className="w-12 h-12 text-primary mx-auto mb-6" />
@@ -265,7 +265,7 @@ const Website = () => {
           <Button
             size="lg"
             onClick={() => navigate('/auth')}
-            className="metallic-gradient text-white text-lg px-10 py-6 border-0 glow-steel hover:glow-steel-strong"
+            className="metallic-gradient text-primary-foreground text-lg px-10 py-6 border-0 font-semibold glow-steel hover:glow-steel-strong"
           >
             Get Started Now
             <ArrowRight className="w-5 h-5 ml-2" />
@@ -274,18 +274,18 @@ const Website = () => {
       </section>
 
       {/* Footer */}
-      <footer className="border-t border-border/50 bg-card/30 py-12 px-4 sm:px-6 lg:px-8">
+      <footer className="border-t border-primary/10 bg-card/30 py-12 px-4 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto">
           <div className="flex flex-col md:flex-row items-center justify-between gap-6">
             <div className="flex items-center gap-3">
               <img src={truckerEasyLogo} alt="TruckerEasy" className="w-8 h-8 object-contain" />
-              <span className="font-bold">TruckerEasy Technologies</span>
+              <span className="font-bold text-primary">TruckerEasy Technologies</span>
             </div>
             <div className="flex items-center gap-6 text-sm text-muted-foreground">
-              <button onClick={() => navigate('/privacy')} className="hover:text-foreground transition-colors">
+              <button onClick={() => navigate('/privacy')} className="hover:text-primary transition-colors">
                 Privacy Policy
               </button>
-              <a href="mailto:support@truckereasy.com" className="hover:text-foreground transition-colors">
+              <a href="mailto:support@truckereasy.com" className="hover:text-primary transition-colors">
                 Contact
               </a>
             </div>
