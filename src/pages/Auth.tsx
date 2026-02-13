@@ -64,11 +64,8 @@ const AuthScreen = ({ onComplete, onBack }: AuthScreenProps) => {
           description: t.auth.login,
         });
         
-        if (redirectTo === 'checkout') {
-          navigate('/choose-plan?auto=1');
-        } else {
-          navigate('/home');
-        }
+        // Login: check subscription, if none go to choose-plan
+        navigate('/home');
       } else {
         // New signups MUST go through checkout
         const { error } = await supabase.auth.signUp({
@@ -88,8 +85,8 @@ const AuthScreen = ({ onComplete, onBack }: AuthScreenProps) => {
           title: t.common.success,
           description: t.auth.signup,
         });
-        // Always send new signups to plan selection
-        navigate('/choose-plan?auto=1');
+        // New signups go directly to plan selection
+        navigate('/choose-plan');
       }
       onComplete();
     } catch (error: any) {
