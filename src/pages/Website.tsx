@@ -22,34 +22,9 @@ const Website = () => {
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'annual'>('annual');
   const [checkoutLoading, setCheckoutLoading] = useState(false);
 
-  const handleStartTrial = useCallback(async () => {
-    setCheckoutLoading(true);
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        navigate('/auth?redirect=checkout');
-        return;
-      }
-
-      const priceId = billingCycle === 'annual' 
-        ? 'price_1SyR2d2MEO38NbGnIOso9kgl' 
-        : 'price_1SyR2S2MEO38NbGnf4yYBL5b';
-
-      const { data, error } = await supabase.functions.invoke('create-checkout', {
-        body: { priceId },
-      });
-
-      if (error) throw error;
-      if (data?.url) {
-        window.location.href = data.url;
-      }
-    } catch (err) {
-      console.error('Checkout error:', err);
-      toast.error('Error starting checkout. Please try again.');
-    } finally {
-      setCheckoutLoading(false);
-    }
-  }, [billingCycle, navigate]);
+  const handleStartTrial = useCallback(() => {
+    navigate('/choose-plan');
+  }, [navigate]);
 
   const features = [
     { icon: Navigation, title: 'Truck-Aware GPS', description: 'Routes optimized for height, weight, and length restrictions. Never worry about low bridges again.' },

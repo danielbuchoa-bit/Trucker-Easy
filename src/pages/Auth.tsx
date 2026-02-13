@@ -65,8 +65,7 @@ const AuthScreen = ({ onComplete, onBack }: AuthScreenProps) => {
         });
         
         if (redirectTo === 'checkout') {
-          // Go directly to Stripe checkout
-          await triggerCheckout();
+          navigate('/choose-plan');
         } else {
           navigate('/home');
         }
@@ -89,8 +88,8 @@ const AuthScreen = ({ onComplete, onBack }: AuthScreenProps) => {
           title: t.common.success,
           description: t.auth.signup,
         });
-        // Always send new signups directly to Stripe checkout
-        await triggerCheckout();
+        // Always send new signups to plan selection
+        navigate('/choose-plan');
       }
       onComplete();
     } catch (error: any) {
