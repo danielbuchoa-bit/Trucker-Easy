@@ -116,28 +116,56 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
 }
 
 async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
-  console.log(`[stripe_webhook] Checkout completed: ${session.id}`);
+  console.log(`[stripe_webhook] Checkout completed: ${session.id}, mode: ${session.mode}`);
   const userId = session.metadata?.user_id;
   if (!userId) return;
 
   const subscriptionId = session.subscription as string | null;
-  if (!subscriptionId) return;
+  const planType = session.metadata?.plan_type || 'monthly';
 
   try {
-    const subscription = await stripe.subscriptions.retrieve(subscriptionId);
-    
-    if (!subscription.metadata?.user_id) {
-      await stripe.subscriptions.update(subscriptionId, {
-        metadata: {
-          user_id: userId,
-          user_email: session.customer_email || session.metadata?.user_email || '',
-        },
-      });
-    }
+    if (subscriptionId) {
+      // --- Monthly recurring subscription ---
+      const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+      
+      if (!subscription.metadata?.user_id) {
+        await stripe.subscriptions.update(subscriptionId, {
+          metadata: {
+            user_id: userId,
+            user_email: session.customer_email || session.metadata?.user_email || '',
+          },
+        });
+      }
 
-    await upsertSubscription(userId, subscription);
-    
-    if (subscription.status === 'active' || subscription.status === 'trialing') {
+      await upsertSubscription(userId, subscription);
+      
+      if (subscription.status === 'active' || subscription.status === 'trialing') {
+        await updateReferralOnSubscribe(userId);
+      }
+    } else if (session.mode === 'payment' || planType === 'annual') {
+      // --- Annual one-time payment ---
+      console.log(`[stripe_webhook] One-time annual payment for user ${userId}`);
+      
+      // Calculate 1 year from now
+      const oneYearFromNow = new Date();
+      oneYearFromNow.setFullYear(oneYearFromNow.getFullYear() + 1);
+
+      const { error } = await supabase.from('subscriptions').upsert({
+        user_id: userId,
+        provider: 'stripe',
+        status: 'active',
+        plan_tier: 'pro',
+        current_period_end: oneYearFromNow.toISOString(),
+        cancel_at_period_end: false,
+        source_id: (session.payment_intent as string) || session.id,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'user_id' });
+
+      if (error) {
+        console.error('[stripe_webhook] Annual upsert error:', error);
+        throw error;
+      }
+
       await updateReferralOnSubscribe(userId);
     }
 
@@ -147,10 +175,12 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
       await linkReferralFromCheckout(userId, referralCode);
     }
 
+    const planLabel = planType === 'annual' ? 'Anual (pagamento único)' : 'Mensal';
     await sendTelegramAlert(
       `🚀 <b>Nova Assinatura PRO!</b>\n\n` +
       `📧 <b>Email:</b> ${session.customer_email || 'N/A'}\n` +
       `🆔 <b>User ID:</b> ${userId}\n` +
+      `📋 <b>Plano:</b> ${planLabel}\n` +
       `📅 <b>Data:</b> ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}`
     );
   } catch (err) {
