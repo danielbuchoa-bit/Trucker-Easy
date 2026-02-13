@@ -17,7 +17,8 @@ const AuthScreen = ({ onComplete, onBack }: AuthScreenProps) => {
   const { toast } = useToast();
   const [searchParams] = useSearchParams();
   const redirectTo = searchParams.get('redirect');
-  const [isLogin, setIsLogin] = useState(true);
+  const mode = searchParams.get('mode');
+  const [isLogin, setIsLogin] = useState(mode !== 'signup');
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');

@@ -23,7 +23,7 @@ const Website = () => {
   const [checkoutLoading, setCheckoutLoading] = useState(false);
 
   const handleStartTrial = useCallback(() => {
-    navigate('/choose-plan');
+    navigate('/auth?mode=signup');
   }, [navigate]);
 
   const features = [
