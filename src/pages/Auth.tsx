@@ -48,6 +48,7 @@ const AuthScreen = ({ onComplete, onBack }: AuthScreenProps) => {
           navigate('/home');
         }
       } else {
+        // New signups MUST go through checkout - no free access
         const { error } = await supabase.auth.signUp({
           email,
           password,
@@ -65,11 +66,8 @@ const AuthScreen = ({ onComplete, onBack }: AuthScreenProps) => {
           title: t.common.success,
           description: t.auth.signup,
         });
-        if (redirectTo === 'checkout') {
-          navigate('/choose-plan');
-        } else {
-          navigate('/home');
-        }
+        // Always redirect new signups to checkout/choose-plan
+        navigate('/choose-plan');
       }
       onComplete();
     } catch (error: any) {
