@@ -65,7 +65,7 @@ const AuthScreen = ({ onComplete, onBack }: AuthScreenProps) => {
         });
         
         if (redirectTo === 'checkout') {
-          navigate('/choose-plan');
+          navigate('/choose-plan?auto=1');
         } else {
           navigate('/home');
         }
@@ -89,7 +89,7 @@ const AuthScreen = ({ onComplete, onBack }: AuthScreenProps) => {
           description: t.auth.signup,
         });
         // Always send new signups to plan selection
-        navigate('/choose-plan');
+        navigate('/choose-plan?auto=1');
       }
       onComplete();
     } catch (error: any) {
