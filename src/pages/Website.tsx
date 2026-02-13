@@ -9,7 +9,7 @@ import { PRO_PLAN, formatPrice, calculateAnnualSavings } from '@/lib/subscriptio
 import {
   Navigation, MapPin, Shield, Users, Star, Fuel,
   CloudSun, Gauge, Check, ArrowRight, Smartphone,
-  ChevronDown, Truck, Route, Radio
+  ChevronDown, Truck, Route, Radio, User, LogIn
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -87,7 +87,7 @@ const Website = () => {
             <a href="#screenshots" className="hover:text-primary transition-colors">App</a>
             <a href="#pricing" className="hover:text-primary transition-colors">Pricing</a>
           </div>
-          <Button onClick={handleStartTrial} disabled={checkoutLoading} className="metallic-gradient text-primary-foreground font-semibold border-0">
+          <Button onClick={handleStartTrial} disabled={checkoutLoading} className="metallic-gradient text-background font-bold border-0">
             Get Started <ArrowRight className="w-4 h-4 ml-1" />
           </Button>
         </div>
@@ -95,10 +95,10 @@ const Website = () => {
 
       {/* Hero Section */}
       <section className="relative pt-32 pb-20 px-4 sm:px-6 lg:px-8 overflow-hidden">
-        {/* Background effects */}
-        <div className="absolute inset-0 circuit-pattern opacity-40" />
-        <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-primary rounded-full blur-[250px] opacity-8" />
-        <div className="absolute bottom-0 right-0 w-[400px] h-[400px] bg-accent rounded-full blur-[200px] opacity-5" />
+        {/* Background effects - subtle, not overpowering */}
+        <div className="absolute inset-0 circuit-pattern opacity-10" />
+        <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-primary/5 rounded-full blur-[250px]" />
+        <div className="absolute bottom-0 right-0 w-[400px] h-[400px] bg-accent/3 rounded-full blur-[200px]" />
 
         <div className="max-w-7xl mx-auto relative z-10">
           <div className="grid lg:grid-cols-2 gap-12 items-center">
@@ -107,7 +107,7 @@ const Website = () => {
                 <Truck className="w-4 h-4" />
                 Built by truckers, for truckers
               </div>
-              <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight leading-tight mb-6">
+              <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight leading-tight mb-6 text-foreground">
                 Your Road
                 <span className="block text-primary drop-shadow-[0_0_20px_hsl(42_78%_50%/0.3)]">Companion</span>
               </h1>
@@ -119,7 +119,7 @@ const Website = () => {
                   size="lg"
                   onClick={handleStartTrial}
                   disabled={checkoutLoading}
-                  className="metallic-gradient text-primary-foreground text-lg px-8 py-6 border-0 font-semibold glow-steel hover:glow-steel-strong"
+                  className="metallic-gradient text-background text-lg px-8 py-6 border-0 font-bold glow-steel hover:glow-steel-strong"
                 >
                   Start {PRO_PLAN.trial_days}-Day Free Trial
                   <ArrowRight className="w-5 h-5 ml-2" />
@@ -127,11 +127,11 @@ const Website = () => {
                 <Button
                   size="lg"
                   variant="outline"
-                  onClick={() => document.getElementById('features')?.scrollIntoView({ behavior: 'smooth' })}
-                  className="text-lg px-8 py-6 border-primary/30 text-primary hover:bg-primary/10"
+                  onClick={() => navigate('/auth')}
+                  className="text-lg px-8 py-6 border-primary/30 text-foreground hover:bg-primary/10"
                 >
-                  Learn More
-                  <ChevronDown className="w-5 h-5 ml-2" />
+                  <User className="w-5 h-5 mr-2" />
+                  Already a member? Login
                 </Button>
               </div>
               <p className="text-sm text-muted-foreground mt-4">No credit card required • Cancel anytime</p>
@@ -275,7 +275,7 @@ const Website = () => {
                 size="lg"
                 onClick={handleStartTrial}
                 disabled={checkoutLoading}
-                className="w-full metallic-gradient text-primary-foreground text-lg py-6 border-0 font-semibold glow-steel hover:glow-steel-strong"
+                className="w-full metallic-gradient text-background text-lg py-6 border-0 font-bold glow-steel hover:glow-steel-strong"
               >
                 Start Free Trial
                 <ArrowRight className="w-5 h-5 ml-2" />
@@ -288,7 +288,7 @@ const Website = () => {
 
       {/* CTA Section */}
       <section className="py-20 px-4 sm:px-6 lg:px-8 relative overflow-hidden">
-        <div className="absolute inset-0 circuit-pattern opacity-30" />
+        <div className="absolute inset-0 circuit-pattern opacity-10" />
         <div className="absolute inset-0 bg-gradient-to-b from-transparent via-primary/5 to-transparent" />
         <div className="max-w-3xl mx-auto text-center relative z-10">
           <Route className="w-12 h-12 text-primary mx-auto mb-6" />
@@ -300,7 +300,7 @@ const Website = () => {
             size="lg"
             onClick={handleStartTrial}
             disabled={checkoutLoading}
-            className="metallic-gradient text-primary-foreground text-lg px-10 py-6 border-0 font-semibold glow-steel hover:glow-steel-strong"
+            className="metallic-gradient text-background text-lg px-10 py-6 border-0 font-bold glow-steel hover:glow-steel-strong"
           >
             Get Started Now
             <ArrowRight className="w-5 h-5 ml-2" />
