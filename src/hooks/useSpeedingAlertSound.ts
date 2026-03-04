@@ -20,28 +20,21 @@ interface UseSpeedingAlertSoundReturn {
 
 // Translations for speed alerts
 const speedAlertMessages: Record<Language, { slowDown: string; overLimit: string; checkSpeed: string }> = {
-  en: {
-    slowDown: 'Slow down',
-    overLimit: 'over limit',
-    checkSpeed: 'Check your speed',
-  },
-  es: {
-    slowDown: 'Reduzca la velocidad',
-    overLimit: 'sobre el límite',
-    checkSpeed: 'Verifique su velocidad',
-  },
-  pt: {
-    slowDown: 'Reduza a velocidade',
-    overLimit: 'acima do limite',
-    checkSpeed: 'Verifique sua velocidade',
-  },
+  en: { slowDown: 'Slow down', overLimit: 'over limit', checkSpeed: 'Check your speed' },
+  es: { slowDown: 'Reduzca la velocidad', overLimit: 'sobre el límite', checkSpeed: 'Verifique su velocidad' },
+  pt: { slowDown: 'Reduza a velocidade', overLimit: 'acima do limite', checkSpeed: 'Verifique sua velocidade' },
+  de: { slowDown: 'Langsamer fahren', overLimit: 'über dem Limit', checkSpeed: 'Geschwindigkeit prüfen' },
+  fr: { slowDown: 'Ralentissez', overLimit: 'au-dessus de la limite', checkSpeed: 'Vérifiez votre vitesse' },
+  hi: { slowDown: 'धीमा करें', overLimit: 'सीमा से ऊपर', checkSpeed: 'अपनी गति जांचें' },
 };
 
-// Language codes for speech synthesis
 const speechLangCodes: Record<Language, string> = {
   en: 'en-US',
   es: 'es-ES',
   pt: 'pt-BR',
+  de: 'de-DE',
+  fr: 'fr-FR',
+  hi: 'hi-IN',
 };
 
 // Create audio context lazily to avoid autoplay policy issues
