@@ -65,6 +65,7 @@ const HomeScreen = () => {
   const [lastSearchDebug, setLastSearchDebug] = useState<any>(null);
   const [reviewsModalPoi, setReviewsModalPoi] = useState<NearbyPlace | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
+  const [detectedCity, setDetectedCity] = useState<string | null>(null);
   
   // Check authentication status
   useEffect(() => {
@@ -651,8 +652,8 @@ const HomeScreen = () => {
         </div>
       </div>
 
-      {/* Map Background with floating elements */}
-      <MapBackground userLocation={userLocation} className="h-[40vh]">
+      {/* 3D Map Background with floating elements */}
+      <MapBackground userLocation={userLocation} className="h-[40vh]" onCityDetected={setDetectedCity}>
         {/* Floating content over map */}
         <div className="flex flex-col h-full justify-end p-4">
           {/* Diagnostics trigger (hidden tappable area) */}
@@ -664,10 +665,11 @@ const HomeScreen = () => {
             <Truck className="w-8 h-8" />
           </button>
 
-          {/* Location info */}
-          {userLocation && (
-            <div className="absolute top-4 left-4 bg-background/80 backdrop-blur-sm rounded-lg px-3 py-1.5 text-xs text-muted-foreground">
-              📍 {userLocation.lat.toFixed(4)}, {userLocation.lng.toFixed(4)}
+          {/* City detection info */}
+          {(detectedCity || userLocation) && (
+            <div className="absolute top-4 left-4 bg-background/80 backdrop-blur-sm rounded-lg px-3 py-1.5 text-xs text-muted-foreground flex items-center gap-1.5">
+              <MapPin className="w-3 h-3 text-primary" />
+              {detectedCity || `${userLocation?.lat.toFixed(4)}, ${userLocation?.lng.toFixed(4)}`}
             </div>
           )}
 

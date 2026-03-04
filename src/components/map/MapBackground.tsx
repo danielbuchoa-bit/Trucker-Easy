@@ -8,12 +8,14 @@ interface MapBackgroundProps {
   userLocation: { lat: number; lng: number } | null;
   className?: string;
   children?: React.ReactNode;
+  onCityDetected?: (city: string) => void;
 }
 
 const MapBackground: React.FC<MapBackgroundProps> = ({ 
   userLocation, 
   className = '',
-  children 
+  children,
+  onCityDetected,
 }) => {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
@@ -21,14 +23,14 @@ const MapBackground: React.FC<MapBackgroundProps> = ({
   const [mapReady, setMapReady] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const lastReverseGeocode = useRef<string>('');
 
-  // Initialize map
+  // Initialize map with 3D globe
   useEffect(() => {
     if (!mapContainer.current || map.current) return;
 
     const initMap = async () => {
       try {
-        // Get Mapbox token
         const { data, error: tokenError } = await supabase.functions.invoke('get_mapbox_token');
         
         if (tokenError || !data?.token) {
@@ -37,7 +39,6 @@ const MapBackground: React.FC<MapBackgroundProps> = ({
 
         mapboxgl.accessToken = data.token;
 
-        // Default center (US)
         const center = userLocation 
           ? [userLocation.lng, userLocation.lat] 
           : [-98.5795, 39.8283];
@@ -46,9 +47,35 @@ const MapBackground: React.FC<MapBackgroundProps> = ({
           container: mapContainer.current!,
           style: 'mapbox://styles/mapbox/satellite-streets-v12',
           center: center as [number, number],
-          zoom: userLocation ? 14 : 4,
+          zoom: userLocation ? 14 : 3,
+          pitch: 45,
+          bearing: 0,
+          projection: 'globe',
           attributionControl: false,
           logoPosition: 'bottom-left',
+          antialias: true,
+        });
+
+        map.current.on('style.load', () => {
+          if (!map.current) return;
+          
+          // 3D terrain
+          map.current.addSource('mapbox-dem', {
+            type: 'raster-dem',
+            url: 'mapbox://mapbox.mapbox-terrain-dem-v1',
+            tileSize: 512,
+            maxzoom: 14,
+          });
+          map.current.setTerrain({ source: 'mapbox-dem', exaggeration: 1.5 });
+
+          // Atmosphere / sky
+          map.current.setFog({
+            color: 'rgb(186, 210, 235)',
+            'high-color': 'rgb(36, 92, 223)',
+            'horizon-blend': 0.02,
+            'space-color': 'rgb(11, 11, 25)',
+            'star-intensity': 0.6,
+          });
         });
 
         map.current.on('load', () => {
@@ -79,102 +106,122 @@ const MapBackground: React.FC<MapBackgroundProps> = ({
     };
   }, []);
 
-  // Update user marker when location changes
+  // Update user marker + reverse geocode city
   useEffect(() => {
     if (!map.current || !mapReady || !userLocation) return;
 
-    // Create or update user marker
+    // Create or update truck arrow marker
     if (!userMarker.current) {
-      // Create custom blue pulsing dot
       const el = document.createElement('div');
-      el.className = 'user-location-marker';
+      el.className = 'truck-arrow-marker';
       el.innerHTML = `
-        <div class="pulse-ring"></div>
-        <div class="pulse-dot"></div>
+        <div class="truck-pulse-ring"></div>
+        <div class="truck-arrow">
+          <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 2L4 20L12 16L20 20L12 2Z" fill="hsl(var(--primary))" stroke="white" stroke-width="1.5" stroke-linejoin="round"/>
+          </svg>
+        </div>
       `;
       
-      userMarker.current = new mapboxgl.Marker({ element: el })
+      userMarker.current = new mapboxgl.Marker({ 
+        element: el,
+        rotationAlignment: 'map',
+        pitchAlignment: 'map',
+      })
         .setLngLat([userLocation.lng, userLocation.lat])
         .addTo(map.current);
     } else {
       userMarker.current.setLngLat([userLocation.lng, userLocation.lat]);
     }
 
-    // Smoothly fly to user location
+    // Fly to user
     map.current.flyTo({
       center: [userLocation.lng, userLocation.lat],
       zoom: 14,
+      pitch: 45,
       duration: 1500,
     });
-  }, [userLocation, mapReady]);
+
+    // Reverse geocode for city detection
+    const coordKey = `${userLocation.lat.toFixed(2)},${userLocation.lng.toFixed(2)}`;
+    if (onCityDetected && coordKey !== lastReverseGeocode.current) {
+      lastReverseGeocode.current = coordKey;
+      supabase.functions.invoke('nb_reverse_geocode', {
+        body: { lat: userLocation.lat, lng: userLocation.lng },
+      }).then(({ data }) => {
+        if (data?.city || data?.address?.city) {
+          const city = data.city || data.address?.city;
+          const state = data.state || data.address?.state || '';
+          const country = data.country || data.address?.countryName || '';
+          const label = [city, state, country].filter(Boolean).join(', ');
+          onCityDetected(label);
+        }
+      }).catch(() => {});
+    }
+  }, [userLocation, mapReady, onCityDetected]);
 
   return (
     <div className={`relative ${className}`}>
-      {/* Map Container */}
       <div 
         ref={mapContainer} 
         className="absolute inset-0 w-full h-full"
       />
       
-      {/* Loading State */}
       {loading && (
         <div className="absolute inset-0 flex items-center justify-center bg-secondary/80 z-10">
           <div className="flex flex-col items-center gap-2">
             <Loader2 className="w-8 h-8 animate-spin text-primary" />
-            <span className="text-sm text-muted-foreground">Loading map...</span>
+            <span className="text-sm text-muted-foreground">Loading 3D map...</span>
           </div>
         </div>
       )}
       
-      {/* Error State */}
       {error && !loading && (
         <div className="absolute inset-0 flex items-center justify-center bg-secondary/80 z-10">
           <p className="text-sm text-muted-foreground">{error}</p>
         </div>
       )}
 
-      {/* Overlay gradient for readability */}
-      <div className="absolute inset-0 pointer-events-none bg-gradient-to-b from-background/40 via-transparent to-background/60 z-10" />
+      {/* Overlay gradient */}
+      <div className="absolute inset-0 pointer-events-none bg-gradient-to-b from-background/30 via-transparent to-background/50 z-10" />
       
-      {/* Children (floating elements) */}
+      {/* Children */}
       <div className="relative z-20 h-full">
         {children}
       </div>
 
-      {/* Custom marker styles */}
       <style>{`
-        .user-location-marker {
+        .truck-arrow-marker {
           position: relative;
-          width: 24px;
-          height: 24px;
+          width: 32px;
+          height: 32px;
         }
         
-        .pulse-ring {
+        .truck-pulse-ring {
           position: absolute;
-          inset: -8px;
+          inset: -10px;
           border-radius: 50%;
-          background: hsl(var(--info) / 0.3);
-          animation: pulse-ring 2s ease-out infinite;
+          background: hsl(var(--primary) / 0.25);
+          animation: truck-pulse 2s ease-out infinite;
         }
         
-        .pulse-dot {
+        .truck-arrow {
           position: absolute;
           inset: 0;
-          border-radius: 50%;
-          background: hsl(var(--info));
-          border: 3px solid white;
-          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.5));
         }
         
-        @keyframes pulse-ring {
-          0% {
-            transform: scale(0.5);
-            opacity: 1;
-          }
-          100% {
-            transform: scale(2);
-            opacity: 0;
-          }
+        .truck-arrow svg {
+          width: 28px;
+          height: 28px;
+        }
+        
+        @keyframes truck-pulse {
+          0% { transform: scale(0.6); opacity: 1; }
+          100% { transform: scale(2.2); opacity: 0; }
         }
       `}</style>
     </div>

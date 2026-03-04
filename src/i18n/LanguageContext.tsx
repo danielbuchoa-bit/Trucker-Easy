@@ -2,9 +2,9 @@ import React, { createContext, useContext, useState, useCallback, ReactNode, use
 import { translations, Language } from './translations';
 
 type Translations = typeof translations;
-type TranslationsForLanguage = Translations[Language];
+type TranslationsForLanguage = Translations['en'];
 
-// Simple language option for the 3 supported languages
+// Simple language option for all supported languages
 export interface LanguageOption {
   code: string;
   value: Language;
@@ -13,11 +13,14 @@ export interface LanguageOption {
   flag: string;
 }
 
-// Only 3 fully supported languages
+// All supported languages
 export const SUPPORTED_LANGUAGES: LanguageOption[] = [
   { code: 'en-US', value: 'en', label: 'English', nativeLabel: 'English', flag: '🇺🇸' },
   { code: 'es', value: 'es', label: 'Spanish', nativeLabel: 'Español', flag: '🇲🇽' },
   { code: 'pt-BR', value: 'pt', label: 'Portuguese', nativeLabel: 'Português', flag: '🇧🇷' },
+  { code: 'de', value: 'de', label: 'German', nativeLabel: 'Deutsch', flag: '🇩🇪' },
+  { code: 'fr', value: 'fr', label: 'French', nativeLabel: 'Français', flag: '🇫🇷' },
+  { code: 'hi', value: 'hi', label: 'Hindi', nativeLabel: 'हिन्दी', flag: '🇮🇳' },
 ];
 
 interface LanguageContextType {
@@ -46,27 +49,44 @@ const findLanguage = (codeOrValue: string): LanguageOption | undefined => {
 
 // Normalize any locale to one of our supported languages
 const normalizeToSupported = (code: string): Language => {
-  // Direct match
   const direct = findLanguage(code);
   if (direct) return direct.value;
   
-  // Prefix match (e.g., "pt" -> "pt", "es-AR" -> "es")
   const prefix = code.slice(0, 2).toLowerCase();
   if (prefix === 'pt') return 'pt';
   if (prefix === 'es') return 'es';
+  if (prefix === 'de') return 'de';
+  if (prefix === 'fr') return 'fr';
+  if (prefix === 'hi') return 'hi';
   
-  // Default to English
   return 'en';
 };
+
+// Deep merge: overlay partial translations on top of English fallback
+function deepMerge(base: any, overlay: any): any {
+  if (!overlay) return base;
+  const result = { ...base };
+  for (const key of Object.keys(base)) {
+    if (key in overlay) {
+      if (typeof base[key] === 'object' && base[key] !== null && !Array.isArray(base[key])) {
+        result[key] = deepMerge(base[key], overlay[key]);
+      } else {
+        result[key] = overlay[key];
+      }
+    }
+  }
+  return result;
+}
 
 export const LanguageProvider: React.FC<LanguageProviderProps> = ({ children }) => {
   // Default to English, only change after user explicitly selects
   const [language, setLanguageState] = useState<Language>(() => {
     const saved = localStorage.getItem('truckereasy-language');
-    if (saved && (saved === 'en' || saved === 'es' || saved === 'pt')) {
+    const validLangs: Language[] = ['en', 'es', 'pt', 'de', 'fr', 'hi'];
+    if (saved && validLangs.includes(saved as Language)) {
       return saved as Language;
     }
-    return 'en'; // Always default to English
+    return 'en';
   });
 
   const languageCode = useMemo(() => {
@@ -85,9 +105,11 @@ export const LanguageProvider: React.FC<LanguageProviderProps> = ({ children }) 
     localStorage.setItem('truckereasy-language', normalized);
   }, []);
 
-  // Get translations
-  const t = useMemo(() => {
-    return translations[language];
+  // Get translations with English fallback for incomplete languages
+  const t = useMemo((): TranslationsForLanguage => {
+    const langTranslations = translations[language];
+    if (language === 'en') return langTranslations;
+    return deepMerge(translations.en, langTranslations) as TranslationsForLanguage;
   }, [language]);
 
   // Log on mount

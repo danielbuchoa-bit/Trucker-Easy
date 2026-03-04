@@ -96,7 +96,8 @@ const App = () => (
                                 <CheckInTrigger />
                                 <Routes>
                                   {/* Public routes */}
-                                  <Route path="/" element={<WebsiteScreen />} />
+                                  <Route path="/" element={<Navigate to="/home" replace />} />
+                                  <Route path="/website" element={<WebsiteScreen />} />
                                   <Route path="/welcome" element={<WelcomeScreen onComplete={() => {}} />} />
                                   <Route path="/auth" element={<AuthScreen onComplete={() => {}} onBack={() => {}} />} />
                                   <Route path="/privacy" element={<Privacy />} />

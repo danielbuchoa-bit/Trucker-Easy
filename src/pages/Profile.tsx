@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useLanguage } from '@/i18n/LanguageContext';
+import type { Language } from '@/i18n/translations';
 import { User, Settings, Globe, Moon, Bell, Shield, HelpCircle, LogOut, ChevronRight, Star, MessageSquare, Flag, Scale, Utensils, Building2, Heart, FileCheck, MapPin, Stethoscope, Loader2, FileText, History, Smile } from 'lucide-react';
 import BottomNav from '@/components/navigation/BottomNav';
 import { useNavigate } from 'react-router-dom';
@@ -171,7 +172,7 @@ const ProfileScreen = () => {
   ];
 
   const handleLanguageChange = () => {
-    const languages: ('en' | 'es' | 'pt')[] = ['en', 'es', 'pt'];
+    const languages: Language[] = ['en', 'es', 'pt', 'de', 'fr', 'hi'];
     const currentIndex = languages.indexOf(language);
     const nextIndex = (currentIndex + 1) % languages.length;
     setLanguage(languages[nextIndex]);
