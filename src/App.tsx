@@ -95,42 +95,42 @@ const App = () => (
                                 <EmotionalCheckInModal />
                                 <CheckInTrigger />
                                 <Routes>
-                                  {/* Public routes */}
+                                  {/* All browsing routes are open */}
                                   <Route path="/" element={<Navigate to="/home" replace />} />
                                   <Route path="/website" element={<WebsiteScreen />} />
                                   <Route path="/welcome" element={<WelcomeScreen onComplete={() => {}} />} />
                                   <Route path="/auth" element={<AuthScreen onComplete={() => {}} onBack={() => {}} />} />
                                   <Route path="/privacy" element={<Privacy />} />
                                   <Route path="/invite" element={<InviteLanding />} />
-                                  
-                                  {/* Protected routes - require authentication */}
-                                  <Route path="/onboarding" element={<ProtectedRoute><OnboardingScreen onComplete={() => {}} onBack={() => {}} /></ProtectedRoute>} />
-                                  <Route path="/home" element={<ProtectedRoute><HomeScreen /></ProtectedRoute>} />
-                                  <Route path="/stops" element={<ProtectedRoute><StopsScreen /></ProtectedRoute>} />
-                                  <Route path="/report" element={<ProtectedRoute><ReportScreen /></ProtectedRoute>} />
-                                  <Route path="/community" element={<ProtectedRoute><CommunityScreen /></ProtectedRoute>} />
-                                  <Route path="/profile" element={<ProtectedRoute><ProfileScreen /></ProtectedRoute>} />
-                                  <Route path="/place/:id" element={<ProtectedRoute><PlaceDetailScreen /></ProtectedRoute>} />
-                                  <Route path="/company-review/:id" element={<ProtectedRoute><CompanyReviewScreen /></ProtectedRoute>} />
-                                  <Route path="/chat/:id" element={<ProtectedRoute><ChatRoomScreen /></ProtectedRoute>} />
-                                  <Route path="/bypass-history" element={<ProtectedRoute><BypassHistory /></ProtectedRoute>} />
-                                  <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+                                  <Route path="/onboarding" element={<OnboardingScreen onComplete={() => {}} onBack={() => {}} />} />
+                                  <Route path="/home" element={<HomeScreen />} />
+                                  <Route path="/stops" element={<StopsScreen />} />
+                                  <Route path="/report" element={<ReportScreen />} />
+                                  <Route path="/community" element={<CommunityScreen />} />
+                                  <Route path="/profile" element={<ProfileScreen />} />
+                                  <Route path="/place/:id" element={<PlaceDetailScreen />} />
+                                  <Route path="/company-review/:id" element={<CompanyReviewScreen />} />
+                                  <Route path="/bypass-history" element={<BypassHistory />} />
+                                  <Route path="/settings" element={<Settings />} />
                                   <Route path="/map" element={<Navigate to="/navigation" replace />} />
-                                  <Route path="/navigation" element={<ProtectedRoute><NavigationScreen /></ProtectedRoute>} />
-                                  <Route path="/stop-advisor" element={<ProtectedRoute><StopAdvisorScreen /></ProtectedRoute>} />
-                                  <Route path="/facility-rating" element={<ProtectedRoute><FacilityRatingScreen /></ProtectedRoute>} />
-                                  <Route path="/facility/:id" element={<ProtectedRoute><FacilityDetailScreen /></ProtectedRoute>} />
-                                  <Route path="/food-preferences" element={<ProtectedRoute><FoodPreferencesScreen /></ProtectedRoute>} />
-                                  <Route path="/favorite-meals" element={<ProtectedRoute><FavoriteMealsScreen /></ProtectedRoute>} />
-                                  <Route path="/subscription" element={<ProtectedRoute><SubscriptionScreen /></ProtectedRoute>} />
-                                  <Route path="/subscription/success" element={<ProtectedRoute skipSubscriptionCheck><SubscriptionSuccessScreen /></ProtectedRoute>} />
-                                  <Route path="/choose-plan" element={<ProtectedRoute skipSubscriptionCheck><ChoosePlanScreen /></ProtectedRoute>} />
-                                  <Route path="/rating-history" element={<ProtectedRoute><RatingHistoryScreen /></ProtectedRoute>} />
-                                  <Route path="/road-test-checklist" element={<ProtectedRoute><RoadTestChecklist /></ProtectedRoute>} />
-                                  <Route path="/wellbeing" element={<ProtectedRoute><WellbeingScreen /></ProtectedRoute>} />
-                                  <Route path="/medications" element={<ProtectedRoute><MedicationsScreen /></ProtectedRoute>} />
+                                  <Route path="/navigation" element={<NavigationScreen />} />
+                                  <Route path="/stop-advisor" element={<StopAdvisorScreen />} />
+                                  <Route path="/facility-rating" element={<FacilityRatingScreen />} />
+                                  <Route path="/facility/:id" element={<FacilityDetailScreen />} />
+                                  <Route path="/food-preferences" element={<FoodPreferencesScreen />} />
+                                  <Route path="/favorite-meals" element={<FavoriteMealsScreen />} />
+                                  <Route path="/subscription" element={<SubscriptionScreen />} />
+                                  <Route path="/subscription/success" element={<SubscriptionSuccessScreen />} />
+                                  <Route path="/choose-plan" element={<ChoosePlanScreen />} />
+                                  <Route path="/rating-history" element={<RatingHistoryScreen />} />
+                                  <Route path="/road-test-checklist" element={<RoadTestChecklist />} />
+                                  <Route path="/wellbeing" element={<WellbeingScreen />} />
+                                  <Route path="/medications" element={<MedicationsScreen />} />
                                   <Route path="/admin" element={<ProtectedRoute><AdminDashboard /></ProtectedRoute>} />
-                                  <Route path="/referrals" element={<ProtectedRoute><ReferralsScreen /></ProtectedRoute>} />
+                                  <Route path="/referrals" element={<ReferralsScreen />} />
+                                  
+                                  {/* Interactive routes - require auth+subscription */}
+                                  <Route path="/chat/:id" element={<ProtectedRoute><ChatRoomScreen /></ProtectedRoute>} />
                                   
                                   <Route path="*" element={<NotFound />} />
                                 </Routes>
