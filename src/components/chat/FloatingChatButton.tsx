@@ -2,23 +2,24 @@ import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { MessageCircle } from 'lucide-react';
 import { useChatContext } from '@/contexts/ChatContext';
+import { useActionGate } from '@/hooks/useActionGate';
 import { cn } from '@/lib/utils';
 
 const FloatingChatButton: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { myRooms, lastActiveRoomId, unreadCount, currentUserId } = useChatContext();
+  const { myRooms, lastActiveRoomId, unreadCount } = useChatContext();
+  const gate = useActionGate();
 
-  // Hide on chat room pages or if not authenticated
+  // Hide on chat room pages
   const isChatPage = location.pathname.startsWith('/chat/');
-  if (isChatPage || !currentUserId) return null;
+  if (isChatPage) return null;
 
   const handleClick = () => {
+    if (!gate()) return; // redirects to payment if not auth/subscribed
     if (myRooms.length > 0 && lastActiveRoomId) {
-      // Go to last active room
       navigate(`/chat/${lastActiveRoomId}`);
     } else {
-      // Go to community chat tab
       navigate('/community?tab=chat');
     }
   };
