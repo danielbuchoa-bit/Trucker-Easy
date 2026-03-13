@@ -11,6 +11,7 @@ import { NextBillionDiagnosticsPanel } from '@/components/diagnostics/NextBillio
 import { useNextBillionDiagnostics } from '@/hooks/useNextBillionDiagnostics';
 import CompleteFacilityReviewModal from '@/components/facility/CompleteFacilityReviewModal';
 import MapBackground from '@/components/map/MapBackground';
+import DotHosBar from '@/components/navigation/DotHosBar';
 import { Badge } from '@/components/ui/badge';
 import { useBatchPoiRatings } from '@/hooks/useBatchPoiRatings';
 import PoiRatingBadgeInline from '@/components/poi/PoiRatingBadgeInline';
