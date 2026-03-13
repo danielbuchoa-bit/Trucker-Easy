@@ -674,6 +674,9 @@ const HomeScreen = () => {
             </div>
           )}
 
+          {/* DOT HOS Timer Bar */}
+          <DotHosBar className="absolute top-4 right-4" />
+
           {/* Action Buttons - Side by Side, Same Size */}
           <div className="flex gap-3 mt-auto">
             <Button 
