@@ -11,6 +11,7 @@ import { NextBillionDiagnosticsPanel } from '@/components/diagnostics/NextBillio
 import { useNextBillionDiagnostics } from '@/hooks/useNextBillionDiagnostics';
 import CompleteFacilityReviewModal from '@/components/facility/CompleteFacilityReviewModal';
 import MapBackground from '@/components/map/MapBackground';
+import DotHosBar from '@/components/navigation/DotHosBar';
 import { Badge } from '@/components/ui/badge';
 import { useBatchPoiRatings } from '@/hooks/useBatchPoiRatings';
 import PoiRatingBadgeInline from '@/components/poi/PoiRatingBadgeInline';
@@ -672,6 +673,9 @@ const HomeScreen = () => {
               {detectedCity || `${userLocation?.lat.toFixed(4)}, ${userLocation?.lng.toFixed(4)}`}
             </div>
           )}
+
+          {/* DOT HOS Timer Bar */}
+          <DotHosBar className="absolute top-4 right-4" />
 
           {/* Action Buttons - Side by Side, Same Size */}
           <div className="flex gap-3 mt-auto">
