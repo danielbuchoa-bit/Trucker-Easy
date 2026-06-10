@@ -36,7 +36,7 @@ const SimulationControls = ({
   if (!isSimulating) {
     // Simulation is DISABLED by default - using real GPS only
     // This button is hidden in production, only shown for development/testing
-    if (process.env.NODE_ENV === 'development') {
+    if (import.meta.env.DEV) {
       return (
         <div className="absolute bottom-4 left-4 z-30">
           <Button

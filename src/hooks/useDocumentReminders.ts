@@ -8,7 +8,7 @@ const CHECK_INTERVAL_MS = 1000 * 60 * 60; // Check every hour
 export const useDocumentReminders = () => {
   const { permission, requestPermission, sendNotification, isSupported } = useNotifications();
   const hasCheckedRef = useRef(false);
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const intervalRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const checkDocumentExpiration = useCallback(async () => {
     try {
