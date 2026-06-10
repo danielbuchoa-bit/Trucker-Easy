@@ -48,10 +48,17 @@ serve(async (req) => {
 
     if (!response.ok) {
       console.error("[nb_reverse_geocode] HERE error:", data);
+      const isPermDenied = response.status === 401 || response.status === 403;
+      const friendlyMsg = isPermDenied
+        ? "Serviço HERE Geocoding & Search não autorizado. Ative 'Geocoding & Search v7' no seu App em platform.here.com."
+        : (data.title || data.message || "Reverse geocoding failed");
       return new Response(
-        JSON.stringify({ 
-          error: data.message || "Reverse geocoding failed", 
-          status: response.status 
+        JSON.stringify({
+          error: friendlyMsg,
+          errorCode: isPermDenied ? "HERE_PERMISSION_DENIED" : "HERE_ERROR",
+          missingService: isPermDenied ? "Geocoding & Search v7" : undefined,
+          status: response.status,
+          cause: data.cause,
         }),
         { status: response.status, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
