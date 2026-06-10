@@ -54,10 +54,17 @@ serve(async (req) => {
 
     if (!response.ok) {
       console.error("[nb_geocode] HERE error:", data);
+      const isPermDenied = response.status === 401 || response.status === 403;
+      const friendlyMsg = isPermDenied
+        ? "Serviço HERE Geocoding & Search não autorizado. Em platform.here.com, ative a assinatura 'Geocoding & Search v7' no seu App."
+        : (data.title || data.message || "Geocoding failed");
       return new Response(
-        JSON.stringify({ 
-          error: data.message || "Geocoding failed", 
-          status: response.status 
+        JSON.stringify({
+          error: friendlyMsg,
+          errorCode: isPermDenied ? "HERE_PERMISSION_DENIED" : "HERE_ERROR",
+          missingService: isPermDenied ? "Geocoding & Search v7" : undefined,
+          status: response.status,
+          cause: data.cause,
         }),
         { status: response.status, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
