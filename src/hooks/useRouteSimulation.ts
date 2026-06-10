@@ -54,7 +54,7 @@ export function useRouteSimulation(
     isPaused: false,
   });
 
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const intervalRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const currentIndexRef = useRef(0);
 
   const clearSimulation = useCallback(() => {

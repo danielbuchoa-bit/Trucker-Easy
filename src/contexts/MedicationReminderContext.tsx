@@ -37,7 +37,7 @@ export const MedicationReminderProvider: React.FC<{ children: React.ReactNode }>
   const [showModal, setShowModal] = useState(false);
   
   const lastCheckedRef = useRef<Map<string, number>>(new Map());
-  const checkIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const checkIntervalRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Check if a reminder should fire
   const shouldFireReminder = useCallback((medication: Medication, todayLogs: Set<string>): { shouldFire: boolean; scheduledTime: Date | null } => {
