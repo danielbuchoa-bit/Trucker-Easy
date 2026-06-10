@@ -143,10 +143,16 @@ serve(async (req) => {
 
     if (!response.ok || !data.routes || data.routes.length === 0) {
       console.error('[HERE_ROUTE] API Error:', data);
+      const isPermDenied = response.status === 401 || response.status === 403;
+      const friendlyMsg = isPermDenied
+        ? "Serviço HERE Routing não autorizado. Em platform.here.com, ative 'Routing v8' no seu App."
+        : 'Route calculation failed';
       return new Response(
         JSON.stringify({ 
-          error: 'Route calculation failed', 
-          details: data.title || data.cause || data.message || JSON.stringify(data).slice(0, 300) 
+          error: friendlyMsg,
+          errorCode: isPermDenied ? "HERE_PERMISSION_DENIED" : "HERE_ERROR",
+          missingService: isPermDenied ? "Routing v8" : undefined,
+          details: data.title || data.cause || data.message || JSON.stringify(data).slice(0, 300),
         }),
         { status: response.status === 200 ? 400 : response.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
