@@ -27,35 +27,33 @@ serve(async (req) => {
       );
     }
 
-    const apiKey = Deno.env.get("NEXTBILLION_API_KEY");
+    const apiKey = Deno.env.get("HERE_API_KEY");
     if (!apiKey) {
-      console.error("[nb_geocode] NEXTBILLION_API_KEY not configured");
+      console.error("[nb_geocode] HERE_API_KEY not configured");
       return new Response(
         JSON.stringify({ error: "API key not configured" }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // NextBillion Forward Geocode API
-    const url = new URL("https://api.nextbillion.io/geocode");
+    // HERE Geocoding & Search v7
+    const url = new URL("https://geocode.search.hereapi.com/v1/geocode");
     url.searchParams.set("q", query);
-    url.searchParams.set("limit", String(limit * 2)); // Request more to filter by proximity
-    url.searchParams.set("key", apiKey);
-    
-    // Add location bias if user location is provided
+    url.searchParams.set("limit", String(limit * 2));
+    url.searchParams.set("apiKey", apiKey);
+
     if (lat !== undefined && lng !== undefined) {
-      // Use 'at' parameter for location biasing (format: lat,lng)
       url.searchParams.set("at", `${lat},${lng}`);
       console.log(`[nb_geocode] Using location bias: ${lat},${lng}`);
     }
 
-    console.log("[nb_geocode] Calling NextBillion geocode:", query);
+    console.log("[nb_geocode] Calling HERE geocode:", query);
 
     const response = await fetch(url.toString());
     const data = await response.json();
 
     if (!response.ok) {
-      console.error("[nb_geocode] NextBillion error:", data);
+      console.error("[nb_geocode] HERE error:", data);
       return new Response(
         JSON.stringify({ 
           error: data.message || "Geocoding failed", 
@@ -65,7 +63,7 @@ serve(async (req) => {
       );
     }
 
-    // Transform NextBillion response to our format
+    // HERE returns same { items: [{ position, address, title, id }] } shape
     let results = (data.items || []).map((item: any) => {
       const resultLat = item.position?.lat;
       const resultLng = item.position?.lng;

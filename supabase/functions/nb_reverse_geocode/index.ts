@@ -27,27 +27,27 @@ serve(async (req) => {
       );
     }
 
-    const apiKey = Deno.env.get("NEXTBILLION_API_KEY");
+    const apiKey = Deno.env.get("HERE_API_KEY");
     if (!apiKey) {
-      console.error("[nb_reverse_geocode] NEXTBILLION_API_KEY not configured");
+      console.error("[nb_reverse_geocode] HERE_API_KEY not configured");
       return new Response(
         JSON.stringify({ error: "API key not configured" }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // NextBillion Reverse Geocode API
-    const url = new URL("https://api.nextbillion.io/revgeocode");
+    // HERE Reverse Geocode v7
+    const url = new URL("https://revgeocode.search.hereapi.com/v1/revgeocode");
     url.searchParams.set("at", `${lat},${lng}`);
-    url.searchParams.set("key", apiKey);
+    url.searchParams.set("apiKey", apiKey);
 
-    console.log(`[nb_reverse_geocode] Calling NextBillion revgeocode: ${lat},${lng}`);
+    console.log(`[nb_reverse_geocode] Calling HERE revgeocode: ${lat},${lng}`);
 
     const response = await fetch(url.toString());
     const data = await response.json();
 
     if (!response.ok) {
-      console.error("[nb_reverse_geocode] NextBillion error:", data);
+      console.error("[nb_reverse_geocode] HERE error:", data);
       return new Response(
         JSON.stringify({ 
           error: data.message || "Reverse geocoding failed", 
